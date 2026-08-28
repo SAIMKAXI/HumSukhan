@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../models/models.dart';
 import '../services/stt/enhanced_stt.dart';
+import '../services/stt/vosk_stt.dart';
 
 abstract class TtsProvider {
   Future<bool> initialize();
@@ -66,7 +67,8 @@ class SpeechProvider extends ChangeNotifier {
   bool _isSpeaking = false;
   String _lastSpokenText = '';
   LanguageResult? _detectedLanguage;
-  bool _isLiveStt = false;
+  STTMode _currentMode = STTMode.none;
+  StreamSubscription<SpeechResultEvent>? _sttSubscription;
 
   SpeechProvider() {
     _sttProvider = EnhancedSpeechProvider();
@@ -78,26 +80,69 @@ class SpeechProvider extends ChangeNotifier {
   bool get isSpeaking => _isSpeaking;
   String get lastSpokenText => _lastSpokenText;
   LanguageResult? get detectedLanguage => _detectedLanguage;
-  bool get isLiveStt => _isLiveStt;
+  STTMode get currentMode => _currentMode;
 
-  Future<void> initialize() async {
+  bool get isOfflineMode => _currentMode == STTMode.sherpa;
+  bool get isOnlineMode => _currentMode == STTMode.platform;
+  bool get isDemoMode => _currentMode == STTMode.demo;
+  bool get isLiveStt => _currentMode != STTMode.none && _currentMode != STTMode.demo;
+
+  String get sttModeLabel {
+    switch (_currentMode) {
+      case STTMode.sherpa:
+        return 'Offline (Sherpa)';
+      case STTMode.platform:
+        return 'Online (Google)';
+      case STTMode.demo:
+        return 'Demo Mode';
+      case STTMode.none:
+        return 'Unavailable';
+    }
+  }
+
+  Future<void> initialize({String preferredLanguage = 'English'}) async {
     if (_isInitialized) return;
-    await _sttProvider.initialize();
+    await _sttProvider.initialize(preferredLanguage: preferredLanguage);
     await _ttsProvider.initialize();
+    _currentMode = _sttProvider.currentMode;
     _isInitialized = true;
     notifyListeners();
   }
 
   Future<void> startListening({String language = 'English'}) async {
+    _sttSubscription?.cancel();
+    _sttSubscription = _sttProvider.onResult.listen((result) {
+      _currentMode = result.mode;
+      notifyListeners();
+    });
+
     await _sttProvider.startListening(language: language);
-    _isLiveStt = true;
+    _currentMode = _sttProvider.currentMode;
     notifyListeners();
   }
 
   Future<void> stopListening() async {
     await _sttProvider.stopListening();
-    _isLiveStt = false;
+    _sttSubscription?.cancel();
     notifyListeners();
+  }
+
+  Future<void> switchToOfflineMode({String language = 'English'}) async {
+    await _sttProvider.switchMode(STTMode.sherpa, language: language);
+    _currentMode = STTMode.sherpa;
+    notifyListeners();
+  }
+
+  Future<void> switchToOnlineMode({String language = 'English'}) async {
+    await _sttProvider.switchMode(STTMode.platform, language: language);
+    _currentMode = STTMode.platform;
+    notifyListeners();
+  }
+
+  List<String> get offlineLanguages => _sttProvider.offlineLanguages;
+
+  Future<bool> downloadOfflineModel(String language) async {
+    return await _sttProvider.downloadModel(language);
   }
 
   Stream<SpeechResultEvent> get onResult => _sttProvider.onResult;
@@ -132,6 +177,7 @@ class SpeechProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _sttSubscription?.cancel();
     _sttProvider.dispose();
     _ttsProvider.dispose();
     super.dispose();

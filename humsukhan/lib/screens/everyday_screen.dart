@@ -126,7 +126,47 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     ),
                   ),
                   const Spacer(),
-                  OfflineBadge(isOnline: true),
+                  // STT Mode indicator
+                  Consumer<SpeechProvider>(
+                    builder: (_, speech, __) => Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: speech.isOfflineMode
+                            ? AppTheme.successLight.withValues(alpha: 0.2)
+                            : speech.isOnlineMode
+                                ? AppTheme.primaryLight.withValues(alpha: 0.2)
+                                : AppTheme.warningLight.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            speech.isOfflineMode ? Icons.wifi_off : Icons.wifi,
+                            size: 12,
+                            color: speech.isOfflineMode
+                                ? AppTheme.successLight
+                                : speech.isOnlineMode
+                                    ? AppTheme.primaryLight
+                                    : AppTheme.warningLight,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            speech.sttModeLabel,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: speech.isOfflineMode
+                                  ? AppTheme.successLight
+                                  : speech.isOnlineMode
+                                      ? AppTheme.primaryLight
+                                      : AppTheme.warningLight,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
