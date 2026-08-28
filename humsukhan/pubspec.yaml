@@ -20,6 +20,7 @@ dependencies:
   speech_to_text: ^7.0.0
   vibration: ^3.0.0
   share_plus: ^10.1.4
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
