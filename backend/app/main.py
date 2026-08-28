@@ -7,7 +7,7 @@ import time
 
 from app.core.config import settings
 from app.core.database import init_db, close_db
-from app.api.v1 import auth, professional
+from app.api.v1 import auth, professional, websocket
 
 
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -67,6 +67,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Include routers
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(professional.router, prefix=settings.API_V1_PREFIX)
+app.include_router(websocket.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")

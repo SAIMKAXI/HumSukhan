@@ -23,6 +23,7 @@ class HumSukhanApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => EnvironmentalProvider()),
         ChangeNotifierProvider(create: (_) => SpeechProvider()),
         ChangeNotifierProvider(create: (_) => QuickReplyProvider()),
+        ChangeNotifierProvider(create: (_) => WebSocketProvider()),
       ],
       child: Consumer<SettingsProvider>(
         builder: (context, settings, _) {

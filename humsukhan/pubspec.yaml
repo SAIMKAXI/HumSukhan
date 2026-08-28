@@ -23,6 +23,7 @@ dependencies:
   http: ^1.2.2
   sherpa_onnx: ^1.13.6
   archive: ^4.0.2
+  web_socket_channel: ^3.0.3
 
 dev_dependencies:
   flutter_test:

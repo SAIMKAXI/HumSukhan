@@ -5,3 +5,4 @@ export 'professional_provider.dart';
 export 'environmental_provider.dart';
 export 'speech_provider.dart';
 export 'quick_reply_provider.dart';
+export 'websocket_provider.dart';
