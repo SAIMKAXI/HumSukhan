@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../widgets/reusable_widgets.dart';
-import '../navigation/app_router.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -16,153 +15,204 @@ class HomeScreen extends StatelessWidget {
     final profile = user.profile;
 
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppTheme.spacingMD),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              const SizedBox(height: AppTheme.spacingMD),
-              Text(
-                'HumSukhan',
-                style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              const SizedBox(height: AppTheme.spacingXS),
-              Text(
-                'Good ${_timeGreeting()}, ${profile?.name ?? 'there'}',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: AppTheme.spacingXS),
-              Text(
-                'Your accessibility companion',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Theme.of(context).textTheme.bodySmall?.color,
-                ),
-              ),
-              const SizedBox(height: AppTheme.spacingXL),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [AppTokens.warmIvory, AppTokens.softCream],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppTokens.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: AppTokens.lg),
 
-              // Quick Actions
-              Text(
-                'QUICK ACTIONS',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: Theme.of(context).textTheme.bodySmall?.color,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              const SizedBox(height: AppTheme.spacingMD),
-
-              // Everyday Mode Card
-              _QuickActionCard(
-                title: 'Everyday Mode',
-                subtitle: 'Start a Conversation',
-                icon: Icons.chat_bubble_outline,
-                color: AppTheme.primaryLight,
-                onTap: () => Navigator.pushNamed(context, AppRouter.everyday),
-              ),
-              const SizedBox(height: AppTheme.spacingSM),
-
-              // Professional Mode Card
-              _QuickActionCard(
-                title: 'Professional Mode',
-                subtitle: 'Start a Meeting / Lecture',
-                icon: Icons.work_outline,
-                color: AppTheme.secondaryLight,
-                onTap: () => Navigator.pushNamed(context, AppRouter.professional),
-              ),
-              const SizedBox(height: AppTheme.spacingSM),
-
-              // Environmental Alerts Card
-              _QuickActionCard(
-                title: 'Environmental Alerts',
-                subtitle: environmental.monitoringEnabled ? 'Monitoring active' : 'Monitoring off',
-                icon: Icons.volume_up,
-                color: environmental.monitoringEnabled ? AppTheme.successLight : Colors.grey,
-                onTap: () => Navigator.pushNamed(context, AppRouter.environmental),
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: environmental.monitoringEnabled
-                        ? AppTheme.successLight.withValues(alpha: 0.15)
-                        : Colors.grey.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                  ),
-                  child: Text(
-                    environmental.monitoringEnabled ? 'ON' : 'OFF',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: environmental.monitoringEnabled ? AppTheme.successLight : Colors.grey,
+                // Logo + Header
+                Row(
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTokens.deepSage.withValues(alpha: 0.15),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.asset('assets/logo.png', fit: BoxFit.cover),
+                      ),
                     ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: AppTheme.spacingXL),
-
-              // Recent Sessions
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'RECENT SESSIONS',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Theme.of(context).textTheme.bodySmall?.color,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pushNamed(context, AppRouter.professional),
-                    child: const Text('View all'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppTheme.spacingSM),
-
-              if (professional.recentSessions.isEmpty)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Icon(Icons.event_note, color: Colors.grey[400]),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'No recent sessions. Start a Professional session when you are ready.',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.grey[500],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Good ${_timeGreeting()}, ${profile?.name ?? 'there'}',
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              color: AppTokens.textDeepForest,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Your accessibility companion',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: AppTokens.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: AppTokens.xl),
+
+                // Quick Actions
+                const Text(
+                  'QUICK ACTIONS',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppTokens.textMuted,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: AppTokens.md),
+
+                // Everyday Mode
+                _ActionCard(
+                  title: 'Everyday Mode',
+                  subtitle: 'Start a Conversation',
+                  icon: Icons.chat_bubble_outline,
+                  onTap: () => Navigator.pushNamed(context, '/everyday'),
+                ),
+                const SizedBox(height: AppTokens.sm),
+
+                // Professional Mode
+                _ActionCard(
+                  title: 'Professional Mode',
+                  subtitle: 'Start a Meeting / Lecture',
+                  icon: Icons.work_outline,
+                  onTap: () => Navigator.pushNamed(context, '/professional'),
+                ),
+                const SizedBox(height: AppTokens.sm),
+
+                // Environmental Alerts
+                _ActionCard(
+                  title: 'Environmental Alerts',
+                  subtitle: environmental.monitoringEnabled ? 'Monitoring active' : 'Monitoring off',
+                  icon: Icons.volume_up,
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: environmental.monitoringEnabled
+                          ? AppTokens.deepSage.withValues(alpha: 0.15)
+                          : AppTokens.mutedSageGray.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(AppTokens.radiusFull),
+                    ),
+                    child: Text(
+                      environmental.monitoringEnabled ? 'ON' : 'OFF',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: environmental.monitoringEnabled ? AppTokens.deepSage : AppTokens.textMuted,
+                      ),
                     ),
                   ),
-                )
-              else
-                ...professional.recentSessions.map((session) =>
-                  SessionCard(
-                    session: session,
-                    insight: professional.getInsightForSession(session.id),
-                    onTap: () => Navigator.pushNamed(
-                      context,
-                      AppRouter.sessionDetail,
-                      arguments: session.id,
+                  onTap: () => Navigator.pushNamed(context, '/environmental'),
+                ),
+
+                const SizedBox(height: AppTokens.xl),
+
+                // Recent Sessions
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'RECENT SESSIONS',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppTokens.textMuted,
+                        letterSpacing: 1.5,
+                      ),
                     ),
+                    TextButton(
+                      onPressed: () => Navigator.pushNamed(context, '/professional'),
+                      child: const Text('View all', style: TextStyle(color: AppTokens.deepSage)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTokens.sm),
+
+                if (professional.recentSessions.isEmpty)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.event_note, color: AppTokens.mutedSageGray),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'No recent sessions. Start a Professional session when you are ready.',
+                              style: TextStyle(color: AppTokens.textMuted, fontSize: 14),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  ...professional.recentSessions.map((session) =>
+                    SessionCard(
+                      session: session,
+                      insight: professional.getInsightForSession(session.id),
+                      onTap: () => Navigator.pushNamed(context, '/session/detail', arguments: session.id),
+                    ),
+                  ),
+
+                const SizedBox(height: AppTokens.xl),
+
+                // Privacy Note
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppTokens.deepSage.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                    border: Border.all(color: AppTokens.deepSage.withValues(alpha: 0.15)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.shield, size: 18, color: AppTokens.deepSage),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Listening begins only when you start. Audio is processed temporarily and released.',
+                          style: TextStyle(fontSize: 12, color: AppTokens.deepSage),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
-              const SizedBox(height: AppTheme.spacingXL),
-
-              // Privacy Note
-              const PrivacyNotice(
-                text: 'Listening begins only when you start. Audio is processed temporarily and released. Raw audio is never stored.',
-              ),
-
-              const SizedBox(height: AppTheme.spacingLG),
-            ],
+                const SizedBox(height: AppTokens.lg),
+              ],
+            ),
           ),
         ),
       ),
@@ -177,19 +227,17 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-class _QuickActionCard extends StatelessWidget {
+class _ActionCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
-  final Color color;
   final VoidCallback onTap;
   final Widget? trailing;
 
-  const _QuickActionCard({
+  const _ActionCard({
     required this.title,
     required this.subtitle,
     required this.icon,
-    required this.color,
     required this.onTap,
     this.trailing,
   });
@@ -199,7 +247,7 @@ class _QuickActionCard extends StatelessWidget {
     return Card(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMD),
+        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -208,25 +256,28 @@ class _QuickActionCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSM),
+                  color: AppTokens.deepSage.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AppTokens.radiusSm),
                 ),
-                child: Icon(icon, color: color, size: 24),
+                child: Icon(icon, color: AppTokens.deepSage, size: 24),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    Text(title, style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600, color: AppTokens.textDeepForest,
+                    )),
                     const SizedBox(height: 2),
-                    Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                    Text(subtitle, style: const TextStyle(
+                      fontSize: 13, color: AppTokens.textSecondary,
+                    )),
                   ],
                 ),
               ),
-              if (trailing != null) trailing! else Icon(
-                Icons.chevron_right,
-                color: Theme.of(context).textTheme.bodySmall?.color,
+              if (trailing != null) trailing! else const Icon(
+                Icons.chevron_right, color: AppTokens.mutedSageGray, size: 22,
               ),
             ],
           ),
