@@ -1,7 +1,7 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.13.1
@@ -9,20 +9,23 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.8
   provider: ^6.1.5+1
   shared_preferences: ^2.5.5
   path_provider: ^2.1.6
   uuid: ^4.6.0
-  intl: ^0.19.0
+  intl: ^0.20.3
   permission_handler: ^12.0.3
   flutter_tts: ^4.2.5
   speech_to_text: ^7.4.0
   vibration: ^3.2.0
   share_plus: ^10.1.4
-  http: ^1.2.2
   sherpa_onnx: ^1.13.6
-  web_socket_channel: ^3.0.3
+  supabase_flutter: ^2.8.0
+  http: ^1.2.0
+  record: ^5.1.0
 
 dev_dependencies:
   flutter_test:
@@ -33,3 +36,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+  fonts:
+    - family: NotoSans
+      fonts:
+        - asset: fonts/noto_sans/NotoSans-Regular.ttf
+    - family: NotoNastaliqUrdu
+      fonts:
+        - asset: fonts/noto_sans/NotoNastaliqUrdu-Regular.ttf

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
-import '../widgets/reusable_widgets.dart';
+import '../l10n/app_strings.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -23,6 +23,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -40,7 +41,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 alignment: Alignment.topRight,
                 child: TextButton(
                   onPressed: _completeOnboarding,
-                  child: const Text('Skip', style: TextStyle(color: AppTokens.textSecondary)),
+                  child: Text(s.skip, style: const TextStyle(color: AppTokens.textSecondary)),
                 ),
               ),
 
@@ -51,33 +52,38 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   onPageChanged: (idx) => setState(() => _currentPage = idx),
                   children: [
                     _buildPage(
+                      context,
                       'assets/logo.png',
-                      'Welcome to HumSukhan',
-                      'A calm, inclusive companion for conversations, captions, and professional listening.',
+                      s.onboardingWelcome,
+                      s.onboardingWelcomeDesc,
                       isLogo: true,
                     ),
                     _buildPage(
+                      context,
                       null,
-                      'Everyday Conversations',
-                      'Get live captions during conversations. Respond with text, quick replies, or text-to-speech.',
+                      s.onboardingEveryday,
+                      s.onboardingEverydayDesc,
                       icon: Icons.chat_bubble_outline,
                     ),
                     _buildPage(
+                      context,
                       null,
-                      'Professional Listening',
-                      'Capture lectures and meetings. Get AI-powered summaries, action items, and insights.',
+                      s.onboardingProfessional,
+                      s.onboardingProfessionalDesc,
                       icon: Icons.work_outline,
                     ),
                     _buildPage(
+                      context,
                       null,
-                      'Environmental Awareness',
-                      'Know about important sounds around you — fire alarms, doorbells, phone calls, and more.',
+                      s.onboardingEnvironmental,
+                      s.onboardingEnvironmentalDesc,
                       icon: Icons.volume_up,
                     ),
                     _buildPage(
+                      context,
                       null,
-                      'Privacy First',
-                      'Audio is processed temporarily and released. No raw audio is ever stored.',
+                      s.onboardingPrivacy,
+                      s.onboardingPrivacyDesc,
                       icon: Icons.shield,
                     ),
                   ],
@@ -117,7 +123,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           backgroundColor: AppTokens.deepSage,
                           foregroundColor: AppTokens.warmIvory,
                         ),
-                        child: const Text('Get Started', style: TextStyle(fontWeight: FontWeight.w600)),
+                        child: Text(s.getStarted, style: const TextStyle(fontWeight: FontWeight.w600)),
                       )
                     : ElevatedButton(
                         onPressed: () {
@@ -131,7 +137,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           backgroundColor: AppTokens.deepSage,
                           foregroundColor: AppTokens.warmIvory,
                         ),
-                        child: const Text('Next', style: TextStyle(fontWeight: FontWeight.w600)),
+                        child: Text(s.next, style: const TextStyle(fontWeight: FontWeight.w600)),
                       ),
               ),
 
@@ -143,7 +149,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildPage(String? imagePath, String title, String subtitle, {
+  Widget _buildPage(BuildContext context, String? imagePath, String title, String subtitle, {
     IconData? icon,
     bool isLogo = false,
   }) {
@@ -208,6 +214,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   void _completeOnboarding() {
     context.read<SettingsProvider>().completeOnboarding();
-    Navigator.of(context).pushReplacementNamed('/home');
+    Navigator.of(context).pushReplacementNamed('/auth');
   }
 }

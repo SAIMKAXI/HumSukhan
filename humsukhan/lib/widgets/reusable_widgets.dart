@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
+import '../l10n/app_strings.dart';
 
 // ===== STATUS INDICATOR =====
 class StatusIndicator extends StatelessWidget {
@@ -89,10 +90,11 @@ class RetentionBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     Color bgColor; Color textColor; String text;
-    if (daysRemaining <= 2) { bgColor = AppTokens.error.withValues(alpha: 0.1); textColor = AppTokens.error; text = '$daysRemaining days left'; }
-    else if (daysRemaining <= 7) { bgColor = AppTokens.warning.withValues(alpha: 0.1); textColor = AppTokens.warning; text = '$daysRemaining days left'; }
-    else { bgColor = AppTokens.deepSage.withValues(alpha: 0.1); textColor = AppTokens.deepSage; text = '$daysRemaining days left'; }
+    if (daysRemaining <= 2) { bgColor = AppTokens.error.withValues(alpha: 0.1); textColor = AppTokens.error; text = '$daysRemaining ${s.daysLeft}'; }
+    else if (daysRemaining <= 7) { bgColor = AppTokens.warning.withValues(alpha: 0.1); textColor = AppTokens.warning; text = '$daysRemaining ${s.daysLeft}'; }
+    else { bgColor = AppTokens.deepSage.withValues(alpha: 0.1); textColor = AppTokens.deepSage; text = '$daysRemaining ${s.daysLeft}'; }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -118,6 +120,7 @@ class SessionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     return Card(
       child: InkWell(
         onTap: onTap,
@@ -142,13 +145,13 @@ class SessionCard extends StatelessWidget {
               const SizedBox(width: 16),
               Icon(Icons.subtitles, size: 14, color: AppTokens.textMuted),
               const SizedBox(width: 4),
-              Text('${session.captions.length} captions',
+              Text('${session.captions.length} ${s.captionsLabel}',
                   style: const TextStyle(fontSize: 12, color: AppTokens.textMuted)),
               if (insight != null && insight!.isAvailable) ...[
                 const SizedBox(width: 16),
                 const Icon(Icons.auto_awesome, size: 14, color: AppTokens.deepSage),
                 const SizedBox(width: 4),
-                const Text('Insights', style: TextStyle(fontSize: 12, color: AppTokens.deepSage)),
+                Text(s.aiInsights, style: const TextStyle(fontSize: 12, color: AppTokens.deepSage)),
               ],
             ]),
           ]),
@@ -168,6 +171,7 @@ class InsightCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -178,7 +182,7 @@ class InsightCard extends StatelessWidget {
             Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTokens.textDeepForest)),
           ]),
           const SizedBox(height: 12),
-          if (items.isEmpty) const Text('No items available', style: TextStyle(color: AppTokens.textMuted, fontSize: 13))
+          if (items.isEmpty) Text(s.noItemsAvailable, style: const TextStyle(color: AppTokens.textMuted, fontSize: 13))
           else ...items.map((item) => Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -274,6 +278,7 @@ class AiDisclaimer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(12),
@@ -282,11 +287,11 @@ class AiDisclaimer extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTokens.radiusSm),
         border: Border.all(color: AppTokens.warning.withValues(alpha: 0.2)),
       ),
-      child: const Row(children: [
-        Icon(Icons.auto_awesome, size: 16, color: AppTokens.warning),
-        SizedBox(width: 8),
-        Expanded(child: Text('AI-generated — may contain errors',
-            style: TextStyle(fontSize: 12, color: AppTokens.warning, fontWeight: FontWeight.w500))),
+      child: Row(children: [
+        const Icon(Icons.auto_awesome, size: 16, color: AppTokens.warning),
+        const SizedBox(width: 8),
+        Expanded(child: Text(s.aiDisclaimer,
+            style: const TextStyle(fontSize: 12, color: AppTokens.warning, fontWeight: FontWeight.w500))),
       ]),
     );
   }

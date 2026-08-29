@@ -1,19 +1,27 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
+import '../services/alert_service.dart';
+import '../services/sound_detection_service.dart';
+import 'settings_provider.dart';
 
 class EnvironmentalProvider extends ChangeNotifier {
   bool _monitoringEnabled = false;
-  List<SoundEvent> _alertHistory = [];
+  final List<SoundEvent> _alertHistory = [];
   SoundEvent? _currentAlert;
-  bool _isProcessing = false;
-  Timer? _cooldownTimer;
+  final bool _isProcessing = false;
   String? _lastAlertType;
   DateTime? _lastAlertTime;
 
   static const _cooldownDuration = Duration(seconds: 30);
   static const _minConfidence = 0.6;
-  static const _minDuration = Duration(seconds: 2);
+  SettingsProvider? _settingsProvider;
+  final SoundDetectionService _soundService = SoundDetectionService.instance;
+
+  /// Set the settings provider for alert feedback integration.
+  void setSettingsProvider(SettingsProvider settings) {
+    _settingsProvider = settings;
+  }
 
   // Getters
   bool get monitoringEnabled => _monitoringEnabled;
@@ -38,9 +46,18 @@ class EnvironmentalProvider extends ChangeNotifier {
     'Baby Cry': 'A baby crying sound was detected.',
   };
 
-  void toggleMonitoring() {
+  void toggleMonitoring() async {
     _monitoringEnabled = !_monitoringEnabled;
-    if (!_monitoringEnabled) {
+
+    if (_monitoringEnabled) {
+      // Initialize and start the real sound detection service
+      await _soundService.initialize();
+      _soundService.onSoundDetected = (event) {
+        processSoundEvent(event);
+      };
+      await _soundService.startMonitoring();
+    } else {
+      _soundService.stopMonitoring();
       _currentAlert = null;
     }
     notifyListeners();
@@ -64,6 +81,12 @@ class EnvironmentalProvider extends ChangeNotifier {
     _lastAlertType = event.type;
     _lastAlertTime = DateTime.now();
     notifyListeners();
+
+    // Trigger alert feedback (haptic, screen flash, flashlight)
+    if (_settingsProvider != null) {
+      AlertService.instance.triggerAlert(_settingsProvider!, severity: event.severity);
+    }
+
     return true;
   }
 
@@ -83,7 +106,8 @@ class EnvironmentalProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Simulate demo alerts
+  /// Manually trigger a test alert.
+  /// This uses the real SoundEvent model but is triggered manually.
   void simulateAlert(String type, {double confidence = 0.85}) {
     final event = SoundEvent(
       type: type,
@@ -91,5 +115,11 @@ class EnvironmentalProvider extends ChangeNotifier {
       severity: (type == 'Fire Alarm' || type == 'Smoke Alarm') ? 'critical' : 'warning',
     );
     processSoundEvent(event);
+  }
+
+  @override
+  void dispose() {
+    _soundService.dispose();
+    super.dispose();
   }
 }

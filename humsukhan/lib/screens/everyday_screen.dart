@@ -5,6 +5,7 @@ import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
+import '../l10n/app_strings.dart';
 
 class EverydayScreen extends StatefulWidget {
   const EverydayScreen({super.key});
@@ -68,10 +69,11 @@ class _EverydayScreenState extends State<EverydayScreen> {
     final settings = context.watch<SettingsProvider>();
     final quickReplies = context.watch<QuickReplyProvider>();
     final speech = context.watch<SpeechProvider>();
+    final s = AppStrings.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Everyday'),
+        title: Text(s.everydayTitle),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -91,7 +93,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: StatusIndicator(
-                label: 'Duration: ${conv.formattedDuration}',
+                label: '${s.durationLabel}: ${conv.formattedDuration}',
                 color: Theme.of(context).colorScheme.primary,
                 isActive: true,
                 icon: Icons.timer,
@@ -118,7 +120,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    conv.isListening ? 'Listening — audio is processed temporarily' : conv.listeningStatus,
+                    conv.isListening ? s.listeningStatus : conv.listeningStatus,
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -128,7 +130,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                   const Spacer(),
                   // STT Mode indicator
                   Consumer<SpeechProvider>(
-                    builder: (_, speech, __) => Container(
+                    builder: (_, speech, _) => Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: speech.isOfflineMode
@@ -173,17 +175,17 @@ class _EverydayScreenState extends State<EverydayScreen> {
 
           // Privacy Banner
           if (conv.state == ConversationState.idle)
-            const PrivacyNotice(
-              text: 'Listening begins only when you start. Audio is processed temporarily and released.',
+            PrivacyNotice(
+              text: s.privacyNote,
             ),
 
           // Caption Area
           Expanded(
             child: conv.state == ConversationState.idle
-                ? _buildIdleState(context)
+                ? _buildIdleState(context, s)
                 : conv.state == ConversationState.saveDecision
-                    ? _buildSaveDecision(context)
-                    : _buildCaptionArea(context, conv, settings),
+                    ? _buildSaveDecision(context, s)
+                    : _buildCaptionArea(context, conv, settings, s),
           ),
 
           // Quick Replies
@@ -227,7 +229,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     child: TextField(
                       controller: _textController,
                       decoration: InputDecoration(
-                        hintText: 'Type a response...',
+                        hintText: s.typeResponse,
                         hintStyle: TextStyle(color: Colors.grey[400]),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(AppTheme.radiusFull),
@@ -284,7 +286,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: PrimaryActionButton(
-                label: 'Stop Conversation',
+                label: s.stopConversation,
                 icon: Icons.stop,
                 onPressed: () {
                   context.read<SpeechProvider>().stopListening();
@@ -305,7 +307,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
     _scrollToBottom();
   }
 
-  Widget _buildIdleState(BuildContext context) {
+  Widget _buildIdleState(BuildContext context, AppStrings s) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -315,12 +317,12 @@ class _EverydayScreenState extends State<EverydayScreen> {
             Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[300]),
             const SizedBox(height: 24),
             Text(
-              'Start a Conversation',
+              s.startConversation,
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: 12),
             Text(
-              'A calm, caption-first conversation space.\nSpeak naturally — captions will appear here.',
+              s.listeningDots,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: Theme.of(context).textTheme.bodySmall?.color,
               ),
@@ -328,7 +330,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
             ),
             const SizedBox(height: 32),
             PrimaryActionButton(
-              label: 'Start Listening',
+              label: s.startListening,
               icon: Icons.mic,
               onPressed: () {
                 context.read<ConversationProvider>().startConversation();
@@ -341,7 +343,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
     );
   }
 
-  Widget _buildCaptionArea(BuildContext context, ConversationProvider conv, SettingsProvider settings) {
+  Widget _buildCaptionArea(BuildContext context, ConversationProvider conv, SettingsProvider settings, AppStrings s) {
     return Column(
       children: [
         // Language indicator
@@ -351,7 +353,9 @@ class _EverydayScreenState extends State<EverydayScreen> {
             children: [
               LanguageBadge(language: conv.currentLanguage),
               const SizedBox(width: 8),
-              OfflineBadge(isOnline: true),
+              Consumer<ConnectivityProvider>(
+                builder: (_, conn, _) => OfflineBadge(isOnline: conn.isOnline),
+              ),
             ],
           ),
         ),
@@ -361,7 +365,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
           child: conv.captions.isEmpty && conv.currentPartial == null
               ? Center(
                   child: Text(
-                    'Listening...\nCaptions will appear here.',
+                    s.listeningDots,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: Colors.grey[400],
@@ -392,7 +396,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
     );
   }
 
-  Widget _buildSaveDecision(BuildContext context) {
+  Widget _buildSaveDecision(BuildContext context, AppStrings s) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -402,31 +406,31 @@ class _EverydayScreenState extends State<EverydayScreen> {
             Icon(Icons.save_alt, size: 64, color: Theme.of(context).colorScheme.primary),
             const SizedBox(height: 24),
             Text(
-              'Save Conversation?',
+              s.saveConversation,
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: 12),
             Text(
-              'Would you like to save these captions for reference?',
+              s.saveConversationDesc,
               style: Theme.of(context).textTheme.bodyLarge,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
             PrimaryActionButton(
-              label: 'Save',
+              label: s.save,
               icon: Icons.save,
               onPressed: () => context.read<ConversationProvider>().saveConversation(),
             ),
             const SizedBox(height: 12),
             SecondaryActionButton(
-              label: 'Delete',
+              label: s.delete,
               icon: Icons.delete_outline,
-              onPressed: () => _showDeleteConfirmation(context),
+              onPressed: () => _showDeleteConfirmation(context, s),
             ),
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => context.read<ConversationProvider>().cancelStop(),
-              child: const Text('Continue Listening'),
+              child: Text(s.continueListening),
             ),
           ],
         ),
@@ -434,23 +438,23 @@ class _EverydayScreenState extends State<EverydayScreen> {
     );
   }
 
-  void _showDeleteConfirmation(BuildContext context) {
+  void _showDeleteConfirmation(BuildContext context, AppStrings s) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Conversation?'),
-        content: const Text('This will permanently remove all captions from this conversation.'),
+        title: Text(s.deleteConversation),
+        content: Text(s.deleteConversationDesc),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(s.cancel),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               context.read<ConversationProvider>().deleteConversation();
             },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text(s.delete, style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),

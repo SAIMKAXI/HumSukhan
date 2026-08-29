@@ -4,6 +4,7 @@ import '../widgets/main_scaffold.dart';
 
 class AppRouter {
   static const String onboarding = '/';
+  static const String auth = '/auth';
   static const String home = '/home';
   static const String everyday = '/everyday';
   static const String professional = '/professional';
@@ -16,6 +17,8 @@ class AppRouter {
     switch (routeSettings.name) {
       case onboarding:
         return MaterialPageRoute(builder: (_) => const OnboardingScreen());
+      case auth:
+        return MaterialPageRoute(builder: (_) => const AuthScreen());
       case home:
         return MaterialPageRoute(builder: (_) => const MainScaffold());
       case everyday:

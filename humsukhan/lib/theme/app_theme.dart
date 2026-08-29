@@ -77,12 +77,13 @@ class AppTokens {
 
 // ===== LIGHT THEME =====
 class AppTheme {
-  static ThemeData lightTheme() {
+  static ThemeData lightTheme({String? fontFamily}) {
     // Using AppTokens directly
 
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      fontFamily: fontFamily ?? 'NotoSans',
       colorScheme: ColorScheme.light(
         primary: AppTokens.deepSage,
         primaryContainer: AppTokens.softSage,
@@ -233,12 +234,13 @@ class AppTheme {
   }
 
   // ===== DARK THEME =====
-  static ThemeData darkTheme() {
+  static ThemeData darkTheme({String? fontFamily}) {
     // Using AppTokens directly
 
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: fontFamily ?? 'NotoSans',
       colorScheme: ColorScheme.dark(
         primary: AppTokens.softSage,
         primaryContainer: AppTokens.deepSage,

@@ -2,10 +2,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
+import '../l10n/app_strings.dart';
 
 class QuickReplyProvider extends ChangeNotifier {
   List<QuickReply> _replies = [];
   bool _isLoading = false;
+  String _currentLanguage = 'en';
 
   List<QuickReply> get replies => List.unmodifiable(_replies);
   bool get isLoading => _isLoading;
@@ -16,19 +18,6 @@ class QuickReplyProvider extends ChangeNotifier {
       _replies.where((r) => r.category == 'Response').toList();
   List<QuickReply> get favoriteReplies =>
       _replies.where((r) => r.isFavorite).toList();
-
-  static final _defaultReplies = [
-    QuickReply(text: 'Hello', category: 'Conversation'),
-    QuickReply(text: 'Thank you', category: 'Conversation'),
-    QuickReply(text: 'Please wait', category: 'Conversation'),
-    QuickReply(text: 'Please repeat that', category: 'Conversation'),
-    QuickReply(text: 'Please type it', category: 'Conversation'),
-    QuickReply(text: 'I did not understand', category: 'Conversation'),
-    QuickReply(text: 'Yes', category: 'Response'),
-    QuickReply(text: 'No', category: 'Response'),
-    QuickReply(text: 'One moment, please', category: 'Response'),
-    QuickReply(text: 'I need help', category: 'Response'),
-  ];
 
   QuickReplyProvider() {
     _loadReplies();
@@ -41,20 +30,50 @@ class QuickReplyProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final json = prefs.getString('quickReplies');
+      _currentLanguage = prefs.getString('appLanguage') ?? 'en';
 
       if (json != null) {
         _replies = (jsonDecode(json) as List)
             .map((r) => QuickReply.fromJson(r))
             .toList();
       } else {
-        _replies = List.from(_defaultReplies);
+        _replies = _buildDefaultReplies(_currentLanguage);
         await _saveReplies();
       }
     } catch (e) {
-      _replies = List.from(_defaultReplies);
+      _replies = _buildDefaultReplies(_currentLanguage);
     }
 
     _isLoading = false;
+    notifyListeners();
+  }
+
+  List<QuickReply> _buildDefaultReplies(String langCode) {
+    final data = langCode == 'ur'
+        ? AppStrings.quickRepliesUr
+        : AppStrings.quickRepliesEn;
+    return data.map((r) => QuickReply(text: r.$1, category: r.$2)).toList();
+  }
+
+  /// Switch replies to a new language, replacing defaults.
+  /// User-added custom replies are preserved.
+  Future<void> switchLanguage(String langCode) async {
+    if (_currentLanguage == langCode) return;
+    _currentLanguage = langCode;
+
+    final newDefaults = _buildDefaultReplies(langCode);
+
+    // Keep only custom (non-default) replies, then add new language defaults
+    final defaultTextsEn = AppStrings.quickRepliesEn.map<String>((r) => r.$1).toSet();
+    final defaultTextsUr = AppStrings.quickRepliesUr.map<String>((r) => r.$1).toSet();
+    final Set<String> allDefaultTexts = {...defaultTextsEn, ...defaultTextsUr};
+
+    final customReplies = _replies
+        .where((r) => !allDefaultTexts.contains(r.text))
+        .toList();
+
+    _replies = [...newDefaults, ...customReplies];
+    await _saveReplies();
     notifyListeners();
   }
 

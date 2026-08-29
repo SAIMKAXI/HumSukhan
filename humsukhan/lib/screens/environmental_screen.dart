@@ -4,6 +4,7 @@ import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
+import '../l10n/app_strings.dart';
 
 class EnvironmentalScreen extends StatelessWidget {
   const EnvironmentalScreen({super.key});
@@ -11,10 +12,11 @@ class EnvironmentalScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final env = context.watch<EnvironmentalProvider>();
+    final s = AppStrings.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Environmental Alerts'),
+        title: Text(s.environmentalTitle),
       ),
       body: Column(
         children: [
@@ -37,7 +39,7 @@ class EnvironmentalScreen extends StatelessWidget {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      env.monitoringEnabled ? 'Monitoring Active' : 'Monitoring Off',
+                      env.monitoringEnabled ? s.monitoringActiveTitle : s.monitoringOffTitle,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -52,7 +54,7 @@ class EnvironmentalScreen extends StatelessWidget {
                   child: ElevatedButton.icon(
                     onPressed: () => env.toggleMonitoring(),
                     icon: Icon(env.monitoringEnabled ? Icons.stop : Icons.play_arrow),
-                    label: Text(env.monitoringEnabled ? 'Stop Monitoring' : 'Start Monitoring'),
+                    label: Text(env.monitoringEnabled ? s.stopMonitoring : s.startMonitoring),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: env.monitoringEnabled ? AppTheme.errorLight : AppTheme.successLight,
                       foregroundColor: Colors.white,
@@ -63,7 +65,7 @@ class EnvironmentalScreen extends StatelessWidget {
             ),
           ),
 
-          // Quick demo alerts
+          // Manual test alerts (trigger real event processing)
           if (env.monitoringEnabled) ...[
             Padding(
               padding: const EdgeInsets.all(16),
@@ -71,7 +73,7 @@ class EnvironmentalScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'DEMO ALERTS',
+                    'TEST ALERTS',
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: Theme.of(context).textTheme.bodySmall?.color,
                       letterSpacing: 1.2,
@@ -84,7 +86,7 @@ class EnvironmentalScreen extends StatelessWidget {
                     children: EnvironmentalProvider.alertDescriptions.keys.map((type) =>
                       ActionChip(
                         avatar: Icon(_alertIcon(type), size: 16),
-                        label: Text(type, style: const TextStyle(fontSize: 12)),
+                        label: Text(_alertLabel(type, s), style: const TextStyle(fontSize: 12)),
                         onPressed: () => env.simulateAlert(type),
                       ),
                     ).toList(),
@@ -97,7 +99,7 @@ class EnvironmentalScreen extends StatelessWidget {
 
           // Active Alert Overlay
           if (env.currentAlert != null)
-            _ActiveAlertBanner(event: env.currentAlert!, onDismiss: () => env.dismissAlert()),
+            _ActiveAlertBanner(event: env.currentAlert!, onDismiss: () => env.dismissAlert(), s: s),
 
           // Alert History Header
           Padding(
@@ -106,7 +108,7 @@ class EnvironmentalScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'ALERT HISTORY',
+                  s.alertHistory,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: Theme.of(context).textTheme.bodySmall?.color,
                     letterSpacing: 1.2,
@@ -115,7 +117,7 @@ class EnvironmentalScreen extends StatelessWidget {
                 if (env.alertHistory.isNotEmpty)
                   TextButton(
                     onPressed: () => env.clearHistory(),
-                    child: const Text('Clear All'),
+                    child: Text(s.clearAll),
                   ),
               ],
             ),
@@ -124,10 +126,10 @@ class EnvironmentalScreen extends StatelessWidget {
           // Alert History List
           Expanded(
             child: env.alertHistory.isEmpty
-                ? const EmptyState(
+                ? EmptyState(
                     icon: Icons.notifications_none,
-                    title: 'No alerts yet',
-                    subtitle: 'Alert history will appear here when sounds are detected.',
+                    title: s.noAlertsYet,
+                    subtitle: s.noAlertsDesc,
                   )
                 : ListView.builder(
                     itemCount: env.alertHistory.length,
@@ -143,6 +145,20 @@ class EnvironmentalScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _alertLabel(String type, AppStrings s) {
+    switch (type) {
+      case 'Fire Alarm': return s.fireAlarm;
+      case 'Smoke Alarm': return s.smokeAlarm;
+      case 'Siren': return s.siren;
+      case 'Doorbell': return s.doorbell;
+      case 'Knock': return s.knock;
+      case 'Phone': return s.phone;
+      case 'Alarm Clock': return s.alarmClock;
+      case 'Baby Cry': return s.babyCry;
+      default: return type;
+    }
   }
 
   IconData _alertIcon(String type) {
@@ -171,8 +187,9 @@ class EnvironmentalScreen extends StatelessWidget {
 class _ActiveAlertBanner extends StatelessWidget {
   final SoundEvent event;
   final VoidCallback onDismiss;
+  final AppStrings s;
 
-  const _ActiveAlertBanner({required this.event, required this.onDismiss});
+  const _ActiveAlertBanner({required this.event, required this.onDismiss, required this.s});
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +215,7 @@ class _ActiveAlertBanner extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${event.type.toUpperCase()} DETECTED',
+                      '${event.type.toUpperCase()} ${s.detected}',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -209,7 +226,7 @@ class _ActiveAlertBanner extends StatelessWidget {
                     Text(description, style: Theme.of(context).textTheme.bodyMedium),
                     const SizedBox(height: 4),
                     Text(
-                      '${(event.confidence * 100).toInt()}% confidence',
+                      '${(event.confidence * 100).toInt()}% ${s.confidence}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -226,7 +243,7 @@ class _ActiveAlertBanner extends StatelessWidget {
                 backgroundColor: severityColor,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Dismiss'),
+              child: Text(s.dismiss),
             ),
           ),
         ],

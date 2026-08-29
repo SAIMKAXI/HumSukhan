@@ -4,7 +4,7 @@ import '../models/models.dart';
 
 class ConversationProvider extends ChangeNotifier {
   ConversationState _state = ConversationState.idle;
-  List<Caption> _captions = [];
+  final List<Caption> _captions = [];
   Caption? _currentPartial;
   bool _isListening = false;
   String _currentLanguage = 'English';

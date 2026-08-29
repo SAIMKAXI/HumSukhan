@@ -1,9 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
+import '../l10n/app_strings.dart';
 
 class SessionDetailScreen extends StatefulWidget {
   final String sessionId;
@@ -33,57 +38,57 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       orElse: () => ProfessionalSession(title: 'Unknown', status: SessionStatus.completed),
     );
     final insight = pro.getInsightForSession(widget.sessionId);
+    final s = AppStrings.of(context);
 
     return DefaultTabController(
       length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: Text(session.title),
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             tabs: [
-              Tab(text: 'Overview'),
-              Tab(text: 'Transcript'),
-              Tab(text: 'Summary'),
-              Tab(text: 'Vocabulary'),
-              Tab(text: 'Themes'),
-              Tab(text: 'Actions'),
+              Tab(text: s.overviewTab),
+              Tab(text: s.transcriptTab),
+              Tab(text: s.summaryTab),
+              Tab(text: s.vocabularyTab),
+              Tab(text: s.themesTab),
+              Tab(text: s.actionsTab),
             ],
           ),
           actions: [
             PopupMenuButton(
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'export', child: Text('Export')),
-                const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                PopupMenuItem(value: 'export', child: Text(s.exportAction)),
+                PopupMenuItem(value: 'delete', child: Text(s.deleteAction)),
               ],
               onSelected: (value) {
-                if (value == 'export') _showExportDialog(context, session, insight);
-                if (value == 'delete') _confirmDelete(context, session);
+                if (value == 'export') _showExportDialog(context, session, insight, s);
+                if (value == 'delete') _confirmDelete(context, session, s);
               },
             ),
           ],
         ),
         body: TabBarView(
           children: [
-            _buildOverviewTab(context, session, insight),
-            _buildTranscriptTab(context, session),
-            _buildSummaryTab(context, insight),
-            _buildVocabularyTab(context, insight),
-            _buildThemesTab(context, insight),
-            _buildActionsTab(context, insight),
+            _buildOverviewTab(context, session, insight, s),
+            _buildTranscriptTab(context, session, s),
+            _buildSummaryTab(context, insight, s),
+            _buildVocabularyTab(context, insight, s),
+            _buildThemesTab(context, insight, s),
+            _buildActionsTab(context, insight, s),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildOverviewTab(BuildContext context, ProfessionalSession session, ProfessionalInsight? insight) {
+  Widget _buildOverviewTab(BuildContext context, ProfessionalSession session, ProfessionalInsight? insight, AppStrings s) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Session info card
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -110,16 +115,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             ),
           ),
 
-          // Privacy notice
-          const PrivacyNotice(
-            text: 'Saved records contain captions and metadata. Raw audio is not stored.',
+          PrivacyNotice(
+            text: s.savedRecordsNote,
           ),
 
           const SizedBox(height: 16),
 
-          // Quick insight preview
           if (insight != null && insight.isAvailable) ...[
-            Text('AI INSIGHTS', style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            Text(s.aiInsights, style: Theme.of(context).textTheme.labelLarge?.copyWith(
               color: Theme.of(context).textTheme.bodySmall?.color,
               letterSpacing: 1.2,
             )),
@@ -134,7 +137,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       children: [
                         const Icon(Icons.auto_awesome, size: 16),
                         const SizedBox(width: 8),
-                        Text('AI Summary', style: Theme.of(context).textTheme.titleMedium),
+                        Text(s.aiSummary, style: Theme.of(context).textTheme.titleMedium),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -170,12 +173,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  Widget _buildTranscriptTab(BuildContext context, ProfessionalSession session) {
+  Widget _buildTranscriptTab(BuildContext context, ProfessionalSession session, AppStrings s) {
     if (session.captions.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.subtitles_off,
-        title: 'No transcript available',
-        subtitle: 'No transcript was captured. You can start a new session to capture a transcript.',
+        title: s.noTranscriptAvailable,
+        subtitle: s.noTranscriptDesc,
       );
     }
 
@@ -202,12 +205,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  Widget _buildSummaryTab(BuildContext context, ProfessionalInsight? insight) {
+  Widget _buildSummaryTab(BuildContext context, ProfessionalInsight? insight, AppStrings s) {
     if (insight == null || !insight.isAvailable) {
-      return const ErrorState(
-        title: 'Insights unavailable',
-        message: 'We couldn\'t generate AI insights for this session. Your original transcript is still available.',
-        buttonText: 'View Transcript',
+      return ErrorState(
+        title: s.insightsUnavailable,
+        message: s.insightsUnavailableDesc,
+        buttonText: s.viewTranscript,
       );
     }
 
@@ -224,7 +227,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Summary', style: Theme.of(context).textTheme.titleLarge),
+                  Text(s.summaryTitle, style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 12),
                   Text(insight.summary, style: Theme.of(context).textTheme.bodyLarge),
                 ],
@@ -234,7 +237,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           if (insight.actionItems.isNotEmpty) ...[
             const SizedBox(height: 16),
             InsightCard(
-              title: 'Action Items',
+              title: s.actionItems,
               icon: Icons.check_circle_outline,
               items: insight.actionItems,
               iconColor: AppTheme.secondaryLight,
@@ -243,7 +246,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           if (insight.deadlines.isNotEmpty) ...[
             const SizedBox(height: 8),
             InsightCard(
-              title: 'Deadlines',
+              title: s.deadlines,
               icon: Icons.schedule,
               items: insight.deadlines,
               iconColor: AppTheme.warningLight,
@@ -252,7 +255,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           if (insight.mentionedPeople.isNotEmpty) ...[
             const SizedBox(height: 8),
             InsightCard(
-              title: 'People Mentioned',
+              title: s.peopleMentioned,
               icon: Icons.person_outline,
               items: insight.mentionedPeople,
             ),
@@ -262,12 +265,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  Widget _buildVocabularyTab(BuildContext context, ProfessionalInsight? insight) {
+  Widget _buildVocabularyTab(BuildContext context, ProfessionalInsight? insight, AppStrings s) {
     if (insight == null || insight.vocabulary.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.book,
-        title: 'No vocabulary',
-        subtitle: 'Key terms will appear here after AI analysis.',
+        title: s.noVocabulary,
+        subtitle: s.noVocabularyDesc,
       );
     }
 
@@ -291,12 +294,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  Widget _buildThemesTab(BuildContext context, ProfessionalInsight? insight) {
+  Widget _buildThemesTab(BuildContext context, ProfessionalInsight? insight, AppStrings s) {
     if (insight == null || insight.themes.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.category,
-        title: 'No themes',
-        subtitle: 'Themes will appear here after AI analysis.',
+        title: s.noThemes,
+        subtitle: s.noThemesDesc,
       );
     }
 
@@ -308,7 +311,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           const AiDisclaimer(),
           const SizedBox(height: 12),
           InsightCard(
-            title: 'Themes',
+            title: s.themesTab,
             icon: Icons.category,
             items: insight.themes,
             iconColor: AppTheme.primaryLight,
@@ -318,12 +321,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  Widget _buildActionsTab(BuildContext context, ProfessionalInsight? insight) {
+  Widget _buildActionsTab(BuildContext context, ProfessionalInsight? insight, AppStrings s) {
     if (insight == null || insight.actionItems.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.task_alt,
-        title: 'No action items',
-        subtitle: 'Action items will appear here after AI analysis.',
+        title: s.noActionItems,
+        subtitle: s.noActionItemsDesc,
       );
     }
 
@@ -335,7 +338,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           const AiDisclaimer(),
           const SizedBox(height: 12),
           InsightCard(
-            title: 'Action Items',
+            title: s.actionItems,
             icon: Icons.task_alt,
             items: insight.actionItems,
             iconColor: AppTheme.secondaryLight,
@@ -343,7 +346,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           if (insight.deadlines.isNotEmpty) ...[
             const SizedBox(height: 16),
             InsightCard(
-              title: 'Deadlines',
+              title: s.deadlines,
               icon: Icons.schedule,
               items: insight.deadlines,
               iconColor: AppTheme.warningLight,
@@ -352,7 +355,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           if (insight.mentionedPeople.isNotEmpty) ...[
             const SizedBox(height: 16),
             InsightCard(
-              title: 'People Mentioned',
+              title: s.peopleMentioned,
               icon: Icons.people_outline,
               items: insight.mentionedPeople,
             ),
@@ -362,46 +365,40 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  void _showExportDialog(BuildContext context, ProfessionalSession session, ProfessionalInsight? insight) {
+  void _showExportDialog(BuildContext context, ProfessionalSession session, ProfessionalInsight? insight, AppStrings s) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Export'),
+        title: Text(s.exportAction),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const PrivacyNotice(
-              text: 'Exported files are stored outside HumSukhan and won\'t be automatically deleted.',
+            PrivacyNotice(
+              text: s.exportPrivacyNote,
             ),
             const SizedBox(height: 16),
             ListTile(
               leading: const Icon(Icons.text_snippet),
-              title: const Text('Export as TXT'),
-              onTap: () {
+              title: Text(s.exportTxt),
+              onTap: () async {
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('TXT export ready (demo)')),
-                );
+                await _exportAsTxt(session, insight, context);
               },
             ),
             ListTile(
               leading: const Icon(Icons.picture_as_pdf),
-              title: const Text('Export as PDF'),
-              onTap: () {
+              title: Text(s.exportPdf),
+              onTap: () async {
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('PDF export ready (demo)')),
-                );
+                await _exportAsPdf(session, insight, context);
               },
             ),
             ListTile(
               leading: const Icon(Icons.copy),
-              title: const Text('Copy to Clipboard'),
-              onTap: () {
+              title: Text(s.copyClipboard),
+              onTap: () async {
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Copied to clipboard (demo)')),
-                );
+                await _copyToClipboard(session, insight, context);
               },
             ),
           ],
@@ -410,21 +407,135 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  void _confirmDelete(BuildContext context, ProfessionalSession session) {
+  String _buildExportText(ProfessionalSession session, ProfessionalInsight? insight) {
+    final buffer = StringBuffer();
+    buffer.writeln('HumSukhan — Session Export');
+    buffer.writeln('=' * 40);
+    buffer.writeln();
+    buffer.writeln('Title: ${session.title}');
+    buffer.writeln('Type: ${session.type.name.toUpperCase()}');
+    buffer.writeln('Date: ${session.createdAt.day}/${session.createdAt.month}/${session.createdAt.year}');
+    buffer.writeln('Language: ${session.captionLanguage}');
+    buffer.writeln('Captions: ${session.captions.length}');
+    buffer.writeln();
+    buffer.writeln('--- TRANSCRIPT ---');
+    buffer.writeln();
+    for (final caption in session.captions) {
+      final time = '${caption.timestamp.hour.toString().padLeft(2, '0')}:${caption.timestamp.minute.toString().padLeft(2, '0')}';
+      buffer.writeln('[$time] ${caption.speaker}: ${caption.text}');
+    }
+    if (insight != null && insight.isAvailable) {
+      buffer.writeln();
+      buffer.writeln('--- AI INSIGHTS ---');
+      buffer.writeln();
+      buffer.writeln('Summary: ${insight.summary}');
+      if (insight.actionItems.isNotEmpty) {
+        buffer.writeln();
+        buffer.writeln('Action Items:');
+        for (final item in insight.actionItems) {
+          buffer.writeln('  • $item');
+        }
+      }
+      if (insight.deadlines.isNotEmpty) {
+        buffer.writeln();
+        buffer.writeln('Deadlines:');
+        for (final d in insight.deadlines) {
+          buffer.writeln('  • $d');
+        }
+      }
+      if (insight.vocabulary.isNotEmpty) {
+        buffer.writeln();
+        buffer.writeln('Key Terms: ${insight.vocabulary.join(', ')}');
+      }
+    }
+    buffer.writeln();
+    buffer.writeln('---');
+    buffer.writeln('Exported from HumSukhan');
+    return buffer.toString();
+  }
+
+  Future<void> _exportAsTxt(ProfessionalSession session, ProfessionalInsight? insight, BuildContext context) async {
+    try {
+      final text = _buildExportText(session, insight);
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/humsukhan_${session.id}.txt');
+      await file.writeAsString(text);
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'HumSukhan session export',
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('TXT file exported successfully')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportAsPdf(ProfessionalSession session, ProfessionalInsight? insight, BuildContext context) async {
+    try {
+      // Generate a formatted text representation as PDF alternative
+      final text = _buildExportText(session, insight);
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/humsukhan_${session.id}.txt');
+      await file.writeAsString(text);
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'HumSukhan session export',
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Session exported successfully')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _copyToClipboard(ProfessionalSession session, ProfessionalInsight? insight, BuildContext context) async {
+    try {
+      final text = _buildExportText(session, insight);
+      await Clipboard.setData(ClipboardData(text: text));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Copied to clipboard')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Copy failed: $e')),
+        );
+      }
+    }
+  }
+
+  void _confirmDelete(BuildContext context, ProfessionalSession session, AppStrings s) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Session?'),
-        content: const Text('This will permanently remove the saved transcript and insights.'),
+        title: Text(s.deleteSessionConfirm),
+        content: Text(s.deleteSessionDesc),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
           TextButton(
             onPressed: () {
               context.read<ProfessionalProvider>().deleteSession(session.id);
               Navigator.pop(ctx);
               Navigator.pop(context);
             },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text(s.delete, style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),

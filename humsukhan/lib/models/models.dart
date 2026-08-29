@@ -183,13 +183,14 @@ class ProfessionalSession {
     this.type = SessionType.meeting,
     this.folderId,
     this.captionLanguage = 'English',
-    this.retentionDays = 7,
+    int retentionDays = 7,
     DateTime? createdAt,
     DateTime? expiresAt,
     this.status = SessionStatus.inProgress,
     List<Caption>? captions,
     this.transcriptText,
   }) : id = id ?? _uuid.v4(),
+       retentionDays = retentionDays.clamp(1, RetentionPolicy.maxRetentionDays),
        createdAt = createdAt ?? DateTime.now(),
        expiresAt = expiresAt ?? (createdAt ?? DateTime.now()).add(Duration(days: retentionDays)),
        captions = captions ?? [];
@@ -390,11 +391,10 @@ class RetentionPolicy {
   static const options = [
     RetentionPolicy(days: 1, label: '1 day'),
     RetentionPolicy(days: 7, label: '7 days'),
-    RetentionPolicy(days: 15, label: '15 days'),
-    RetentionPolicy(days: 30, label: '30 days (maximum)'),
+    RetentionPolicy(days: 15, label: '15 days (maximum)'),
   ];
 
-  static const maxRetentionDays = 30;
+  static const maxRetentionDays = 15;
 }
 
 // ===================== LANGUAGE =====================

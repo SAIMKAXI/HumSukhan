@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
+import '../l10n/app_strings.dart';
 
 class SplashScreen extends StatefulWidget {
   final VoidCallback onComplete;
@@ -15,6 +17,7 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
+  Timer? _navigationTimer;
 
   @override
   void initState() {
@@ -32,13 +35,14 @@ class _SplashScreenState extends State<SplashScreen>
     _controller.forward();
 
     // Auto-navigate after delay
-    Future.delayed(const Duration(milliseconds: 2500), () {
+    _navigationTimer = Timer(const Duration(milliseconds: 2500), () {
       if (mounted) widget.onComplete();
     });
   }
 
   @override
   void dispose() {
+    _navigationTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -110,8 +114,8 @@ class _SplashScreenState extends State<SplashScreen>
                       const SizedBox(height: 8),
                       // Tagline
                       Text(
-                        'Accessibility-first AI Companion',
-                        style: TextStyle(
+                        AppStrings.of(context).appTagline,
+                        style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w400,
                           color: AppTokens.textSecondary,

@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
-import '../services/api/websocket_client.dart';
 import '../widgets/reusable_widgets.dart';
+import '../l10n/app_strings.dart';
 
 class SessionLiveScreen extends StatefulWidget {
   final String sessionId;
@@ -19,11 +19,8 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   final TextEditingController _captionController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   StreamSubscription? _speechSubscription;
-  StreamSubscription? _wsCaptionSubscription;
-  StreamSubscription? _wsStateSubscription;
   Timer? _durationTimer;
   late DateTime _startTime;
-  bool _useWebSocket = false;
 
   @override
   void initState() {
@@ -46,31 +43,9 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
           widget.sessionId,
           Caption(text: result.text, speaker: 'Speaker 1', language: result.language),
         );
-        if (_useWebSocket) {
-          context.read<WebSocketProvider>().sendCaption(result.text, speaker: 'Speaker 1', language: result.language);
-        }
         _scrollToBottom();
       }
     });
-    _connectWebSocket();
-  }
-
-  void _connectWebSocket() async {
-    final wsProvider = context.read<WebSocketProvider>();
-    _wsCaptionSubscription = wsProvider.client.onCaption.listen((caption) {
-      if (!mounted || caption.userId.isEmpty) return;
-      context.read<ProfessionalProvider>().addCaptionToSession(
-        widget.sessionId,
-        Caption(text: caption.text, speaker: caption.speaker, language: caption.language),
-      );
-      _scrollToBottom();
-    });
-    _wsStateSubscription = wsProvider.client.onConnectionState.listen((state) {
-      if (mounted) setState(() => _useWebSocket = state == WSConnectionState.connected);
-    });
-    try {
-      await wsProvider.connectToSession(sessionId: widget.sessionId, token: 'demo-token');
-    } catch (e) { debugPrint('WebSocket failed (local mode): $e'); }
   }
 
   void _scrollToBottom() {
@@ -90,47 +65,25 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   @override
   void dispose() {
     _speechSubscription?.cancel();
-    _wsCaptionSubscription?.cancel();
-    _wsStateSubscription?.cancel();
     _durationTimer?.cancel();
     _captionController.dispose();
     _scrollController.dispose();
-    context.read<WebSocketProvider>().disconnect();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final pro = context.watch<ProfessionalProvider>();
-    final ws = context.watch<WebSocketProvider>();
     final session = pro.sessions.firstWhere(
       (s) => s.id == widget.sessionId,
       orElse: () => ProfessionalSession(title: 'Session', status: SessionStatus.inProgress),
     );
+    final s = AppStrings.of(context);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(session.title),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _connColor(ws.connectionState).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(_connIcon(ws.connectionState), size: 12, color: _connColor(ws.connectionState)),
-                  const SizedBox(width: 4),
-                  Text(_connLabel(ws.connectionState), style: TextStyle(
-                    fontSize: 10, fontWeight: FontWeight.w600, color: _connColor(ws.connectionState),
-                  )),
-                ]),
-              ),
-            ),
-          ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Center(
@@ -158,37 +111,16 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
           child: Row(children: [
             Icon(Icons.mic, color: AppTheme.successLight, size: 18),
             const SizedBox(width: 8),
-            Expanded(child: Text('Live Session · ${session.captionLanguage} · ${session.type.name}',
+            Expanded(child: Text('${s.liveSession} · ${session.captionLanguage} · ${session.type.name}',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.successLight))),
-            if (ws.isConnected && ws.participantCount > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: AppTheme.primaryLight.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusFull)),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.people, size: 12, color: AppTheme.primaryLight),
-                  const SizedBox(width: 4),
-                  Text('${ws.participantCount}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.primaryLight)),
-                ]),
-              ),
           ]),
         ),
-        if (ws.userEvents.isNotEmpty)
-          Container(
-            height: 32, padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: ListView(scrollDirection: Axis.horizontal,
-              children: ws.userEvents.take(5).map((e) => Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Center(child: Text(e.isJoined ? '${e.username} joined' : '${e.username} left',
-                    style: TextStyle(fontSize: 11, color: e.isJoined ? AppTheme.successLight : Colors.grey, fontStyle: FontStyle.italic))),
-              )).toList()),
-          ),
         Expanded(
           child: session.captions.isEmpty
               ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                   const SizedBox(width: 40, height: 40, child: CircularProgressIndicator(strokeWidth: 3)),
                   const SizedBox(height: 16),
-                  Text('Listening...\nCaptions will appear here.', textAlign: TextAlign.center,
+                  Text(s.listeningDots, textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.grey[400], fontSize: 16)),
                 ]))
               : ListView.builder(
@@ -210,7 +142,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
               border: Border(top: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.3)))),
           child: Row(children: [
             Expanded(child: TextField(controller: _captionController,
-                decoration: InputDecoration(hintText: 'Add a caption manually...', hintStyle: TextStyle(color: Colors.grey[400]),
+                decoration: InputDecoration(hintText: s.addCaptionManually, hintStyle: TextStyle(color: Colors.grey[400]),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusFull), borderSide: BorderSide.none),
                     filled: true, fillColor: Theme.of(context).cardColor,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
@@ -222,11 +154,11 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: PrimaryActionButton(label: 'Stop Session', icon: Icons.stop, onPressed: () async {
+          child: PrimaryActionButton(label: s.stopSession, icon: Icons.stop, onPressed: () async {
             context.read<SpeechProvider>().stopListening();
-            if (_useWebSocket) context.read<WebSocketProvider>().endSession();
             await context.read<ProfessionalProvider>().stopSession(widget.sessionId);
-            if (mounted) Navigator.pop(context);
+            if (!mounted) return;
+            if (context.mounted) Navigator.pop(context);
           }),
         ),
       ]),
@@ -237,28 +169,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     if (text.trim().isEmpty) return;
     context.read<ProfessionalProvider>().addCaptionToSession(widget.sessionId,
         Caption(text: text.trim(), speaker: 'Speaker 1', language: 'English'));
-    if (_useWebSocket) context.read<WebSocketProvider>().sendCaption(text.trim());
     _captionController.clear();
     _scrollToBottom();
   }
-
-  Color _connColor(WSConnectionState s) => switch (s) {
-    WSConnectionState.connected => AppTheme.successLight,
-    WSConnectionState.connecting => AppTheme.warningLight,
-    _ => Colors.grey,
-  };
-
-  IconData _connIcon(WSConnectionState s) => switch (s) {
-    WSConnectionState.connected => Icons.wifi,
-    WSConnectionState.connecting => Icons.sync,
-    _ => Icons.wifi_off,
-  };
-
-  String _connLabel(WSConnectionState s) => switch (s) {
-    WSConnectionState.connected => 'SYNCED',
-    WSConnectionState.connecting => 'CONNECTING',
-    WSConnectionState.error => 'ERROR',
-    WSConnectionState.failed => 'FAILED',
-    WSConnectionState.disconnected => 'LOCAL',
-  };
 }

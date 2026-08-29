@@ -12,12 +12,13 @@ class SettingsProvider extends ChangeNotifier {
   bool _screenFlashAlerts = true;
   bool _simplifiedLanguage = false;
   String _captionLanguage = 'English';
+  String _appLanguage = 'en';
   int _defaultRetentionDays = 7;
   bool _isOnboardingComplete = false;
 
   // Environmental alert settings
   bool _monitoringEnabled = false;
-  Map<String, bool> _allowedAlerts = {
+  final Map<String, bool> _allowedAlerts = {
     'Fire Alarm': true,
     'Smoke Alarm': true,
     'Siren': true,
@@ -39,6 +40,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get screenFlashAlerts => _screenFlashAlerts;
   bool get simplifiedLanguage => _simplifiedLanguage;
   String get captionLanguage => _captionLanguage;
+  String get appLanguage => _appLanguage;
   int get defaultRetentionDays => _defaultRetentionDays;
   bool get isOnboardingComplete => _isOnboardingComplete;
   bool get monitoringEnabled => _monitoringEnabled;
@@ -65,6 +67,7 @@ class SettingsProvider extends ChangeNotifier {
     _screenFlashAlerts = prefs.getBool('screenFlashAlerts') ?? true;
     _simplifiedLanguage = prefs.getBool('simplifiedLanguage') ?? false;
     _captionLanguage = prefs.getString('captionLanguage') ?? 'English';
+    _appLanguage = prefs.getString('appLanguage') ?? 'en';
     _defaultRetentionDays = prefs.getInt('defaultRetentionDays') ?? 7;
     _isOnboardingComplete = prefs.getBool('onboardingComplete') ?? false;
     _monitoringEnabled = prefs.getBool('monitoringEnabled') ?? false;
@@ -73,10 +76,15 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> _save(String key, dynamic value) async {
     final prefs = await SharedPreferences.getInstance();
-    if (value is bool) await prefs.setBool(key, value);
-    else if (value is double) await prefs.setDouble(key, value);
-    else if (value is int) await prefs.setInt(key, value);
-    else if (value is String) await prefs.setString(key, value);
+    if (value is bool) {
+      await prefs.setBool(key, value);
+    } else if (value is double) {
+      await prefs.setDouble(key, value);
+    } else if (value is int) {
+      await prefs.setInt(key, value);
+    } else if (value is String) {
+      await prefs.setString(key, value);
+    }
   }
 
   void toggleDarkMode() {
@@ -136,6 +144,12 @@ class SettingsProvider extends ChangeNotifier {
   void setCaptionLanguage(String lang) {
     _captionLanguage = lang;
     _save('captionLanguage', lang);
+    notifyListeners();
+  }
+
+  void setAppLanguage(String langCode) {
+    _appLanguage = langCode;
+    _save('appLanguage', langCode);
     notifyListeners();
   }
 

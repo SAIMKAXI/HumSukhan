@@ -3,22 +3,37 @@ import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'vosk_stt.dart';
+import 'model_manager.dart';
 
-/// Enhanced Speech-to-Text provider that uses:
-/// 1. Sherpa-ONNX offline STT (primary - when model is available)
-/// 2. Platform-native Google STT (fallback - requires internet)
-/// 3. Demo mode (last resort - when both unavailable)
+// Re-export STTMode and related types from vosk_stt.dart
+export 'vosk_stt.dart' show STTMode;
+
+/// Enhanced Speech-to-Text provider with hybrid offline/online architecture.
+///
+/// Priority order:
+/// 1. Sherpa-ONNX Streaming (English) - Real-time captions, offline
+/// 2. Sherpa-ONNX Batch (Urdu/Hindi) - Short delay, offline
+/// 3. Platform STT (Google/Apple) - Requires internet
+/// 4. Demo mode - Fake phrases for testing
+///
+/// The provider automatically selects the best available mode based on:
+/// - Which models are downloaded
+/// - The selected language
+/// - Network availability
 class EnhancedSpeechProvider {
   final SpeechToText _platformSTT = SpeechToText();
   final SherpaSTTProvider _sherpaSTT = SherpaSTTProvider();
   final StreamController<SpeechResultEvent> _controller =
       StreamController<SpeechResultEvent>.broadcast();
 
+  final ModelManager _modelManager = ModelManager.instance;
+
   bool _initialized = false;
   bool _listening = false;
   bool _platformAvailable = false;
   bool _sherpaAvailable = false;
   STTMode _currentMode = STTMode.none;
+  String _currentLanguage = 'English';
 
   Function(double progress, String status)? onModelDownloadProgress;
 
@@ -26,14 +41,36 @@ class EnhancedSpeechProvider {
   bool get isListening => _listening;
   bool get isAvailable => _platformAvailable || _sherpaAvailable;
   STTMode get currentMode => _currentMode;
+  String get currentLanguage => _currentLanguage;
   bool get isSherpaAvailable => _sherpaAvailable;
   bool get isPlatformAvailable => _platformAvailable;
 
-  /// Initialize both STT engines
+  // Convenience getters for UI
+  bool get isOfflineMode => _currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch;
+  bool get isStreamingMode => _currentMode == STTMode.sherpaStreaming;
+  bool get isBatchMode => _currentMode == STTMode.sherpaBatch;
+  bool get isOnlineMode => _currentMode == STTMode.platform;
+  bool get isDemoMode => _currentMode == STTMode.demo;
+
+  /// Initialize both STT engines.
   Future<bool> initialize({String preferredLanguage = 'English'}) async {
     if (_initialized) return isAvailable;
 
-    // Try platform STT first
+    _currentLanguage = preferredLanguage;
+
+    // Initialize model manager
+    await _modelManager.initialize();
+
+    // Try Sherpa-ONNX offline STT first (primary)
+    try {
+      _sherpaAvailable = await _sherpaSTT.initialize(language: preferredLanguage);
+      debugPrint('Sherpa STT available: $_sherpaAvailable');
+    } catch (e) {
+      debugPrint('Sherpa STT init failed: $e');
+      _sherpaAvailable = false;
+    }
+
+    // Try platform STT as fallback (requires internet on Android)
     try {
       _platformAvailable = await _platformSTT.initialize(
         onStatus: _onPlatformStatus,
@@ -50,27 +87,29 @@ class EnhancedSpeechProvider {
       _platformAvailable = false;
     }
 
-    // Try Sherpa-ONNX offline STT
-    try {
-      _sherpaAvailable = await _sherpaSTT.initialize(language: preferredLanguage);
-      debugPrint('Sherpa STT available: $_sherpaAvailable');
-    } catch (e) {
-      debugPrint('Sherpa STT init failed: $e');
-      _sherpaAvailable = false;
-    }
-
     _initialized = true;
 
-    if (_sherpaAvailable) {
-      _currentMode = STTMode.sherpa;
+    // Set initial mode based on what's available
+    _updateModeForLanguage(preferredLanguage);
+
+    debugPrint('STT initialized - Mode: $_currentMode, Language: $_currentLanguage');
+    return isAvailable;
+  }
+
+  /// Update the current mode based on language and available models.
+  void _updateModeForLanguage(String language) {
+    if (_sherpaAvailable && _modelManager.isModelReady(language)) {
+      final model = _modelManager.getBestModel(language);
+      if (model != null && model.isStreaming) {
+        _currentMode = STTMode.sherpaStreaming;
+      } else {
+        _currentMode = STTMode.sherpaBatch;
+      }
     } else if (_platformAvailable) {
       _currentMode = STTMode.platform;
     } else {
       _currentMode = STTMode.demo;
     }
-
-    debugPrint('STT initialized - Mode: $_currentMode');
-    return isAvailable;
   }
 
   void _onPlatformStatus(String status) {
@@ -84,25 +123,24 @@ class EnhancedSpeechProvider {
     }
   }
 
-  /// Start listening with the best available engine
+  /// Start listening with the best available engine for the current language.
   Future<void> startListening({String language = 'English'}) async {
     if (!_initialized) {
       await initialize(preferredLanguage: language);
     }
 
+    _currentLanguage = language;
     _listening = true;
 
-    if (_sherpaAvailable && SherpaSTTProvider.availableModels.containsKey(language)) {
-      _currentMode = STTMode.sherpa;
-    } else if (_platformAvailable) {
-      _currentMode = STTMode.platform;
-    } else {
-      _currentMode = STTMode.demo;
-    }
+    // Update mode for the selected language
+    _updateModeForLanguage(language);
 
     switch (_currentMode) {
-      case STTMode.sherpa:
-        await _startSherpaListening(language);
+      case STTMode.sherpaStreaming:
+        await _startSherpaStreaming(language);
+        break;
+      case STTMode.sherpaBatch:
+        await _startSherpaBatch(language);
         break;
       case STTMode.platform:
         await _startPlatformListening(language);
@@ -115,10 +153,11 @@ class EnhancedSpeechProvider {
         break;
     }
 
-    debugPrint('Started listening in $_currentMode mode');
+    debugPrint('Started listening in $_currentMode mode for $language');
   }
 
-  Future<void> _startSherpaListening(String language) async {
+  /// Start Sherpa streaming mode (real-time English captions).
+  Future<void> _startSherpaStreaming(String language) async {
     _sherpaSTT.onResult.listen((result) {
       _controller.add(SpeechResultEvent(
         text: result.text,
@@ -126,21 +165,40 @@ class EnhancedSpeechProvider {
         confidence: result.confidence,
         language: _detectLanguage(result.text),
         isLive: true,
-        mode: STTMode.sherpa,
+        mode: STTMode.sherpaStreaming,
       ));
     });
 
     await _sherpaSTT.startListening(language: language);
   }
 
+  /// Start Sherpa batch mode (Urdu/Hindi with short delay).
+  Future<void> _startSherpaBatch(String language) async {
+    _sherpaSTT.onResult.listen((result) {
+      _controller.add(SpeechResultEvent(
+        text: result.text,
+        isFinal: result.isFinal,
+        confidence: result.confidence,
+        language: _detectLanguage(result.text),
+        isLive: true,
+        mode: STTMode.sherpaBatch,
+      ));
+    });
+
+    await _sherpaSTT.startListening(language: language);
+  }
+
+  /// Start platform-native STT (requires internet on Android).
   Future<void> _startPlatformListening(String language) async {
     _platformSTT.listen(
       onResult: _onPlatformResult,
-      listenFor: const Duration(minutes: 30),
-      pauseFor: const Duration(seconds: 5),
-      localeId: _getLocaleId(language),
-      cancelOnError: false,
-      partialResults: true,
+      listenOptions: SpeechListenOptions(
+        listenFor: const Duration(minutes: 30),
+        pauseFor: const Duration(seconds: 5),
+        localeId: _getLocaleId(language),
+        cancelOnError: false,
+        partialResults: true,
+      ),
     );
   }
 
@@ -156,78 +214,93 @@ class EnhancedSpeechProvider {
   }
 
   void _startDemoMode() {
-    var phraseIndex = 0;
-    _demoTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (!_listening || phraseIndex >= _demoPhrases.length) {
-        timer.cancel();
-        return;
-      }
-      final phrase = _demoPhrases[phraseIndex];
-      _controller.add(SpeechResultEvent(
-        text: phrase.substring(0, (phrase.length * 0.6).toInt()),
-        isFinal: false,
-        confidence: 0.7,
-        language: 'English',
-        isLive: false,
-        mode: STTMode.demo,
-      ));
-      Future.delayed(const Duration(milliseconds: 600), () {
-        if (_listening) {
-          _controller.add(SpeechResultEvent(
-            text: phrase,
-            isFinal: true,
-            confidence: 0.92,
-            language: 'English',
-            isLive: false,
-            mode: STTMode.demo,
-          ));
-        }
-      });
-      phraseIndex++;
-    });
+    // No-op: demo/simulated mode is disabled.
+    // Speech recognition requires either:
+    // 1. A downloaded Sherpa-ONNX model (offline)
+    // 2. Platform STT (requires internet)
+    // The UI should show 'Unavailable' when neither is available.
+    debugPrint('Demo mode disabled. No simulated captions will be generated.');
   }
 
-  /// Stop listening
+  /// Stop listening.
   Future<void> stopListening() async {
     _listening = false;
-    _demoTimer?.cancel();
 
     if (_currentMode == STTMode.platform) {
       await _platformSTT.stop();
-    } else if (_currentMode == STTMode.sherpa) {
+    } else if (_currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch) {
       await _sherpaSTT.stopListening();
     }
   }
 
-  /// Switch STT mode
+  /// Switch STT mode manually.
   Future<void> switchMode(STTMode mode, {String language = 'English'}) async {
     if (_listening) {
       await stopListening();
     }
     _currentMode = mode;
+    _currentLanguage = language;
     if (_listening) {
       await startListening(language: language);
     }
   }
 
-  /// Download a Sherpa-ONNX model for offline use
-  Future<bool> downloadModel(String language) async {
-    final modelInfo = SherpaSTTProvider.availableModels[language];
-    if (modelInfo == null) return false;
+  /// Switch to a different language.
+  Future<void> switchLanguage(String language) async {
+    if (_listening) {
+      await stopListening();
+    }
+    _currentLanguage = language;
 
-    try {
-      onModelDownloadProgress?.call(0.0, 'Starting download...');
-      // In production: download from https://github.com/k2-fsa/sherpa-onnx/releases
-      onModelDownloadProgress?.call(1.0, 'Download complete');
-      return false;
-    } catch (e) {
-      debugPrint('Model download failed: $e');
-      return false;
+    // Update Sherpa mode for new language
+    await _sherpaSTT.switchLanguage(language);
+
+    if (_listening) {
+      await startListening(language: language);
     }
   }
 
-  /// Get available languages for offline STT
-  List<String> get offlineLanguages => SherpaSTTProvider.availableModels.keys.toList();
+  /// Download a Sherpa-ONNX model for offline use.
+  Future<bool> downloadModel(String language) async {
+    final success = await _modelManager.downloadModel(language);
+    if (success) {
+      // Re-initialize Sherpa with new model
+      _sherpaAvailable = await _sherpaSTT.initialize(language: language);
+    }
+    return success;
+  }
+
+  /// Check if a model is downloaded for a language.
+  bool isModelReady(String language) {
+    return _modelManager.isModelReady(language);
+  }
+
+  /// Get model status for a language.
+  ModelStatus? getModelStatus(String language) {
+    return _modelManager.statuses[language];
+  }
+
+  /// Get all available languages.
+  List<String> get offlineLanguages => ModelManager.availableModels.keys.toList();
+
+  /// Get all languages with downloaded models.
+  List<String> get readyLanguages => _modelManager.readyLanguages;
+
+  /// Get the best mode label for UI display.
+  String get sttModeLabel {
+    switch (_currentMode) {
+      case STTMode.sherpaStreaming:
+        return 'Offline (Streaming)';
+      case STTMode.sherpaBatch:
+        return 'Offline (Batch)';
+      case STTMode.platform:
+        return 'Online (Google)';
+      case STTMode.demo:
+        return 'Demo Mode';
+      case STTMode.none:
+        return 'Unavailable';
+    }
+  }
 
   String _getLocaleId(String language) {
     switch (language.toLowerCase()) {
@@ -249,33 +322,15 @@ class EnhancedSpeechProvider {
     return 'English';
   }
 
-  Timer? _demoTimer;
-  static const _demoPhrases = [
-    'Today we will discuss the project timeline and testing requirements.',
-    'The deadline for the first phase is September 10th.',
-    'We need to prepare the launch documentation by next week.',
-    "Let's review the deployment checklist together.",
-    'Can someone take notes for the action items?',
-    'I will follow up on the testing results.',
-    'Great, let\'s move to the next agenda item.',
-    'The stakeholder review is scheduled for Friday.',
-  ];
-
   void dispose() {
-    _demoTimer?.cancel();
     _platformSTT.cancel();
     _sherpaSTT.dispose();
     _controller.close();
+    _modelManager.dispose();
   }
 }
 
-enum STTMode {
-  none,
-  sherpa,    // Offline Sherpa-ONNX STT
-  platform,  // Platform-native (Google on Android)
-  demo,      // Demo fallback
-}
-
+/// Speech result event with mode information.
 class SpeechResultEvent {
   final String text;
   final bool isFinal;
@@ -293,6 +348,8 @@ class SpeechResultEvent {
     this.mode = STTMode.platform,
   });
 
-  bool get isOffline => mode == STTMode.sherpa;
+  bool get isOffline => mode == STTMode.sherpaStreaming || mode == STTMode.sherpaBatch;
+  bool get isStreaming => mode == STTMode.sherpaStreaming;
+  bool get isBatch => mode == STTMode.sherpaBatch;
   bool get isOnline => mode == STTMode.platform;
 }

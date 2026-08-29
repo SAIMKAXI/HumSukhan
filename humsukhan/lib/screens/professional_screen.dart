@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
 import '../navigation/app_router.dart';
+import '../l10n/app_strings.dart';
 
 class ProfessionalScreen extends StatefulWidget {
   const ProfessionalScreen({super.key});
@@ -17,58 +18,52 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
   @override
   void initState() {
     super.initState();
-    // Add demo data if empty
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final pro = context.read<ProfessionalProvider>();
-      if (pro.sessions.isEmpty) {
-        pro.addDemoSession();
-      }
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     final pro = context.watch<ProfessionalProvider>();
+    final s = AppStrings.of(context);
 
     return DefaultTabController(
       length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Professional'),
-          bottom: const TabBar(
+          title: Text(s.professionalTitle),
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'Sessions', icon: Icon(Icons.event_note)),
-              Tab(text: 'Folders', icon: Icon(Icons.folder)),
-              Tab(text: 'Classes', icon: Icon(Icons.school)),
-              Tab(text: 'Meetings', icon: Icon(Icons.meeting_room)),
+              Tab(text: s.sessionsTab, icon: const Icon(Icons.event_note)),
+              Tab(text: s.foldersTab, icon: const Icon(Icons.folder)),
+              Tab(text: s.classesTab, icon: const Icon(Icons.school)),
+              Tab(text: s.meetingsTab, icon: const Icon(Icons.meeting_room)),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            _buildSessionsTab(context, pro),
-            _buildFoldersTab(context, pro),
-            _buildClassesTab(context, pro),
-            _buildMeetingsTab(context, pro),
+            _buildSessionsTab(context, pro, s),
+            _buildFoldersTab(context, pro, s),
+            _buildClassesTab(context, pro, s),
+            _buildMeetingsTab(context, pro, s),
           ],
         ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _showCreateSessionDialog(context),
+          onPressed: () => _showCreateSessionDialog(context, s),
           icon: const Icon(Icons.add),
-          label: const Text('New Session'),
+          label: Text(s.newSession),
         ),
       ),
     );
   }
 
-  Widget _buildSessionsTab(BuildContext context, ProfessionalProvider pro) {
+  Widget _buildSessionsTab(BuildContext context, ProfessionalProvider pro, AppStrings s) {
     if (pro.sessions.isEmpty) {
       return EmptyState(
         icon: Icons.event_note,
-        title: 'No saved sessions yet',
-        subtitle: 'Start a Professional session when you are ready to capture a lecture or meeting.',
-        buttonText: 'Start Session',
-        onButtonPressed: () => _showCreateSessionDialog(context),
+        title: s.noSavedSessions,
+        subtitle: s.noSavedSessionsDesc,
+        buttonText: s.startSession,
+        onButtonPressed: () => _showCreateSessionDialog(context, s),
       );
     }
 
@@ -79,7 +74,7 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
-              'RECENT',
+              s.recentLabel,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                 color: Theme.of(context).textTheme.bodySmall?.color,
                 letterSpacing: 1.2,
@@ -95,7 +90,7 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
                 AppRouter.sessionDetail,
                 arguments: session.id,
               ),
-              onDelete: () => _confirmDelete(context, session),
+              onDelete: () => _confirmDelete(context, session, s),
             ),
           ),
         ],
@@ -103,7 +98,7 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
-              'ALL SESSIONS',
+              s.allSessionsLabel,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                 color: Theme.of(context).textTheme.bodySmall?.color,
                 letterSpacing: 1.2,
@@ -122,7 +117,7 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
                     AppRouter.sessionDetail,
                     arguments: session.id,
                   ),
-                  onDelete: () => _confirmDelete(context, session),
+                  onDelete: () => _confirmDelete(context, session, s),
                 ),
               ),
         ],
@@ -130,28 +125,26 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
     );
   }
 
-  Widget _buildFoldersTab(BuildContext context, ProfessionalProvider pro) {
+  Widget _buildFoldersTab(BuildContext context, ProfessionalProvider pro, AppStrings s) {
     return Column(
       children: [
-        // General folder (always exists)
         ListTile(
           leading: Icon(Icons.folder, color: AppTheme.primaryLight),
-          title: const Text('General'),
-          subtitle: Text('${pro.getSessionsForFolder(null).length} sessions'),
+          title: Text(s.generalFolder),
+          subtitle: Text('${pro.getSessionsForFolder(null).length} ${s.sessionsCount}'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {},
         ),
         const Divider(),
 
-        // Custom folders
         Expanded(
           child: pro.folders.isEmpty
               ? EmptyState(
                   icon: Icons.folder_open,
-                  title: 'No folders yet',
-                  subtitle: 'Create a folder to organize your sessions.',
-                  buttonText: 'Create Folder',
-                  onButtonPressed: () => _showCreateFolderDialog(context),
+                  title: s.noFoldersYet,
+                  subtitle: s.noFoldersDesc,
+                  buttonText: s.createFolder,
+                  onButtonPressed: () => _showCreateFolderDialog(context, s),
                 )
               : ListView.builder(
                   itemCount: pro.folders.length,
@@ -161,13 +154,13 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
                     return ListTile(
                       leading: Icon(Icons.folder, color: AppTheme.primaryLight),
                       title: Text(folder.name),
-                      subtitle: Text('$sessionCount sessions'),
+                      subtitle: Text('$sessionCount ${s.sessionsCount}'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
                             icon: const Icon(Icons.delete_outline, size: 20),
-                            onPressed: () => _confirmDeleteFolder(context, pro, folder),
+                            onPressed: () => _confirmDeleteFolder(context, pro, folder, s),
                           ),
                           const Icon(Icons.chevron_right),
                         ],
@@ -180,13 +173,13 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
     );
   }
 
-  Widget _buildClassesTab(BuildContext context, ProfessionalProvider pro) {
+  Widget _buildClassesTab(BuildContext context, ProfessionalProvider pro, AppStrings s) {
     final classSessions = pro.sessions.where((s) => s.type == SessionType.class_).toList();
     if (classSessions.isEmpty) {
       return EmptyState(
         icon: Icons.school,
-        title: 'No class sessions',
-        subtitle: 'Start a session and select "Class" as the type to see them here.',
+        title: s.noClassSessions,
+        subtitle: s.noClassSessionsDesc,
       );
     }
     return ListView.builder(
@@ -203,13 +196,13 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
     );
   }
 
-  Widget _buildMeetingsTab(BuildContext context, ProfessionalProvider pro) {
+  Widget _buildMeetingsTab(BuildContext context, ProfessionalProvider pro, AppStrings s) {
     final meetingSessions = pro.sessions.where((s) => s.type == SessionType.meeting).toList();
     if (meetingSessions.isEmpty) {
       return EmptyState(
         icon: Icons.meeting_room,
-        title: 'No meeting sessions',
-        subtitle: 'Start a session and select "Meeting" as the type to see them here.',
+        title: s.noMeetingSessions,
+        subtitle: s.noMeetingSessionsDesc,
       );
     }
     return ListView.builder(
@@ -226,7 +219,7 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
     );
   }
 
-  void _showCreateSessionDialog(BuildContext context) {
+  void _showCreateSessionDialog(BuildContext context, AppStrings s) {
     final titleController = TextEditingController();
     SessionType selectedType = SessionType.meeting;
     int retentionDays = 7;
@@ -244,39 +237,41 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('New Session', style: Theme.of(context).textTheme.headlineMedium),
+              Text(s.newSession, style: Theme.of(context).textTheme.headlineMedium),
               const SizedBox(height: 24),
               TextField(
                 controller: titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Session Title',
-                  hintText: 'e.g., Product Launch Planning',
+                decoration: InputDecoration(
+                  labelText: s.sessionTitle,
+                  hintText: s.sessionTitleHint,
                 ),
                 autofocus: true,
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<SessionType>(
-                value: selectedType,
-                decoration: const InputDecoration(labelText: 'Session Type'),
-                items: const [
-                  DropdownMenuItem(value: SessionType.meeting, child: Text('Meeting')),
-                  DropdownMenuItem(value: SessionType.lecture, child: Text('Lecture')),
-                  DropdownMenuItem(value: SessionType.class_, child: Text('Class')),
+                initialValue: selectedType,
+                decoration: InputDecoration(labelText: s.sessionType),
+                items: [
+                  DropdownMenuItem(value: SessionType.meeting, child: Text(s.meetingType)),
+                  DropdownMenuItem(value: SessionType.lecture, child: Text(s.lectureType)),
+                  DropdownMenuItem(value: SessionType.class_, child: Text(s.classType)),
                 ],
                 onChanged: (v) => setModalState(() => selectedType = v ?? selectedType),
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<int>(
-                value: retentionDays,
-                decoration: const InputDecoration(labelText: 'Retention Period'),
-                items: RetentionPolicy.options.map((r) =>
-                  DropdownMenuItem(value: r.days, child: Text(r.label)),
-                ).toList(),
+                initialValue: retentionDays,
+                decoration: InputDecoration(labelText: s.retentionPeriod),
+                items: [
+                  DropdownMenuItem(value: 1, child: Text(s.retention1Day)),
+                  DropdownMenuItem(value: 7, child: Text(s.retention7Days)),
+                  DropdownMenuItem(value: 15, child: Text(s.retention15Days)),
+                ],
                 onChanged: (v) => setModalState(() => retentionDays = v ?? retentionDays),
               ),
               const SizedBox(height: 24),
               PrimaryActionButton(
-                label: 'Start Session',
+                label: s.startSession,
                 icon: Icons.play_arrow,
                 onPressed: () async {
                   if (titleController.text.trim().isEmpty) return;
@@ -299,19 +294,19 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
     );
   }
 
-  void _showCreateFolderDialog(BuildContext context) {
+  void _showCreateFolderDialog(BuildContext context, AppStrings s) {
     final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Create Folder'),
+        title: Text(s.createFolder),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: 'Folder name'),
+          decoration: InputDecoration(hintText: s.folderName),
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
           TextButton(
             onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
@@ -319,49 +314,47 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
                 if (ctx.mounted) Navigator.pop(ctx);
               }
             },
-            child: const Text('Create'),
+            child: Text(s.create),
           ),
         ],
       ),
     );
   }
 
-  void _confirmDelete(BuildContext context, ProfessionalSession session) {
+  void _confirmDelete(BuildContext context, ProfessionalSession session, AppStrings s) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Session?'),
-        content: const Text('This will permanently remove the saved transcript and insights. This cannot be undone.'),
+        title: Text(s.deleteSessionConfirm),
+        content: Text(s.deleteSessionDesc),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
           TextButton(
             onPressed: () {
               context.read<ProfessionalProvider>().deleteSession(session.id);
               Navigator.pop(ctx);
             },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text(s.delete, style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
   }
 
-  void _confirmDeleteFolder(BuildContext context, ProfessionalProvider pro, Folder folder) {
+  void _confirmDeleteFolder(BuildContext context, ProfessionalProvider pro, Folder folder, AppStrings s) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Folder?'),
-        content: Text(
-          'Existing sessions will be moved to the General folder. This cannot be undone.',
-        ),
+        title: Text(s.deleteFolderConfirm),
+        content: Text(s.deleteFolderDesc),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
           TextButton(
             onPressed: () {
               pro.deleteFolder(folder.id);
               Navigator.pop(ctx);
             },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text(s.delete, style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),

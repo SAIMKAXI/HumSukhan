@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../widgets/reusable_widgets.dart';
+import '../l10n/app_strings.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -12,7 +13,9 @@ class HomeScreen extends StatelessWidget {
     final user = context.watch<UserProvider>();
     final professional = context.watch<ProfessionalProvider>();
     final environmental = context.watch<EnvironmentalProvider>();
+    final connectivity = context.watch<ConnectivityProvider>();
     final profile = user.profile;
+    final s = AppStrings.of(context);
 
     return Scaffold(
       body: Container(
@@ -58,7 +61,7 @@ class HomeScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Good ${_timeGreeting()}, ${profile?.name ?? 'there'}',
+                            '${_timeGreeting(s)}, ${profile?.name ?? 'there'}',
                             style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w700,
@@ -66,11 +69,41 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          const Text(
-                            'Your accessibility companion',
-                            style: TextStyle(
+                          Text(
+                            s.yourCompanion,
+                            style: const TextStyle(
                               fontSize: 14,
                               color: AppTokens.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Connectivity status
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: connectivity.isOnline
+                            ? AppTokens.deepSage.withValues(alpha: 0.1)
+                            : AppTokens.warning.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(AppTokens.radiusFull),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            connectivity.isOnline ? Icons.wifi : Icons.wifi_off,
+                            size: 12,
+                            color: connectivity.isOnline ? AppTokens.deepSage : AppTokens.warning,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            connectivity.statusLabel,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: connectivity.isOnline ? AppTokens.deepSage : AppTokens.warning,
                             ),
                           ),
                         ],
@@ -82,9 +115,9 @@ class HomeScreen extends StatelessWidget {
                 const SizedBox(height: AppTokens.xl),
 
                 // Quick Actions
-                const Text(
-                  'QUICK ACTIONS',
-                  style: TextStyle(
+                Text(
+                  s.quickActions,
+                  style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: AppTokens.textMuted,
@@ -95,8 +128,8 @@ class HomeScreen extends StatelessWidget {
 
                 // Everyday Mode
                 _ActionCard(
-                  title: 'Everyday Mode',
-                  subtitle: 'Start a Conversation',
+                  title: s.everydayMode,
+                  subtitle: s.startConversation,
                   icon: Icons.chat_bubble_outline,
                   onTap: () => Navigator.pushNamed(context, '/everyday'),
                 ),
@@ -104,8 +137,8 @@ class HomeScreen extends StatelessWidget {
 
                 // Professional Mode
                 _ActionCard(
-                  title: 'Professional Mode',
-                  subtitle: 'Start a Meeting / Lecture',
+                  title: s.professionalMode,
+                  subtitle: s.startMeetingLecture,
                   icon: Icons.work_outline,
                   onTap: () => Navigator.pushNamed(context, '/professional'),
                 ),
@@ -113,8 +146,8 @@ class HomeScreen extends StatelessWidget {
 
                 // Environmental Alerts
                 _ActionCard(
-                  title: 'Environmental Alerts',
-                  subtitle: environmental.monitoringEnabled ? 'Monitoring active' : 'Monitoring off',
+                  title: s.environmentalAlerts,
+                  subtitle: environmental.monitoringEnabled ? s.monitoringActive : s.monitoringOff,
                   icon: Icons.volume_up,
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -142,9 +175,9 @@ class HomeScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'RECENT SESSIONS',
-                      style: TextStyle(
+                    Text(
+                      s.recentSessions,
+                      style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: AppTokens.textMuted,
@@ -153,7 +186,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                     TextButton(
                       onPressed: () => Navigator.pushNamed(context, '/professional'),
-                      child: const Text('View all', style: TextStyle(color: AppTokens.deepSage)),
+                      child: Text(s.viewAll, style: const TextStyle(color: AppTokens.deepSage)),
                     ),
                   ],
                 ),
@@ -167,10 +200,10 @@ class HomeScreen extends StatelessWidget {
                         children: [
                           Icon(Icons.event_note, color: AppTokens.mutedSageGray),
                           const SizedBox(width: 12),
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              'No recent sessions. Start a Professional session when you are ready.',
-                              style: TextStyle(color: AppTokens.textMuted, fontSize: 14),
+                              s.noRecentSessions,
+                              style: const TextStyle(color: AppTokens.textMuted, fontSize: 14),
                             ),
                           ),
                         ],
@@ -196,14 +229,14 @@ class HomeScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(AppTokens.radiusMd),
                     border: Border.all(color: AppTokens.deepSage.withValues(alpha: 0.15)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.shield, size: 18, color: AppTokens.deepSage),
-                      SizedBox(width: 10),
+                      const Icon(Icons.shield, size: 18, color: AppTokens.deepSage),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Listening begins only when you start. Audio is processed temporarily and released.',
-                          style: TextStyle(fontSize: 12, color: AppTokens.deepSage),
+                          s.privacyNote,
+                          style: const TextStyle(fontSize: 12, color: AppTokens.deepSage),
                         ),
                       ),
                     ],
@@ -219,11 +252,11 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  String _timeGreeting() {
+  String _timeGreeting(AppStrings s) {
     final hour = DateTime.now().hour;
-    if (hour < 12) return 'morning';
-    if (hour < 17) return 'afternoon';
-    return 'evening';
+    if (hour < 12) return s.goodMorning;
+    if (hour < 17) return s.goodAfternoon;
+    return s.goodEvening;
   }
 }
 
