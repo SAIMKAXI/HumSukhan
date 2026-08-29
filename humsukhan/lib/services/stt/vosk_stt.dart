@@ -38,6 +38,7 @@ class SherpaSTTProvider {
 
   // Sentence tracking
   String _lastFinalText = '';
+  int _sentenceIndex = 0;
 
   Stream<SherpaSTTResult> get onResult => _controller.stream;
   bool get isListening => _listening;

@@ -49,23 +49,26 @@ class ProfessionalProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Load sessions
+      // Load from local first
       final sessionsJson = prefs.getString('professionalSessions') ?? '[]';
       _sessions = (jsonDecode(sessionsJson) as List)
           .map((s) => ProfessionalSession.fromJson(s))
           .toList();
 
-      // Load folders
       final foldersJson = prefs.getString('professionalFolders') ?? '[]';
       _folders = (jsonDecode(foldersJson) as List)
           .map((f) => Folder.fromJson(f))
           .toList();
 
-      // Load insights
       final insightsJson = prefs.getString('professionalInsights') ?? '[]';
       _insights = (jsonDecode(insightsJson) as List)
           .map((i) => ProfessionalInsight.fromJson(i))
           .toList();
+
+      // Sync from Supabase if authenticated
+      if (SupabaseService.instance.isAuthenticated) {
+        await _syncFromCloud();
+      }
 
       // Clean expired sessions
       _cleanExpiredSessions();
@@ -75,6 +78,44 @@ class ProfessionalProvider extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// Sync data from Supabase cloud to local.
+  Future<void> _syncFromCloud() async {
+    try {
+      final cloudSessions = await DatabaseService.instance.fetchSessions();
+      if (cloudSessions.isNotEmpty) {
+        // Merge: keep local sessions that aren't in cloud, add cloud sessions
+        final localIds = _sessions.map((s) => s.id).toSet();
+        for (final cs in cloudSessions) {
+          if (!localIds.contains(cs.id)) {
+            _sessions.add(cs);
+          } else {
+            // Update local with cloud version if cloud is newer
+            final idx = _sessions.indexWhere((s) => s.id == cs.id);
+            if (idx != -1 && cs.status.index > _sessions[idx].status.index) {
+              _sessions[idx] = cs;
+            }
+          }
+        }
+        await _saveSessions();
+      }
+
+      final cloudFolders = await DatabaseService.instance.fetchFolders();
+      if (cloudFolders.isNotEmpty) {
+        final localFolderIds = _folders.map((f) => f.id).toSet();
+        for (final cf in cloudFolders) {
+          if (!localFolderIds.contains(cf.id)) {
+            _folders.add(cf);
+          }
+        }
+        await _saveFolders();
+      }
+
+      debugPrint('Cloud sync complete: ${_sessions.length} sessions, ${_folders.length} folders');
+    } catch (e) {
+      debugPrint('Cloud sync error: $e');
+    }
   }
 
   Future<void> _saveSessions() async {

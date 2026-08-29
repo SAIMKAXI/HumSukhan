@@ -258,26 +258,34 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showAppLanguageDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
+    String selected = settings.appLanguage;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(s.appLanguage),
-        content: RadioGroup<String>(
-          groupValue: settings.appLanguage,
-          onChanged: (v) {
-            settings.setAppLanguage(v ?? 'en');
-            Navigator.pop(ctx);
-          },
-          child: Column(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: Text(s.appLanguage),
+          content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               RadioListTile<String>(
                 title: const Text('English'),
                 value: 'en',
+                groupValue: selected,
+                onChanged: (v) {
+                  setModalState(() => selected = v ?? 'en');
+                  settings.setAppLanguage('en');
+                  Navigator.pop(ctx);
+                },
               ),
               RadioListTile<String>(
                 title: const Text('اردو (Urdu)'),
                 value: 'ur',
+                groupValue: selected,
+                onChanged: (v) {
+                  setModalState(() => selected = v ?? 'ur');
+                  settings.setAppLanguage('ur');
+                  Navigator.pop(ctx);
+                },
               ),
             ],
           ),
@@ -287,22 +295,24 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showLanguageDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
+    String selected = settings.captionLanguage;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(s.captionLanguage),
-        content: RadioGroup<String>(
-          groupValue: settings.captionLanguage,
-          onChanged: (v) {
-            settings.setCaptionLanguage(v ?? 'English');
-            Navigator.pop(ctx);
-          },
-          child: Column(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: Text(s.captionLanguage),
+          content: Column(
             mainAxisSize: MainAxisSize.min,
             children: ['English', 'Roman Urdu', 'Urdu'].map((lang) =>
               RadioListTile<String>(
                 title: Text(lang),
                 value: lang,
+                groupValue: selected,
+                onChanged: (v) {
+                  setModalState(() => selected = v ?? 'English');
+                  settings.setCaptionLanguage(v ?? 'English');
+                  Navigator.pop(ctx);
+                },
               ),
             ).toList(),
           ),
@@ -312,22 +322,21 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showRetentionDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
+    int selected = settings.defaultRetentionDays;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(s.defaultRetention),
-        content: RadioGroup<int>(
-          groupValue: settings.defaultRetentionDays,
-          onChanged: (v) {
-            settings.setDefaultRetentionDays(v ?? 7);
-            Navigator.pop(ctx);
-          },
-          child: Column(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: Text(s.defaultRetention),
+          content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              RadioListTile<int>(title: Text(s.retention1Day), value: 1),
-              RadioListTile<int>(title: Text(s.retention7Days), value: 7),
-              RadioListTile<int>(title: Text(s.retention15Days), value: 15),
+              RadioListTile<int>(title: Text(s.retention1Day), value: 1, groupValue: selected,
+                onChanged: (v) { setModalState(() => selected = v ?? 1); settings.setDefaultRetentionDays(1); Navigator.pop(ctx); }),
+              RadioListTile<int>(title: Text(s.retention7Days), value: 7, groupValue: selected,
+                onChanged: (v) { setModalState(() => selected = v ?? 7); settings.setDefaultRetentionDays(7); Navigator.pop(ctx); }),
+              RadioListTile<int>(title: Text(s.retention15Days), value: 15, groupValue: selected,
+                onChanged: (v) { setModalState(() => selected = v ?? 15); settings.setDefaultRetentionDays(15); Navigator.pop(ctx); }),
             ],
           ),
         ),

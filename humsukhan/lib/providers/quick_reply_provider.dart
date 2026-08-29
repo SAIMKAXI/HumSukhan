@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../l10n/app_strings.dart';
+import '../services/supabase_service.dart';
+import '../services/database_service.dart';
 
 class QuickReplyProvider extends ChangeNotifier {
   List<QuickReply> _replies = [];
@@ -40,12 +42,40 @@ class QuickReplyProvider extends ChangeNotifier {
         _replies = _buildDefaultReplies(_currentLanguage);
         await _saveReplies();
       }
+
+      // Sync from Supabase if authenticated
+      if (SupabaseService.instance.isAuthenticated) {
+        await _syncFromCloud();
+      }
     } catch (e) {
       _replies = _buildDefaultReplies(_currentLanguage);
     }
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// Sync replies from Supabase cloud.
+  Future<void> _syncFromCloud() async {
+    try {
+      final cloudReplies = await DatabaseService.instance.fetchQuickReplies();
+      if (cloudReplies.isNotEmpty) {
+        // Merge: keep custom local replies, add cloud replies
+        final localTexts = _replies.map((r) => r.text).toSet();
+        for (final cr in cloudReplies) {
+          if (!localTexts.contains(cr.text)) {
+            _replies.add(cr);
+          }
+        }
+        await _saveReplies();
+        debugPrint('Quick replies synced from cloud: ${cloudReplies.length}');
+      } else if (_replies.isNotEmpty) {
+        // Push local replies to cloud
+        await DatabaseService.instance.upsertQuickReplies(_replies);
+      }
+    } catch (e) {
+      debugPrint('Quick replies cloud sync error: $e');
+    }
   }
 
   List<QuickReply> _buildDefaultReplies(String langCode) {
@@ -80,6 +110,11 @@ class QuickReplyProvider extends ChangeNotifier {
   Future<void> _saveReplies() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('quickReplies', jsonEncode(_replies.map((r) => r.toJson()).toList()));
+
+    // Sync to Supabase if authenticated
+    if (SupabaseService.instance.isAuthenticated) {
+      await DatabaseService.instance.upsertQuickReplies(_replies);
+    }
   }
 
   Future<void> addReply(String text, {String category = 'General'}) async {

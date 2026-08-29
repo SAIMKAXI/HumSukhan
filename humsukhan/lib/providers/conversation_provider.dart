@@ -30,18 +30,11 @@ class ConversationProvider extends ChangeNotifier {
   }
 
   void startConversation() {
-    _state = ConversationState.starting;
-    _listeningStatus = 'Starting...';
+    _state = ConversationState.active;
+    _isListening = true;
+    _conversationStartedAt = DateTime.now();
+    _listeningStatus = 'Listening';
     notifyListeners();
-
-    // Simulate brief startup
-    Future.delayed(const Duration(milliseconds: 500), () {
-      _state = ConversationState.active;
-      _isListening = true;
-      _conversationStartedAt = DateTime.now();
-      _listeningStatus = 'Listening';
-      notifyListeners();
-    });
   }
 
   void stopConversation() {
@@ -51,11 +44,10 @@ class ConversationProvider extends ChangeNotifier {
     _currentPartial = null;
     notifyListeners();
 
-    Future.delayed(const Duration(milliseconds: 300), () {
-      _state = ConversationState.saveDecision;
-      _listeningStatus = 'Stopped';
-      notifyListeners();
-    });
+    // Transition to save decision immediately
+    _state = ConversationState.saveDecision;
+    _listeningStatus = 'Stopped';
+    notifyListeners();
   }
 
   void saveConversation() {

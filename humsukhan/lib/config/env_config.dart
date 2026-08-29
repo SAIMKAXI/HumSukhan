@@ -1,18 +1,24 @@
 /// Centralized environment configuration.
 ///
-/// IMPORTANT: In production, these values should come from environment
-/// variables or a secure configuration service. For now, they are
-/// hardcoded as this is a prototype.
+/// Secrets are passed via --dart-define-from-file=.env at build time.
+/// Example: flutter build apk --dart-define-from-file=.env
+///
+/// For development, copy .env.example to .env and fill in your values.
 class EnvConfig {
   EnvConfig._();
 
   // ── Supabase ──
-  static const String supabaseUrl = 'https://dxwlwnzdfdhfpeaeoagj.supabase.co';
-  static const String supabaseAnonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2x3bnpkZmRoZnBlYWVvYWdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwMjI4MDcsImV4cCI6MjEwMzU5ODgwN30.IGXg82guqPBE0L6CH1xj5KN0xO4jS1Dj84CK_LuNDBY';
+  static const String supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: 'https://dxwlwnzdfdhfpeaeoagj.supabase.co',
+  );
+  static const String supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue: '',
+  );
 
   // ── AI Services ──
-  // Google AI Studio (Gemini Flash) - set via environment
+  // Google AI Studio (Gemini Flash)
   static const String geminiApiKey = String.fromEnvironment(
     'GEMINI_API_KEY',
     defaultValue: '',
