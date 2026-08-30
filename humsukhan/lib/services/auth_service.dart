@@ -1,148 +1,110 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'database_service.dart';
+import '../models/models.dart';
 import 'supabase_service.dart';
 
 /// Authentication service using Supabase Auth.
 ///
-/// Supports:
-/// - Email/password sign up
-/// - Email/password sign in
-/// - Sign out
-/// - Session persistence
-/// - Auth state monitoring
+/// Account passwords are restricted to exactly 8 characters containing at
+/// least one uppercase letter, one lowercase letter, one digit, and one
+/// special character.
 class AuthService {
   static AuthService? _instance;
   static AuthService get instance => _instance ??= AuthService._();
   AuthService._();
 
   SupabaseService get _supabase => SupabaseService.instance;
-
-  /// Whether Supabase auth is available.
   bool get isAvailable => _supabase.auth != null;
-
-  /// Current user.
   User? get currentUser => _supabase.currentUser;
   bool get isAuthenticated => _supabase.isAuthenticated;
   Stream<AuthState> get onAuthStateChange => _supabase.onAuthStateChange;
 
-  /// Sign up with email and password.
-  Future<AuthResult> signUp({
-    required String email,
-    required String password,
-    String? name,
-  }) async {
-    if (!isAvailable) {
-      return AuthResult.failure('Authentication unavailable. Please check your connection and try again.');
+  static final RegExp _strongEightCharPassword = RegExp(
+    r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8}$',
+  );
+
+  static String? validatePassword(String password) {
+    if (password.length != 8) return 'Password must be exactly 8 characters.';
+    if (!_strongEightCharPassword.hasMatch(password)) {
+      return 'Password must contain uppercase, lowercase, number, and special character.';
     }
+    return null;
+  }
+
+  Future<AuthResult> signUp({required String email, required String password, String? name}) async {
+    if (!isAvailable) return AuthResult.failure('Authentication unavailable. Please check your connection and try again.');
+    final passwordError = validatePassword(password);
+    if (passwordError != null) return AuthResult.failure(passwordError);
 
     try {
       final response = await _supabase.auth!.signUp(
         email: email,
         password: password,
-        data: name != null ? {'name': name} : null,
+        data: name != null && name.isNotEmpty ? {'name': name} : null,
       );
+      final user = response.user;
+      if (user == null) return AuthResult.failure('Account creation failed: no user returned.');
 
-      if (response.user != null) {
-        debugPrint('Sign up successful: ${response.user!.id}');
-        return AuthResult.success(response.user!);
-      }
-      return AuthResult.failure('Sign up failed: no user returned');
+      // The database migration creates this profile automatically. This
+      // upsert also repairs deployments where that trigger was not applied.
+      await DatabaseService.instance.upsertProfile(UserProfile(
+        id: user.id,
+        name: name != null && name.isNotEmpty ? name : 'User',
+      ));
+
+      debugPrint('Sign up successful: ${user.id}');
+      return AuthResult.success(user);
     } on AuthException catch (e) {
       debugPrint('Sign up auth error: ${e.message}');
       return AuthResult.failure(e.message);
     } catch (e) {
       debugPrint('Sign up error: $e');
-      return AuthResult.failure('Sign up failed: $e');
+      return AuthResult.failure('Sign up failed. Please try again.');
     }
   }
 
-  /// Sign in with email and password.
-  Future<AuthResult> signIn({
-    required String email,
-    required String password,
-  }) async {
-    if (!isAvailable) {
-      return AuthResult.failure('Authentication unavailable. Please check your connection and try again.');
-    }
-
+  Future<AuthResult> signIn({required String email, required String password}) async {
+    if (!isAvailable) return AuthResult.failure('Authentication unavailable. Please check your connection and try again.');
     try {
-      final response = await _supabase.auth!.signInWithPassword(
-        email: email,
-        password: password,
-      );
-
-      if (response.user != null) {
-        debugPrint('Sign in successful: ${response.user!.id}');
-        return AuthResult.success(response.user!);
-      }
-      return AuthResult.failure('Sign in failed: no user returned');
+      final response = await _supabase.auth!.signInWithPassword(email: email, password: password);
+      if (response.user != null) return AuthResult.success(response.user!);
+      return AuthResult.failure('Sign in failed: no user returned.');
     } on AuthException catch (e) {
-      debugPrint('Sign in auth error: ${e.message}');
       return AuthResult.failure(e.message);
-    } catch (e) {
-      debugPrint('Sign in error: $e');
-      return AuthResult.failure('Sign in failed: $e');
+    } catch (_) {
+      return AuthResult.failure('Sign in failed. Please try again.');
     }
   }
 
-  /// Sign in anonymously (for quick start without account).
   Future<AuthResult> signInAnonymously() async {
-    if (!isAvailable) {
-      return AuthResult.failure('Authentication unavailable. Please check your connection and try again.');
-    }
-
+    if (!isAvailable) return AuthResult.failure('Authentication unavailable. Please check your connection and try again.');
     try {
       final response = await _supabase.auth!.signInAnonymously();
-
-      if (response.user != null) {
-        debugPrint('Anonymous sign in successful: ${response.user!.id}');
-        return AuthResult.success(response.user!);
-      }
-      return AuthResult.failure('Anonymous sign in failed');
+      if (response.user != null) return AuthResult.success(response.user!);
+      return AuthResult.failure('Anonymous sign in failed.');
     } on AuthException catch (e) {
-      debugPrint('Anonymous sign in error: ${e.message}');
       return AuthResult.failure(e.message);
-    } catch (e) {
-      debugPrint('Anonymous sign in error: $e');
-      return AuthResult.failure('Anonymous sign in failed: $e');
+    } catch (_) {
+      return AuthResult.failure('Anonymous sign in failed.');
     }
   }
 
-  /// Sign out.
   Future<void> signOut() async {
     if (!isAvailable) return;
-    try {
-      await _supabase.auth!.signOut();
-      debugPrint('Sign out successful');
-    } catch (e) {
-      debugPrint('Sign out error: $e');
-    }
+    try { await _supabase.auth!.signOut(); } catch (e) { debugPrint('Sign out error: $e'); }
   }
 
-  /// Reset password.
   Future<bool> resetPassword(String email) async {
     if (!isAvailable) return false;
-    try {
-      await _supabase.auth!.resetPasswordForEmail(email);
-      return true;
-    } catch (e) {
-      debugPrint('Password reset error: $e');
-      return false;
-    }
+    try { await _supabase.auth!.resetPasswordForEmail(email); return true; } catch (_) { return false; }
   }
 }
 
-/// Result of an authentication operation.
 class AuthResult {
   final bool success;
   final User? user;
   final String? errorMessage;
-
-  AuthResult.success(this.user)
-      : success = true,
-        errorMessage = null;
-
-  AuthResult.failure(this.errorMessage)
-      : success = false,
-        user = null;
+  AuthResult.success(this.user) : success = true, errorMessage = null;
+  AuthResult.failure(this.errorMessage) : success = false, user = null;
 }
