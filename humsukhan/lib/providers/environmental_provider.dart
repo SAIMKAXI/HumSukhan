@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -6,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/models.dart';
 import '../services/alert_service.dart';
 import '../services/environmental_monitoring_bridge.dart';
+import '../services/sound_detection_service.dart';
 import 'settings_provider.dart';
 
 class EnvironmentalProvider extends ChangeNotifier {
@@ -14,6 +16,7 @@ class EnvironmentalProvider extends ChangeNotifier {
   }
 
   final EnvironmentalMonitoringBridge _bridge = EnvironmentalMonitoringBridge.instance;
+  final SoundDetectionService _soundService = SoundDetectionService.instance;
   final List<SoundEvent> _alertHistory = [];
   SoundEvent? _currentAlert;
   String _monitoringState = 'OFF';
@@ -26,7 +29,6 @@ class EnvironmentalProvider extends ChangeNotifier {
   static const _minConfidence = 0.6;
 
   void setSettingsProvider(SettingsProvider settings) => _settingsProvider = settings;
-
   bool get monitoringEnabled => _monitoringState == 'ACTIVE' || _monitoringState == 'STARTING';
   String get monitoringState => _monitoringState;
   bool get isStarting => _monitoringState == 'STARTING';
@@ -83,7 +85,13 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (monitoringEnabled) {
       _monitoringState = 'STOPPING';
       notifyListeners();
-      await _bridge.stop();
+      if (Platform.isIOS) {
+        _soundService.stopMonitoring();
+      } else {
+        await _bridge.stop();
+      }
+      _monitoringState = 'OFF';
+      notifyListeners();
       return;
     }
 
@@ -96,8 +104,15 @@ class EnvironmentalProvider extends ChangeNotifier {
 
     _monitoringState = 'STARTING';
     notifyListeners();
-    final started = await _bridge.start();
-    if (!started) _monitoringState = 'ERROR';
+
+    if (Platform.isIOS) {
+      _soundService.onSoundDetected = processSoundEvent;
+      final started = await _soundService.startMonitoring();
+      _monitoringState = started ? 'ACTIVE' : 'ERROR';
+    } else {
+      final started = await _bridge.start();
+      if (!started) _monitoringState = 'ERROR';
+    }
     notifyListeners();
   }
 
@@ -137,8 +152,8 @@ class EnvironmentalProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    // Do not stop native monitoring here: the explicit foreground service/tile
-    // state must survive Flutter Activity destruction.
+    // Android monitoring must survive Activity disposal; iOS monitoring is
+    // stopped only by the explicit provider action or OS lifecycle.
     unawaited(_bridge.dispose());
     super.dispose();
   }
