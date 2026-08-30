@@ -18,18 +18,14 @@ class EnvironmentalMonitoringTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        if (EnvironmentalMonitoringState.get(this) == EnvironmentalMonitoringState.ACTIVE ||
-            EnvironmentalMonitoringState.get(this) == EnvironmentalMonitoringState.STARTING) {
+        val state = EnvironmentalMonitoringState.get(this)
+        if (state == EnvironmentalMonitoringState.ACTIVE || state == EnvironmentalMonitoringState.STARTING) {
             EnvironmentalMonitoringState.requestStop(this)
             syncTile()
             return
         }
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            // A Quick Settings tap is explicit user interaction, but Android
-            // requires microphone runtime permission to be granted while the
-            // microphone foreground service is created. Bring the app forward
-            // to request it rather than silently starting without permission.
             val intent = Intent(this, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra(MainActivity.EXTRA_REQUEST_ENVIRONMENTAL_PERMISSION, true)
@@ -58,7 +54,6 @@ class EnvironmentalMonitoringTileService : TileService() {
         val state = EnvironmentalMonitoringState.get(this)
         qsTile?.apply {
             label = "Environmental"
-            subtitle = if (state == EnvironmentalMonitoringState.ACTIVE) "Monitoring" else "Off"
             state = if (state == EnvironmentalMonitoringState.ACTIVE || state == EnvironmentalMonitoringState.STARTING)
                 Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             icon = Icon.createWithResource(this@EnvironmentalMonitoringTileService, android.R.drawable.ic_btn_speak_now)
