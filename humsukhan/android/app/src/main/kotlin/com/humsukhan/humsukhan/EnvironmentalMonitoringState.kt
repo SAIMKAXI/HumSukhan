@@ -2,6 +2,7 @@ package com.humsukhan.humsukhan
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 
 object EnvironmentalMonitoringState {
     const val OFF = "OFF"
@@ -27,11 +28,16 @@ object EnvironmentalMonitoringState {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY_STATE, state).apply()
         context.sendBroadcast(Intent(ACTION_STATE).setPackage(context.packageName).putExtra(EXTRA_STATE, state))
+        EnvironmentalMonitoringTileService.requestUpdate(context)
     }
 
     fun requestStart(context: Context) {
         val intent = Intent(context, EnvironmentalMonitoringService::class.java).setAction(ACTION_START)
-        context.startForegroundService(intent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
     }
 
     fun requestStop(context: Context) {
