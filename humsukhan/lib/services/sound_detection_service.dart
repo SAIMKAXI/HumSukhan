@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -12,13 +11,17 @@ import 'sherpa_audio_tagger.dart';
 
 /// Environmental sound detection service using sherpa-ONNX CED-Tiny INT8.
 ///
+/// Optimised for minimum battery and RAM:
+///   • RMS gate computed on raw Int16 PCM (no Float32 conversion for gating)
+///   • Reusable Float32 window buffer (no per-inference allocation)
+///   • Zero-copy Int16List.view for audio chunks from the record plugin
+///   • Single CPU inference thread; model loaded only while monitoring
+///   • All native resources freed immediately when monitoring stops
+///
 /// Architecture:
-///   Microphone → 16kHz mono PCM16 → audio buffer → RMS gate →
+///   Microphone → 16 kHz mono PCM16 → circular Int16 buffer → RMS gate →
 ///   3 s window / 1 s hop → SherpaAudioTagger → label mapping →
 ///   temporal confirmation → cooldown → SoundEvent
-///
-/// This class owns the detection pipeline, cooldown, and event mapping.
-/// All sherpa-ONNX work is delegated to [SherpaAudioTagger].
 class SoundDetectionService {
   SoundDetectionService._();
   static SoundDetectionService? _instance;
@@ -29,7 +32,7 @@ class SoundDetectionService {
   bool _initialized = false;
   bool _monitoring = false;
   AudioRecorder? _audioRecorder;
-  StreamSubscription<List<int>>? _audioSubscription;
+  StreamSubscription<Uint8List>? _audioSubscription;
 
   // ── Callback ───────────────────────────────────────────────────────────
   Function(SoundEvent)? onSoundDetected;
@@ -39,15 +42,20 @@ class SoundDetectionService {
 
   // ── Audio parameters ───────────────────────────────────────────────────
   static const int _sampleRate = 16000;
-  static const int _windowSamples = 3 * _sampleRate; // 3 seconds
-  static const int _hopSamples = 1 * _sampleRate; // 1 second hop
+  static const int _windowSamples = 3 * _sampleRate; // 48 000 = 3 s
+  static const int _hopSamples = 1 * _sampleRate; // 16 000 = 1 s hop
 
-  // ── Circular audio buffer (reused, avoids repeated allocation) ─────────
+  // ── Circular Int16 PCM buffer (reused across windows) ──────────────────
   final Int16List _pcmBuffer = Int16List(_windowSamples);
   int _pcmWritePos = 0;
   int _totalSamplesCollected = 0;
 
+  // ── Reusable Float32 window buffer (avoids 192 KB alloc per inference) ─
+  final Float32List _windowFloat = Float32List(_windowSamples);
+
   // ── RMS energy gate ────────────────────────────────────────────────────
+  // Computed on Int16 PCM directly — no Float32 conversion needed.
+  // Threshold: RMS of raw PCM16 samples. 200 corresponds to ~0.006 full-scale.
   static const double _rmsGateThreshold = 200.0;
 
   // ── Cooldown (per-event, not global) ───────────────────────────────────
@@ -125,7 +133,8 @@ class SoundDetectionService {
   // INITIALIZATION
   // ══════════════════════════════════════════════════════════════════════
 
-  /// Initialize the service: request mic permission, ensure model is available.
+  /// Initialize: request mic permission, ensure model is downloaded.
+  /// Does NOT load the ONNX model — that happens in [startMonitoring].
   Future<bool> initialize() async {
     if (_initialized) return _tagger.isInitialized;
 
@@ -139,7 +148,7 @@ class SoundDetectionService {
 
       _audioRecorder = AudioRecorder();
 
-      // Ensure the CED-Tiny model is downloaded
+      // Ensure the CED-Tiny model is downloaded (no RAM cost — just files)
       final mm = AudioModelManager.instance;
       if (!await mm.ensureModelAvailable()) {
         debugPrint('SoundDetection: Model not available after download attempt');
@@ -148,7 +157,7 @@ class SoundDetectionService {
       }
 
       _initialized = true;
-      debugPrint('SoundDetection: Initialized (model ready, tagger deferred)');
+      debugPrint('SoundDetection: Initialized (model on disk, tagger deferred)');
       return true;
     } catch (e) {
       debugPrint('SoundDetection init error: $e');
@@ -161,7 +170,7 @@ class SoundDetectionService {
   // MONITORING START / STOP
   // ══════════════════════════════════════════════════════════════════════
 
-  /// Start monitoring for environmental sounds.
+  /// Start monitoring. Loads the ONNX model into RAM and opens the mic.
   Future<void> startMonitoring() async {
     if (!_initialized) await initialize();
     if (_monitoring) return;
@@ -173,13 +182,13 @@ class SoundDetectionService {
         return;
       }
 
-      // Initialize the sherpa-ONNX tagger (loads model into memory)
+      // Load ONNX model into memory (only while monitoring is active)
       if (!await _tagger.initialize()) {
         debugPrint('SoundDetection: Tagger init failed');
         return;
       }
 
-      // Start recording at 16 kHz mono PCM16
+      // Start 16 kHz mono PCM16 recording
       const config = RecordConfig(
         encoder: AudioEncoder.pcm16bits,
         sampleRate: _sampleRate,
@@ -187,16 +196,14 @@ class SoundDetectionService {
       );
       final stream = await _audioRecorder!.startStream(config);
 
+      // Reset buffers (reuse existing allocations)
       _pcmWritePos = 0;
       _totalSamplesCollected = 0;
       _clearTemporalBuffer();
 
       _audioSubscription = stream.listen(
-        (data) {
-          if (!_monitoring) return;
-          _onAudioData(data);
-        },
-        onDone: () => debugPrint('SoundDetection: Audio stream stopped'),
+        _onAudioData,
+        onDone: () => debugPrint('SoundDetection: Audio stream ended'),
         onError: (e) => debugPrint('SoundDetection: Audio stream error: $e'),
       );
 
@@ -207,69 +214,86 @@ class SoundDetectionService {
     }
   }
 
-  /// Stop monitoring and release the sherpa-ONNX model from RAM.
+  /// Stop monitoring. Releases mic stream AND frees the ONNX model from RAM.
   void stopMonitoring() {
     _monitoring = false;
+
+    // Cancel and null the audio subscription
     _audioSubscription?.cancel();
     _audioSubscription = null;
 
+    // Stop the hardware recorder
     try {
       _audioRecorder?.stop();
-    } catch (e) {
-      debugPrint('SoundDetection: Error stopping recorder: $e');
-    }
+    } catch (_) {}
 
-    // Release the ONNX model so it is not held in memory
+    // Dispose the recorder to fully release native audio resources
+    try {
+      _audioRecorder?.dispose();
+    } catch (_) {}
+    _audioRecorder = null;
+
+    // Free the ONNX model + native stream from RAM
     _tagger.release();
 
+    // Reset circular buffer state (buffer memory is reused, not reallocated)
     _pcmWritePos = 0;
     _totalSamplesCollected = 0;
-    debugPrint('SoundDetection: Monitoring stopped');
+    debugPrint('SoundDetection: Monitoring stopped (mic + model released)');
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // AUDIO PROCESSING
+  // AUDIO PROCESSING  (hot path — allocations minimised)
   // ══════════════════════════════════════════════════════════════════════
 
-  void _onAudioData(List<int> data) {
+  /// Called by the record plugin with raw PCM16 bytes (Uint8List).
+  void _onAudioData(Uint8List data) {
     if (!_monitoring || data.isEmpty) return;
 
-    final int16Data = Int16List.fromList(data);
-    for (int i = 0; i < int16Data.length; i++) {
-      _pcmBuffer[_pcmWritePos] = int16Data[i];
+    // Zero-copy view: interpret bytes as Int16 samples
+    final int16View = Int16List.view(data.buffer);
+
+    for (int i = 0; i < int16View.length; i++) {
+      _pcmBuffer[_pcmWritePos] = int16View[i];
       _pcmWritePos = (_pcmWritePos + 1) % _windowSamples;
       _totalSamplesCollected++;
     }
 
-    // After the initial 3 s fill, run inference every _hopSamples
+    // After the initial 3 s fill, trigger inference every _hopSamples
     if (_totalSamplesCollected >= _windowSamples &&
         (_totalSamplesCollected - _windowSamples) % _hopSamples == 0) {
       _processWindow();
     }
   }
 
-  /// Extract a 3-second window, apply RMS gate, classify via SherpaAudioTagger.
+  /// Extract 3-second window, apply RMS gate, run ONNX inference.
   void _processWindow() {
     if (!_tagger.isInitialized) return;
 
-    // Extract most-recent window from circular buffer → Float32
-    final window = Float32List(_windowSamples);
+    // ── RMS gate on raw Int16 PCM (no Float32 conversion) ────────────
+    // This avoids converting the entire window to Float32 just to
+    // discover the audio is silent.  The Float32 conversion only
+    // happens below if the gate passes.
+    int sumSq = 0;
     final int start =
         (_pcmWritePos - _windowSamples + _windowSamples) % _windowSamples;
     for (int i = 0; i < _windowSamples; i++) {
-      window[i] = _pcmBuffer[(start + i) % _windowSamples] / 32768.0;
+      final s = _pcmBuffer[(start + i) % _windowSamples];
+      sumSq += s * s;
+    }
+    // Integer RMS to avoid floating-point division; compare against threshold²
+    final int rmsSq = sumSq ~/ _windowSamples;
+    if (rmsSq < _rmsGateThreshold * _rmsGateThreshold) {
+      return; // silent → skip ONNX inference entirely
     }
 
-    // ── RMS energy gate ──────────────────────────────────────────────
-    double sumSq = 0.0;
+    // ── Convert Int16 → Float32 into the reusable buffer ─────────────
     for (int i = 0; i < _windowSamples; i++) {
-      sumSq += window[i] * window[i];
+      _windowFloat[i] = _pcmBuffer[(start + i) % _windowSamples] / 32768.0;
     }
-    final rmsScaled = sqrt(sumSq / _windowSamples) * 32768.0;
-    if (rmsScaled < _rmsGateThreshold) return; // silent → skip inference
 
     // ── Delegate to SherpaAudioTagger ────────────────────────────────
-    final results = _tagger.classify(samples: window, topK: 10);
+    final results = _tagger.classify(samples: _windowFloat, topK: 10);
     for (final r in results) {
       _processDetection(r.label, r.probability);
     }
@@ -392,8 +416,6 @@ class SoundDetectionService {
 
   void dispose() {
     stopMonitoring();
-    _audioRecorder?.dispose();
-    _audioRecorder = null;
     _lastDetectionTime.clear();
     _clearTemporalBuffer();
   }
