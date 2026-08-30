@@ -9,13 +9,6 @@ import '../models/models.dart';
 import 'audio_model_manager.dart';
 import 'sherpa_audio_tagger.dart';
 
-/// Local environmental sound detector.
-///
-/// Microphone → 16 kHz mono PCM16 → RMS gate → 3 s window / 1 s hop →
-/// sherpa-ONNX CED-Tiny INT8 → confidence → temporal confirmation → event.
-///
-/// No network call is made from this service. The model is loaded only while
-/// monitoring is active and all native resources are released on stop.
 class SoundDetectionService {
   SoundDetectionService._();
   static SoundDetectionService? _instance;
@@ -26,7 +19,6 @@ class SoundDetectionService {
   AudioRecorder? _audioRecorder;
   StreamSubscription<Uint8List>? _audioSubscription;
   Function(SoundEvent)? onSoundDetected;
-
   final SherpaAudioTagger _tagger = SherpaAudioTagger();
 
   static const int _sampleRate = 16000;
@@ -45,14 +37,7 @@ class SoundDetectionService {
 
   static const Map<String, List<String>> _labelMapping = {
     'Fire Alarm': ['smoke detector, smoke alarm', 'fire alarm'],
-    'Siren': [
-      'siren',
-      'police car (siren)',
-      'ambulance (siren)',
-      'fire engine, fire truck (siren)',
-      'civil defense siren',
-      'emergency vehicle',
-    ],
+    'Siren': ['siren', 'police car (siren)', 'ambulance (siren)', 'fire engine, fire truck (siren)', 'civil defense siren', 'emergency vehicle'],
     'Doorbell': ['doorbell', 'chime'],
     'Knock': ['knock', 'tap'],
     'Phone': ['telephone', 'telephone bell ringing', 'ringtone', 'car alarm'],
@@ -61,7 +46,6 @@ class SoundDetectionService {
     'Vehicle Horn': ['vehicle horn, car horn, honking', 'air horn, truck horn', 'honk'],
     'Glass Break': ['glass', 'shatter'],
     'Dog Bark': ['bark'],
-    'Phone/Ringtone': ['ringtone', 'telephone bell ringing', 'telephone'],
   };
 
   static const Set<String> _criticalEvents = {'Fire Alarm', 'Siren'};
@@ -75,10 +59,10 @@ class SoundDetectionService {
   List<String> get modelLabels => _tagger.labels;
   static List<String> get supportedEvents => _labelMapping.keys.toList();
 
-  /// Prepare microphone resources and verify that the model is already local.
-  /// This method never downloads a model.
   Future<bool> initialize({bool requestPermission = true}) async {
-    if (_initialized) return _audioRecorder != null && await _hasPermission();
+    if (_initialized) {
+      return _audioRecorder != null && await _hasPermission();
+    }
     try {
       if (requestPermission) {
         final status = await Permission.microphone.request();
@@ -99,7 +83,6 @@ class SoundDetectionService {
         _initialized = true;
         return false;
       }
-
       _audioRecorder ??= AudioRecorder();
       _initialized = true;
       return true;
@@ -110,14 +93,8 @@ class SoundDetectionService {
     }
   }
 
-  Future<bool> _hasPermission() async {
-    final status = await Permission.microphone.status;
-    return status.isGranted;
-  }
+  Future<bool> _hasPermission() async => (await Permission.microphone.status).isGranted;
 
-  /// Start the actual local microphone + classifier pipeline.
-  /// Set [permissionAlreadyGranted] when invoked by the Android foreground
-  /// service after the native layer has verified RECORD_AUDIO.
   Future<bool> startMonitoring({bool permissionAlreadyGranted = false}) async {
     if (_monitoring) return true;
     if (!_initialized) {
@@ -131,7 +108,6 @@ class SoundDetectionService {
         debugPrint('SoundDetection: no recorder permission');
         return false;
       }
-
       if (!await AudioModelManager.instance.initialize()) {
         debugPrint('SoundDetection: refusing to start without local model');
         return false;
@@ -141,21 +117,14 @@ class SoundDetectionService {
         return false;
       }
 
-      const config = RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: _sampleRate,
-        numChannels: 1,
-      );
+      const config = RecordConfig(encoder: AudioEncoder.pcm16bits, sampleRate: _sampleRate, numChannels: 1);
       final stream = await _audioRecorder!.startStream(config);
-
       _pcmWritePos = 0;
       _totalSamplesCollected = 0;
       _clearTemporalBuffer();
-      _audioSubscription = stream.listen(
-        _onAudioData,
-        onDone: () => debugPrint('SoundDetection: audio stream ended'),
-        onError: (e) => debugPrint('SoundDetection: audio stream error: $e'),
-      );
+      _audioSubscription = stream.listen(_onAudioData,
+          onDone: () => debugPrint('SoundDetection: audio stream ended'),
+          onError: (e) => debugPrint('SoundDetection: audio stream error: $e'));
       _monitoring = true;
       debugPrint('SoundDetection: local monitoring active');
       return true;
@@ -220,9 +189,7 @@ class SoundDetectionService {
     if (!_monitoring) return;
     final eventType = _mapLabelToEvent(label);
     if (eventType == null) return;
-    final threshold = _criticalEvents.contains(eventType)
-        ? _criticalThreshold
-        : _nonCriticalThreshold;
+    final threshold = _criticalEvents.contains(eventType) ? _criticalThreshold : _nonCriticalThreshold;
     if (confidence < threshold) return;
 
     final now = DateTime.now();
@@ -241,7 +208,9 @@ class SoundDetectionService {
   }
 
   void _clearTemporalBuffer() {
-    for (final list in _temporalBuffer.values) list.clear();
+    for (final list in _temporalBuffer.values) {
+      list.clear();
+    }
   }
 
   void _emitEvent(String eventType, double confidence) {
@@ -270,7 +239,6 @@ class SoundDetectionService {
       case 'Doorbell':
       case 'Knock':
       case 'Phone':
-      case 'Phone/Ringtone':
       case 'Baby Cry':
         return 'warning';
       default:
