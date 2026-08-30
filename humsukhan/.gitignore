@@ -52,3 +52,8 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Model cache (downloaded at runtime)
+*.part
+sherpa_ced_mini/
+sherpa_models/
