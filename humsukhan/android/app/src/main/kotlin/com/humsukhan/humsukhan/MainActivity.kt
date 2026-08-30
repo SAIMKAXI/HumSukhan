@@ -139,7 +139,7 @@ class MainActivity : FlutterActivity() {
 
     private fun unregisterEnvironmentalReceiver() {
         if (!receiverRegistered) return
-        try { unregisterReceiver(environmentalReceiver) } catch (_) {}
+        try { unregisterReceiver(environmentalReceiver) } catch (_: Exception) {}
         receiverRegistered = false
     }
 
