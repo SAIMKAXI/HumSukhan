@@ -20,29 +20,32 @@ class EnvironmentalMonitoringBridge {
   Future<void> initialize({required void Function(String state, Map<String, dynamic>? event) onChange}) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
     await _subscription?.cancel();
-    _subscription = _events.receiveBroadcastStream().listen((dynamic value) {
-      if (value is! Map) return;
-      final state = value['state']?.toString();
-      if (state != null) {
-        _state = state;
-      }
-      Map<String, dynamic>? event;
-      final rawEvent = value['event'];
-      if (rawEvent is String && rawEvent.isNotEmpty) {
-        try {
-          event = Map<String, dynamic>.from(jsonDecode(rawEvent) as Map);
-        } catch (_) {}
-      } else if (rawEvent is Map) {
-        event = Map<String, dynamic>.from(rawEvent);
-      }
-      onChange(_state, event);
-    }, onError: (Object error) {
-      debugPrint('Environmental bridge stream error: $error');
-    });
+
+    // Android exposes native service events through an EventChannel. iOS uses
+    // the in-app local detector because Control Center cannot own a microphone
+    // session without a WidgetKit extension target.
+    if (Platform.isAndroid) {
+      _subscription = _events.receiveBroadcastStream().listen((dynamic value) {
+        if (value is! Map) return;
+        final state = value['state']?.toString();
+        if (state != null) _state = state;
+        Map<String, dynamic>? event;
+        final rawEvent = value['event'];
+        if (rawEvent is String && rawEvent.isNotEmpty) {
+          try { event = Map<String, dynamic>.from(jsonDecode(rawEvent) as Map); } catch (_) {}
+        } else if (rawEvent is Map) {
+          event = Map<String, dynamic>.from(rawEvent);
+        }
+        onChange(_state, event);
+      }, onError: (Object error) {
+        debugPrint('Environmental bridge stream error: $error');
+      });
+    }
 
     try {
       final value = await _channel.invokeMethod<String>('getState');
       if (value != null) _state = value;
+      onChange(_state, null);
     } catch (e) {
       debugPrint('Environmental bridge state error: $e');
     }
