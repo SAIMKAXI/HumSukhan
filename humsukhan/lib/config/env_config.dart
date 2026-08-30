@@ -23,7 +23,7 @@ class EnvConfig {
     'GEMINI_API_KEY',
     defaultValue: '',
   );
-  static const String geminiModel = 'gemini-2.0-flash';
+  static const String geminiModel = 'gemini-2.5-flash';
 
   // ── Retention ──
   static const int maxRetentionDays = 15;

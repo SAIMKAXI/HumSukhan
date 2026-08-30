@@ -12,6 +12,7 @@ class AppRouter {
   static const String sessionLive = '/session/live';
   static const String environmental = '/environmental';
   static const String settings = '/settings';
+  static const String psl = '/psl';
 
   static Route<dynamic> generateRoute(RouteSettings routeSettings) {
     switch (routeSettings.name) {
@@ -35,6 +36,8 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => const EnvironmentalScreen());
       case settings:
         return MaterialPageRoute(builder: (_) => const SettingsScreen());
+      case psl:
+        return MaterialPageRoute(builder: (_) => const PslScreen());
       default:
         return MaterialPageRoute(builder: (_) => const MainScaffold());
     }

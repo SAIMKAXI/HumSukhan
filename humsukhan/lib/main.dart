@@ -86,6 +86,7 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
 
           final isUrdu = settings.appLanguage == 'ur';
           final urduFont = isUrdu ? 'NotoNastaliqUrdu' : null;
+          final textDirection = isUrdu ? TextDirection.rtl : TextDirection.ltr;
 
           if (_showSplash) {
             return MaterialApp(
@@ -102,19 +103,22 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
             );
           }
 
-          return MaterialApp(
-            title: 'HumSukhan',
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme(fontFamily: urduFont),
-            darkTheme: AppTheme.darkTheme(fontFamily: urduFont),
-            themeMode: settings.themeMode,
-            initialRoute: settings.isOnboardingComplete
-                ? AppRouter.home
-                : AppRouter.onboarding,
-            onGenerateRoute: AppRouter.generateRoute,
-            locale: appLocale,
-            supportedLocales: supportedLocales,
-            localizationsDelegates: localizationDelegates,
+          return Directionality(
+            textDirection: textDirection,
+            child: MaterialApp(
+              title: 'HumSukhan',
+              debugShowCheckedModeBanner: false,
+              theme: AppTheme.lightTheme(fontFamily: urduFont),
+              darkTheme: AppTheme.darkTheme(fontFamily: urduFont),
+              themeMode: settings.themeMode,
+              initialRoute: settings.isOnboardingComplete
+                  ? AppRouter.home
+                  : AppRouter.onboarding,
+              onGenerateRoute: AppRouter.generateRoute,
+              locale: appLocale,
+              supportedLocales: supportedLocales,
+              localizationsDelegates: localizationDelegates,
+            ),
           );
         },
       ),

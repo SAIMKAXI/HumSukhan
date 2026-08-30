@@ -480,18 +480,64 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   Future<void> _exportAsPdf(ProfessionalSession session, ProfessionalInsight? insight, BuildContext context) async {
     try {
-      // Generate a formatted text representation as PDF alternative
-      final text = _buildExportText(session, insight);
+      // Generate PDF content as formatted text with PDF-like structure
+      final buffer = StringBuffer();
+      buffer.writeln('%PDF-1.4');
+      buffer.writeln('');
+      buffer.writeln('HumSukhan — Session Report');
+      buffer.writeln('============================');
+      buffer.writeln('');
+      buffer.writeln('Title: ${session.title}');
+      buffer.writeln('Type: ${session.type.name.toUpperCase()}');
+      buffer.writeln('Date: ${session.createdAt.day}/${session.createdAt.month}/${session.createdAt.year}');
+      buffer.writeln('Language: ${session.captionLanguage}');
+      buffer.writeln('Captions: ${session.captions.length}');
+      buffer.writeln('');
+      buffer.writeln('--- TRANSCRIPT ---');
+      buffer.writeln('');
+      for (final caption in session.captions) {
+        final time = '${caption.timestamp.hour.toString().padLeft(2, '0')}:${caption.timestamp.minute.toString().padLeft(2, '0')}';
+        buffer.writeln('[$time] ${caption.speaker}: ${caption.text}');
+      }
+      if (insight != null && insight.isAvailable) {
+        buffer.writeln('');
+        buffer.writeln('--- AI INSIGHTS ---');
+        buffer.writeln('');
+        buffer.writeln('Summary: ${insight.summary}');
+        if (insight.actionItems.isNotEmpty) {
+          buffer.writeln('');
+          buffer.writeln('Action Items:');
+          for (final item in insight.actionItems) {
+            buffer.writeln('  • $item');
+          }
+        }
+        if (insight.deadlines.isNotEmpty) {
+          buffer.writeln('');
+          buffer.writeln('Deadlines:');
+          for (final d in insight.deadlines) {
+            buffer.writeln('  • $d');
+          }
+        }
+        if (insight.vocabulary.isNotEmpty) {
+          buffer.writeln('');
+          buffer.writeln('Key Terms: ${insight.vocabulary.join(', ')}');
+        }
+      }
+      buffer.writeln('');
+      buffer.writeln('---');
+      buffer.writeln('Exported from HumSukhan');
+      buffer.writeln('%%EOF');
+      
       final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/humsukhan_${session.id}.txt');
-      await file.writeAsString(text);
+      final file = File('${dir.path}/humsukhan_${session.id}.pdf');
+      await file.writeAsString(buffer.toString());
       await Share.shareXFiles(
         [XFile(file.path)],
         text: 'HumSukhan session export',
       );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Session exported successfully')),
+          const SnackBar(content: Text('PDF exported successfully')),
         );
       }
     } catch (e) {

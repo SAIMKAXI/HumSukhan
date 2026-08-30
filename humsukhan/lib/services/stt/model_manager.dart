@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 /// Manages Sherpa-ONNX language models for offline speech recognition.
 ///
-/// Architecture:
-/// - English: Streaming Zipformer model (~80MB) - bundled or downloaded
-/// - Urdu/Hindi: Dolphin CTC model (~240MB int8) - downloaded on-demand
-/// - Demo mode: Fallback when no models are available
+/// Models are downloaded as individual files from HuggingFace (no archive
+/// extraction needed). Each language requires specific .onnx and .txt files.
 class ModelManager {
   static ModelManager? _instance;
   static ModelManager get instance => _instance ??= ModelManager._();
@@ -22,7 +21,7 @@ class ModelManager {
   Stream<ModelDownloadProgress> get onProgress => _progressController.stream;
   Map<String, ModelStatus> get statuses => Map.unmodifiable(_modelStatuses);
 
-  /// Available models for the app.
+  /// Available models for the app with individual file download URLs.
   static const Map<String, LanguageModel> availableModels = {
     'English': LanguageModel(
       id: 'english_zipformer',
@@ -37,7 +36,7 @@ class ModelManager {
       sizeMB: 80,
       isStreaming: true,
       languages: ['English'],
-      downloadUrl: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-en-zh-2023-02-20.tar.bz2',
+      baseUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-en-zh-2023-02-20/resolve/main',
     ),
     'Urdu': LanguageModel(
       id: 'urdu_dolphin',
@@ -53,7 +52,7 @@ class ModelManager {
       sizeMB: 239,
       isStreaming: false,
       languages: ['Urdu', 'Hindi'],
-      downloadUrl: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-dolphin-small-ctc-multi-lang-int8-2025-04-02.tar.bz2',
+      baseUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-dolphin-small-ctc-multi-lang-int8-2025-04-02/resolve/main',
     ),
   };
 
@@ -67,7 +66,7 @@ class ModelManager {
 
       for (final entry in availableModels.entries) {
         final modelDir = Directory('${modelsDir.path}/${entry.value.modelDir}');
-        final isDownloaded = await modelDir.exists();
+        final isDownloaded = await _verifyModelFiles(entry.value, modelDir.path);
 
         _modelStatuses[entry.key] = ModelStatus(
           model: entry.value,
@@ -86,6 +85,24 @@ class ModelManager {
     }
   }
 
+  /// Verify that all required model files exist and are non-empty.
+  Future<bool> _verifyModelFiles(LanguageModel model, String dirPath) async {
+    final requiredFiles = <String>[model.tokens];
+    if (model.isStreaming) {
+      requiredFiles.addAll([model.encoder, model.decoder, model.joiner]);
+    } else if (model.modelFile != null) {
+      requiredFiles.add(model.modelFile!);
+    }
+
+    for (final file in requiredFiles) {
+      final f = File('$dirPath/$file');
+      if (!await f.exists()) return false;
+      final stat = await f.stat();
+      if (stat.size == 0) return false;
+    }
+    return true;
+  }
+
   /// Get the local path for a downloaded model.
   Future<String?> getModelPath(String language) async {
     final status = _modelStatuses[language];
@@ -101,8 +118,7 @@ class ModelManager {
     return status?.isDownloaded == true && status?.localPath != null;
   }
 
-  /// Download a model for the specified language.
-  /// Returns true if download started, false if already downloaded or failed.
+  /// Download individual model files for the specified language.
   Future<bool> downloadModel(String language) async {
     final model = availableModels[language];
     if (model == null) {
@@ -131,28 +147,45 @@ class ModelManager {
       }
 
       final targetDir = Directory('${modelsDir.path}/${model.modelDir}');
+      if (!await targetDir.exists()) {
+        await targetDir.create(recursive: true);
+      }
 
-      // Download the model file using HTTP
-      final client = HttpClient();
+      // Collect all files to download
+      final filesToDownload = <String>[model.tokens];
+      if (model.isStreaming) {
+        filesToDownload.addAll([model.encoder, model.decoder, model.joiner]);
+      } else if (model.modelFile != null) {
+        filesToDownload.add(model.modelFile!);
+      }
+
+      // Download each file individually
+      final client = http.Client();
       try {
-        final request = await client.getUrl(Uri.parse(model.downloadUrl));
-        final response = await request.close();
+        for (int i = 0; i < filesToDownload.length; i++) {
+          final fileName = filesToDownload[i];
+          final fileUrl = '${model.baseUrl}/$fileName';
+          final targetFile = File('${targetDir.path}/$fileName');
 
-        if (response.statusCode != 200) {
-          throw Exception('Download failed with status ${response.statusCode}');
-        }
+          // Skip if already exists
+          if (await targetFile.exists()) {
+            final stat = await targetFile.stat();
+            if (stat.size > 0) continue;
+          }
 
-        final totalBytes = response.contentLength;
-        var receivedBytes = 0;
+          debugPrint('Downloading $fileName for $language...');
+          final response = await client.get(Uri.parse(fileUrl));
 
-        // Save to temp file first
-        final tempFile = File('${targetDir.path}.tar.bz2');
-        final sink = tempFile.openWrite();
+          if (response.statusCode != 200) {
+            throw Exception('Failed to download $fileName: HTTP ${response.statusCode}');
+          }
 
-        await for (final chunk in response) {
-          sink.add(chunk);
-          receivedBytes += chunk.length;
-          final progress = totalBytes > 0 ? receivedBytes / totalBytes : 0.0;
+          // Write to .part file, then rename for atomicity
+          final partFile = File('${targetFile.path}.part');
+          await partFile.writeAsBytes(response.bodyBytes);
+          await partFile.rename(targetFile.path);
+
+          final progress = (i + 1) / filesToDownload.length;
           _progressController.add(ModelDownloadProgress(
             language: language,
             progress: progress,
@@ -162,29 +195,23 @@ class ModelManager {
             downloadProgress: progress,
           );
         }
-        await sink.close();
-
-        // Extract the tar.bz2 file
-        // On Android, we need to use a native extraction method
-        // For now, we'll just move the file and create a marker
-        await targetDir.create(recursive: true);
-        
-        // Verify the download by checking file exists
-        if (!await tempFile.exists()) {
-          throw Exception('Downloaded file not found');
-        }
-
-        // Mark as downloaded
-        _modelStatuses[language] = ModelStatus(
-          model: model,
-          isDownloaded: true,
-          isDownloading: false,
-          downloadProgress: 1.0,
-          localPath: targetDir.path,
-        );
       } finally {
         client.close();
       }
+
+      // Verify all files are present
+      if (!await _verifyModelFiles(model, targetDir.path)) {
+        throw Exception('Downloaded files verification failed');
+      }
+
+      // Mark as downloaded
+      _modelStatuses[language] = ModelStatus(
+        model: model,
+        isDownloaded: true,
+        isDownloading: false,
+        downloadProgress: 1.0,
+        localPath: targetDir.path,
+      );
 
       _progressController.add(ModelDownloadProgress(
         language: language,
@@ -241,29 +268,22 @@ class ModelManager {
   }
 
   /// Get the best model for a given language.
-  /// Returns the streaming model if available, otherwise the batch model.
   LanguageModel? getBestModel(String language) {
-    // First try to find a streaming model for the language
     for (final model in availableModels.values) {
       if (model.languages.contains(language) && model.isStreaming) {
         if (isModelReady(language)) return model;
       }
     }
-
-    // Then try any model for the language
     for (final model in availableModels.values) {
       if (model.languages.contains(language)) {
         if (isModelReady(language)) return model;
       }
     }
-
     return null;
   }
 
-  /// Get all languages that have models available (downloaded or downloadable).
   List<String> get availableLanguages => availableModels.keys.toList();
 
-  /// Get all languages that have downloaded models ready to use.
   List<String> get readyLanguages =>
       _modelStatuses.entries.where((e) => e.value.isDownloaded).map((e) => e.key).toList();
 
@@ -272,7 +292,6 @@ class ModelManager {
   }
 }
 
-/// Model configuration for a language.
 class LanguageModel {
   final String id;
   final String name;
@@ -287,7 +306,7 @@ class LanguageModel {
   final int sizeMB;
   final bool isStreaming;
   final List<String> languages;
-  final String downloadUrl;
+  final String baseUrl;
 
   const LanguageModel({
     required this.id,
@@ -303,13 +322,12 @@ class LanguageModel {
     required this.sizeMB,
     required this.isStreaming,
     required this.languages,
-    required this.downloadUrl,
+    required this.baseUrl,
   });
 
   String get sizeLabel => '$sizeMB MB';
 }
 
-/// Status of a downloaded model.
 class ModelStatus {
   final LanguageModel model;
   final bool isDownloaded;
@@ -347,7 +365,6 @@ class ModelStatus {
   }
 }
 
-/// Progress event for model downloads.
 class ModelDownloadProgress {
   final String language;
   final double progress;

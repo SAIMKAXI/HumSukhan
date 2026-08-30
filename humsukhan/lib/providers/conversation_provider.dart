@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
+import '../services/supabase_service.dart';
+import '../services/database_service.dart';
 
 class ConversationProvider extends ChangeNotifier {
   ConversationState _state = ConversationState.idle;
@@ -11,6 +15,7 @@ class ConversationProvider extends ChangeNotifier {
   String _listeningStatus = 'Not listening';
   DateTime? _conversationStartedAt;
   Timer? _listeningTimer;
+  String? _currentSessionId;
 
   // Getters
   ConversationState get state => _state;
@@ -34,7 +39,13 @@ class ConversationProvider extends ChangeNotifier {
     _isListening = true;
     _conversationStartedAt = DateTime.now();
     _listeningStatus = 'Listening';
+    _currentSessionId = _generateSessionId();
     notifyListeners();
+  }
+
+  String _generateSessionId() {
+    final now = DateTime.now();
+    return 'everyday_${now.millisecondsSinceEpoch}';
   }
 
   void stopConversation() {
@@ -50,20 +61,66 @@ class ConversationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void saveConversation() {
-    _state = ConversationState.idle;
-    _listeningStatus = 'Not listening';
-    _conversationStartedAt = null;
-    _captions.clear();
-    notifyListeners();
+  /// Save the conversation to local storage and optionally to Supabase.
+  Future<void> saveConversation() async {
+    if (_captions.isEmpty) {
+      // Nothing to save — just reset
+      _resetState();
+      return;
+    }
+
+    try {
+      // Persist to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final conversationsJson = prefs.getString('everydayConversations') ?? '[]';
+      final List<dynamic> conversations = jsonDecode(conversationsJson);
+
+      final session = {
+        'id': _currentSessionId ?? _generateSessionId(),
+        'captions': _captions.map((c) => c.toJson()).toList(),
+        'startedAt': _conversationStartedAt?.toIso8601String(),
+        'savedAt': DateTime.now().toIso8601String(),
+        'language': _currentLanguage,
+      };
+
+      conversations.add(session);
+      await prefs.setString('everydayConversations', jsonEncode(conversations));
+
+      // Sync to Supabase if authenticated
+      if (SupabaseService.instance.isAuthenticated) {
+        final transcript = _captions.map((c) => '${c.speaker}: ${c.text}').join('\n');
+        final professionalSession = ProfessionalSession(
+          title: 'Everyday Conversation — ${_formatDate(_conversationStartedAt)}',
+          type: SessionType.meeting,
+          captionLanguage: _currentLanguage,
+          retentionDays: 7,
+          status: SessionStatus.completed,
+          captions: List.from(_captions),
+          transcriptText: transcript,
+        );
+        await DatabaseService.instance.upsertSession(professionalSession);
+      }
+
+      debugPrint('Everyday conversation saved: ${_captions.length} captions');
+    } catch (e) {
+      debugPrint('Error saving everyday conversation: $e');
+    }
+
+    _resetState();
   }
 
+  /// Delete the current conversation without saving.
   void deleteConversation() {
+    _resetState();
+  }
+
+  void _resetState() {
     _state = ConversationState.idle;
     _listeningStatus = 'Not listening';
     _conversationStartedAt = null;
     _captions.clear();
     _currentPartial = null;
+    _currentSessionId = null;
     notifyListeners();
   }
 
@@ -74,7 +131,6 @@ class ConversationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Simulate receiving speech (for demo)
   void addPartialCaption(String text, {String speaker = 'Speaker 1', String language = 'English'}) {
     _currentPartial = Caption(
       text: text,
@@ -115,6 +171,11 @@ class ConversationProvider extends ChangeNotifier {
     _captions.clear();
     _currentPartial = null;
     notifyListeners();
+  }
+
+  String _formatDate(DateTime? dt) {
+    if (dt == null) return '';
+    return '${dt.day}/${dt.month}/${dt.year} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
   @override
