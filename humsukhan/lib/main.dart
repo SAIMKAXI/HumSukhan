@@ -8,6 +8,37 @@ import 'navigation/app_router.dart';
 import 'screens/splash_screen.dart';
 import 'l10n/app_strings.dart';
 import 'services/supabase_service.dart';
+import 'services/sound_detection_service.dart';
+
+@pragma('vm:entry-point')
+Future<void> environmentalMonitoringBackgroundMain() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  const channel = MethodChannel('com.humsukhan/environmental_monitor');
+  final detector = SoundDetectionService.instance;
+
+  channel.setMethodCallHandler((call) async {
+    if (call.method == 'stop') {
+      detector.stopMonitoring();
+      await channel.invokeMethod('pipelineState', {'state': 'OFF'});
+      return true;
+    }
+    return null;
+  });
+
+  detector.onSoundDetected = (event) {
+    channel.invokeMethod('event', <String, dynamic>{
+      'type': event.type,
+      'confidence': event.confidence,
+      'severity': event.severity,
+      'timestamp': event.timestamp.toIso8601String(),
+    });
+  };
+
+  final started = await detector.startMonitoring(permissionAlreadyGranted: true);
+  await channel.invokeMethod('pipelineState', {
+    'state': started ? 'ACTIVE' : 'ERROR',
+  });
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,12 +47,10 @@ void main() async {
     statusBarIconBrightness: Brightness.dark,
   ));
 
-  // Initialize Supabase
   try {
     await SupabaseService.instance.initialize();
   } catch (e) {
     debugPrint('Supabase init failed: $e');
-    // App continues without cloud sync
   }
 
   runApp(const HumSukhanApp());
@@ -55,7 +84,6 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
       ],
       child: Consumer<SettingsProvider>(
         builder: (context, settings, _) {
-          // Sync quick replies when language changes
           if (settings.appLanguage != _lastLanguage) {
             _lastLanguage = settings.appLanguage;
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -65,7 +93,6 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
             });
           }
 
-          // Wire settings provider to environmental provider for alert feedback
           if (!_settingsWired) {
             _settingsWired = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -83,7 +110,6 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
             GlobalCupertinoLocalizations.delegate,
           ];
           const supportedLocales = [Locale('en'), Locale('ur')];
-
           final isUrdu = settings.appLanguage == 'ur';
           final urduFont = isUrdu ? 'NotoNastaliqUrdu' : null;
           final textDirection = isUrdu ? TextDirection.rtl : TextDirection.ltr;
@@ -96,9 +122,7 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
               supportedLocales: supportedLocales,
               localizationsDelegates: localizationDelegates,
               home: SplashScreen(
-                onComplete: () {
-                  setState(() => _showSplash = false);
-                },
+                onComplete: () => setState(() => _showSplash = false),
               ),
             );
           }
@@ -111,9 +135,7 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
               theme: AppTheme.lightTheme(fontFamily: urduFont),
               darkTheme: AppTheme.darkTheme(fontFamily: urduFont),
               themeMode: settings.themeMode,
-              initialRoute: settings.isOnboardingComplete
-                  ? AppRouter.home
-                  : AppRouter.onboarding,
+              initialRoute: settings.isOnboardingComplete ? AppRouter.home : AppRouter.onboarding,
               onGenerateRoute: AppRouter.generateRoute,
               locale: appLocale,
               supportedLocales: supportedLocales,
