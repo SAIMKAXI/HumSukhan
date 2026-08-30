@@ -34,6 +34,7 @@ class EnhancedSpeechProvider {
   bool _sherpaAvailable = false;
   STTMode _currentMode = STTMode.none;
   String _currentLanguage = 'English';
+  StreamSubscription<SherpaSTTResult>? _sherpaSubscription;
 
   Function(double progress, String status)? onModelDownloadProgress;
 
@@ -158,7 +159,10 @@ class EnhancedSpeechProvider {
 
   /// Start Sherpa streaming mode (real-time English captions).
   Future<void> _startSherpaStreaming(String language) async {
-    _sherpaSTT.onResult.listen((result) {
+    // Cancel any previous Sherpa subscription to prevent listener leak
+    _sherpaSubscription?.cancel();
+
+    _sherpaSubscription = _sherpaSTT.onResult.listen((result) {
       _controller.add(SpeechResultEvent(
         text: result.text,
         isFinal: result.isFinal,
@@ -174,7 +178,10 @@ class EnhancedSpeechProvider {
 
   /// Start Sherpa batch mode (Urdu/Hindi with short delay).
   Future<void> _startSherpaBatch(String language) async {
-    _sherpaSTT.onResult.listen((result) {
+    // Cancel any previous Sherpa subscription to prevent listener leak
+    _sherpaSubscription?.cancel();
+
+    _sherpaSubscription = _sherpaSTT.onResult.listen((result) {
       _controller.add(SpeechResultEvent(
         text: result.text,
         isFinal: result.isFinal,
@@ -225,6 +232,8 @@ class EnhancedSpeechProvider {
   /// Stop listening.
   Future<void> stopListening() async {
     _listening = false;
+    _sherpaSubscription?.cancel();
+    _sherpaSubscription = null;
 
     if (_currentMode == STTMode.platform) {
       await _platformSTT.stop();
@@ -323,6 +332,7 @@ class EnhancedSpeechProvider {
   }
 
   void dispose() {
+    _sherpaSubscription?.cancel();
     _platformSTT.cancel();
     _sherpaSTT.dispose();
     _controller.close();
