@@ -9,72 +9,42 @@ import '../models/models.dart';
 import 'audio_model_manager.dart';
 import 'sherpa_audio_tagger.dart';
 
-/// Environmental sound detection service using sherpa-ONNX CED-Tiny INT8.
+/// Local environmental sound detector.
 ///
-/// Optimised for minimum battery and RAM:
-///   • RMS gate computed on raw Int16 PCM (no Float32 conversion for gating)
-///   • Reusable Float32 window buffer (no per-inference allocation)
-///   • Zero-copy Int16List.view for audio chunks from the record plugin
-///   • Single CPU inference thread; model loaded only while monitoring
-///   • All native resources freed immediately when monitoring stops
+/// Microphone → 16 kHz mono PCM16 → RMS gate → 3 s window / 1 s hop →
+/// sherpa-ONNX CED-Tiny INT8 → confidence → temporal confirmation → event.
 ///
-/// Architecture:
-///   Microphone → 16 kHz mono PCM16 → circular Int16 buffer → RMS gate →
-///   3 s window / 1 s hop → SherpaAudioTagger → label mapping →
-///   temporal confirmation → cooldown → SoundEvent
+/// No network call is made from this service. The model is loaded only while
+/// monitoring is active and all native resources are released on stop.
 class SoundDetectionService {
   SoundDetectionService._();
   static SoundDetectionService? _instance;
-  static SoundDetectionService get instance =>
-      _instance ?? SoundDetectionService._();
+  static SoundDetectionService get instance => _instance ??= SoundDetectionService._();
 
-  // ── State ──────────────────────────────────────────────────────────────
   bool _initialized = false;
   bool _monitoring = false;
   AudioRecorder? _audioRecorder;
   StreamSubscription<Uint8List>? _audioSubscription;
-
-  // ── Callback ───────────────────────────────────────────────────────────
   Function(SoundEvent)? onSoundDetected;
 
-  // ── Delegated tagger ───────────────────────────────────────────────────
   final SherpaAudioTagger _tagger = SherpaAudioTagger();
 
-  // ── Audio parameters ───────────────────────────────────────────────────
   static const int _sampleRate = 16000;
-  static const int _windowSamples = 3 * _sampleRate; // 48 000 = 3 s
-  static const int _hopSamples = 1 * _sampleRate; // 16 000 = 1 s hop
+  static const int _windowSamples = 3 * _sampleRate;
+  static const int _hopSamples = 1 * _sampleRate;
+  static const double _rmsGateThreshold = 200.0;
+  static const Duration _cooldownDuration = Duration(seconds: 30);
+  static const Duration _temporalWindow = Duration(seconds: 8);
 
-  // ── Circular Int16 PCM buffer (reused across windows) ──────────────────
   final Int16List _pcmBuffer = Int16List(_windowSamples);
+  final Float32List _windowFloat = Float32List(_windowSamples);
   int _pcmWritePos = 0;
   int _totalSamplesCollected = 0;
-
-  // ── Reusable Float32 window buffer (avoids 192 KB alloc per inference) ─
-  final Float32List _windowFloat = Float32List(_windowSamples);
-
-  // ── RMS energy gate ────────────────────────────────────────────────────
-  // Computed on Int16 PCM directly — no Float32 conversion needed.
-  // Threshold: RMS of raw PCM16 samples. 200 corresponds to ~0.006 full-scale.
-  static const double _rmsGateThreshold = 200.0;
-
-  // ── Cooldown (per-event, not global) ───────────────────────────────────
-  static const Duration _cooldownDuration = Duration(seconds: 30);
   final Map<String, DateTime> _lastDetectionTime = {};
-
-  // ── Temporal confirmation ──────────────────────────────────────────────
-  static const Duration _temporalWindow = Duration(seconds: 8);
   final Map<String, List<DateTime>> _temporalBuffer = {};
 
-  // ── Label → Event mapping ─────────────────────────────────────────────
-  // Each pattern is matched case-insensitively against the AudioSet label
-  // returned by the CED-Tiny model.  Only labels that actually exist in
-  // class_labels_indices.csv are listed.
   static const Map<String, List<String>> _labelMapping = {
-    'Fire Alarm': [
-      'smoke detector, smoke alarm',
-      'fire alarm',
-    ],
+    'Fire Alarm': ['smoke detector, smoke alarm', 'fire alarm'],
     'Siren': [
       'siren',
       'police car (siren)',
@@ -83,49 +53,21 @@ class SoundDetectionService {
       'civil defense siren',
       'emergency vehicle',
     ],
-    'Doorbell': [
-      'doorbell',
-      'chime',
-    ],
-    'Knock': [
-      'knock',
-      'tap',
-    ],
-    'Phone': [
-      'telephone',
-      'telephone bell ringing',
-      'ringtone',
-      'car alarm',
-    ],
-    'Baby Cry': [
-      'baby cry, infant cry',
-      'crying, sobbing',
-      'whimper',
-    ],
-    'Alarm Clock': [
-      'alarm clock',
-      'alarm',
-      'buzzer',
-    ],
-    'Vehicle Horn': [
-      'vehicle horn, car horn, honking',
-      'air horn, truck horn',
-      'honk',
-    ],
-    'Glass Break': [
-      'glass',
-      'shatter',
-    ],
-    'Dog Bark': [
-      'bark',
-    ],
+    'Doorbell': ['doorbell', 'chime'],
+    'Knock': ['knock', 'tap'],
+    'Phone': ['telephone', 'telephone bell ringing', 'ringtone', 'car alarm'],
+    'Baby Cry': ['baby cry, infant cry', 'crying, sobbing', 'whimper'],
+    'Alarm Clock': ['alarm clock', 'alarm', 'buzzer'],
+    'Vehicle Horn': ['vehicle horn, car horn, honking', 'air horn, truck horn', 'honk'],
+    'Glass Break': ['glass', 'shatter'],
+    'Dog Bark': ['bark'],
+    'Phone/Ringtone': ['ringtone', 'telephone bell ringing', 'telephone'],
   };
 
   static const Set<String> _criticalEvents = {'Fire Alarm', 'Siren'};
   static const double _criticalThreshold = 0.70;
   static const double _nonCriticalThreshold = 0.55;
 
-  // ── Public getters ─────────────────────────────────────────────────────
   bool get isInitialized => _initialized;
   bool get isMonitoring => _monitoring;
   bool get isModelReady => _tagger.isInitialized;
@@ -133,35 +75,33 @@ class SoundDetectionService {
   List<String> get modelLabels => _tagger.labels;
   static List<String> get supportedEvents => _labelMapping.keys.toList();
 
-  // ══════════════════════════════════════════════════════════════════════
-  // INITIALIZATION
-  // ══════════════════════════════════════════════════════════════════════
-
-  /// Initialize: request mic permission, ensure model is downloaded.
-  /// Does NOT load the ONNX model — that happens in [startMonitoring].
-  Future<bool> initialize() async {
-    if (_initialized) return _tagger.isInitialized;
-
+  /// Prepare microphone resources and verify that the model is already local.
+  /// This method never downloads a model.
+  Future<bool> initialize({bool requestPermission = true}) async {
+    if (_initialized) return _audioRecorder != null && await _hasPermission();
     try {
-      final status = await Permission.microphone.request();
-      if (!status.isGranted) {
-        debugPrint('SoundDetection: Microphone permission denied');
+      if (requestPermission) {
+        final status = await Permission.microphone.request();
+        if (!status.isGranted) {
+          debugPrint('SoundDetection: microphone permission denied');
+          _initialized = true;
+          return false;
+        }
+      } else if (!await _hasPermission()) {
+        debugPrint('SoundDetection: microphone permission unavailable');
         _initialized = true;
         return false;
       }
 
-      _audioRecorder = AudioRecorder();
-
-      // Ensure the CED-Tiny model is downloaded (no RAM cost — just files)
-      final mm = AudioModelManager.instance;
-      if (!await mm.ensureModelAvailable()) {
-        debugPrint('SoundDetection: Model not available after download attempt');
+      final modelReady = await AudioModelManager.instance.initialize();
+      if (!modelReady) {
+        debugPrint('SoundDetection: local environmental model is unavailable');
         _initialized = true;
         return false;
       }
 
+      _audioRecorder ??= AudioRecorder();
       _initialized = true;
-      debugPrint('SoundDetection: Initialized (model on disk, tagger deferred)');
       return true;
     } catch (e) {
       debugPrint('SoundDetection init error: $e');
@@ -170,29 +110,37 @@ class SoundDetectionService {
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // MONITORING START / STOP
-  // ══════════════════════════════════════════════════════════════════════
+  Future<bool> _hasPermission() async {
+    final status = await Permission.microphone.status;
+    return status.isGranted;
+  }
 
-  /// Start monitoring. Loads the ONNX model into RAM and opens the mic.
-  Future<void> startMonitoring() async {
-    if (!_initialized) await initialize();
-    if (_monitoring) return;
-    if (_audioRecorder == null) return;
+  /// Start the actual local microphone + classifier pipeline.
+  /// Set [permissionAlreadyGranted] when invoked by the Android foreground
+  /// service after the native layer has verified RECORD_AUDIO.
+  Future<bool> startMonitoring({bool permissionAlreadyGranted = false}) async {
+    if (_monitoring) return true;
+    if (!_initialized) {
+      final ok = await initialize(requestPermission: !permissionAlreadyGranted);
+      if (!ok) return false;
+    }
+    if (_audioRecorder == null) return false;
 
     try {
-      if (!await _audioRecorder!.hasPermission()) {
-        debugPrint('SoundDetection: No recorder permission');
-        return;
+      if (!permissionAlreadyGranted && !await _audioRecorder!.hasPermission()) {
+        debugPrint('SoundDetection: no recorder permission');
+        return false;
       }
 
-      // Load ONNX model into memory (only while monitoring is active)
+      if (!await AudioModelManager.instance.initialize()) {
+        debugPrint('SoundDetection: refusing to start without local model');
+        return false;
+      }
       if (!await _tagger.initialize()) {
-        debugPrint('SoundDetection: Tagger init failed');
-        return;
+        debugPrint('SoundDetection: tagger initialization failed');
+        return false;
       }
 
-      // Start 16 kHz mono PCM16 recording
       const config = RecordConfig(
         encoder: AudioEncoder.pcm16bits,
         sampleRate: _sampleRate,
@@ -200,119 +148,78 @@ class SoundDetectionService {
       );
       final stream = await _audioRecorder!.startStream(config);
 
-      // Reset buffers (reuse existing allocations)
       _pcmWritePos = 0;
       _totalSamplesCollected = 0;
       _clearTemporalBuffer();
-
       _audioSubscription = stream.listen(
         _onAudioData,
-        onDone: () => debugPrint('SoundDetection: Audio stream ended'),
-        onError: (e) => debugPrint('SoundDetection: Audio stream error: $e'),
+        onDone: () => debugPrint('SoundDetection: audio stream ended'),
+        onError: (e) => debugPrint('SoundDetection: audio stream error: $e'),
       );
-
       _monitoring = true;
-      debugPrint('SoundDetection: Monitoring started');
+      debugPrint('SoundDetection: local monitoring active');
+      return true;
     } catch (e) {
       debugPrint('SoundDetection start error: $e');
+      _monitoring = false;
+      _tagger.release();
+      return false;
     }
   }
 
-  /// Stop monitoring. Releases mic stream AND frees the ONNX model from RAM.
   void stopMonitoring() {
     _monitoring = false;
-
-    // Cancel and null the audio subscription
     _audioSubscription?.cancel();
     _audioSubscription = null;
-
-    // Stop the hardware recorder
-    try {
-      _audioRecorder?.stop();
-    } catch (_) {}
-
-    // Dispose the recorder to fully release native audio resources
-    try {
-      _audioRecorder?.dispose();
-    } catch (_) {}
+    try { _audioRecorder?.stop(); } catch (_) {}
+    try { _audioRecorder?.dispose(); } catch (_) {}
     _audioRecorder = null;
-
-    // Free the ONNX model + native stream from RAM
     _tagger.release();
-
-    // Reset circular buffer state (buffer memory is reused, not reallocated)
     _pcmWritePos = 0;
     _totalSamplesCollected = 0;
-    debugPrint('SoundDetection: Monitoring stopped (mic + model released)');
+    debugPrint('SoundDetection: stopped; microphone and model released');
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // AUDIO PROCESSING  (hot path — allocations minimised)
-  // ══════════════════════════════════════════════════════════════════════
-
-  /// Called by the record plugin with raw PCM16 bytes (Uint8List).
   void _onAudioData(Uint8List data) {
-    if (!_monitoring || data.isEmpty) return;
-
-    // Zero-copy view: interpret bytes as Int16 samples
-    final int16View = Int16List.view(data.buffer);
-
-    for (int i = 0; i < int16View.length; i++) {
-      _pcmBuffer[_pcmWritePos] = int16View[i];
+    if (!_monitoring || data.isEmpty || data.lengthInBytes < 2) return;
+    final offset = data.offsetInBytes;
+    final length = data.lengthInBytes - (data.lengthInBytes % 2);
+    final samples = Int16List.view(data.buffer, offset, length ~/ 2);
+    for (var i = 0; i < samples.length; i++) {
+      _pcmBuffer[_pcmWritePos] = samples[i];
       _pcmWritePos = (_pcmWritePos + 1) % _windowSamples;
       _totalSamplesCollected++;
     }
-
-    // After the initial 3 s fill, trigger inference every _hopSamples
     if (_totalSamplesCollected >= _windowSamples &&
         (_totalSamplesCollected - _windowSamples) % _hopSamples == 0) {
       _processWindow();
     }
   }
 
-  /// Extract 3-second window, apply RMS gate, run ONNX inference.
   void _processWindow() {
     if (!_tagger.isInitialized) return;
-
-    // ── RMS gate on raw Int16 PCM (no Float32 conversion) ────────────
-    // This avoids converting the entire window to Float32 just to
-    // discover the audio is silent.  The Float32 conversion only
-    // happens below if the gate passes.
-    int sumSq = 0;
-    final int start =
-        (_pcmWritePos - _windowSamples + _windowSamples) % _windowSamples;
-    for (int i = 0; i < _windowSamples; i++) {
-      final s = _pcmBuffer[(start + i) % _windowSamples];
+    var sumSq = 0.0;
+    final start = (_pcmWritePos - _windowSamples + _windowSamples) % _windowSamples;
+    for (var i = 0; i < _windowSamples; i++) {
+      final s = _pcmBuffer[(start + i) % _windowSamples].toDouble();
       sumSq += s * s;
     }
-    // Integer RMS to avoid floating-point division; compare against threshold²
-    final int rmsSq = sumSq ~/ _windowSamples;
-    if (rmsSq < _rmsGateThreshold * _rmsGateThreshold) {
-      return; // silent → skip ONNX inference entirely
-    }
+    final rmsSq = sumSq / _windowSamples;
+    if (rmsSq < _rmsGateThreshold * _rmsGateThreshold) return;
 
-    // ── Convert Int16 → Float32 into the reusable buffer ─────────────
-    for (int i = 0; i < _windowSamples; i++) {
+    for (var i = 0; i < _windowSamples; i++) {
       _windowFloat[i] = _pcmBuffer[(start + i) % _windowSamples] / 32768.0;
     }
-
-    // ── Delegate to SherpaAudioTagger ────────────────────────────────
     final results = _tagger.classify(samples: _windowFloat, topK: 10);
-    for (final r in results) {
-      _processDetection(r.label, r.probability);
+    for (final result in results) {
+      _processDetection(result.label, result.probability);
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // DETECTION PIPELINE
-  // ══════════════════════════════════════════════════════════════════════
-
   void _processDetection(String label, double confidence) {
     if (!_monitoring) return;
-
     final eventType = _mapLabelToEvent(label);
     if (eventType == null) return;
-
     final threshold = _criticalEvents.contains(eventType)
         ? _criticalThreshold
         : _nonCriticalThreshold;
@@ -321,44 +228,28 @@ class SoundDetectionService {
     final now = DateTime.now();
     final last = _lastDetectionTime[eventType];
     if (last != null && now.difference(last) < _cooldownDuration) return;
-
-    if (!_criticalEvents.contains(eventType) &&
-        !_passesTemporalConfirmation(eventType, now)) {
-      return;
-    }
-
+    if (!_criticalEvents.contains(eventType) && !_passesTemporalConfirmation(eventType, now)) return;
     _emitEvent(eventType, confidence);
   }
 
   bool _passesTemporalConfirmation(String eventType, DateTime now) {
-    _temporalBuffer[eventType] ??= [];
-    _temporalBuffer[eventType]!
-        .removeWhere((t) => now.difference(t) > _temporalWindow);
-    _temporalBuffer[eventType]!.add(now);
-    return _temporalBuffer[eventType]!.length >= 2;
+    _temporalBuffer[eventType] ??= <DateTime>[];
+    final events = _temporalBuffer[eventType]!;
+    events.removeWhere((t) => now.difference(t) > _temporalWindow);
+    events.add(now);
+    return events.length >= 2;
   }
 
   void _clearTemporalBuffer() {
-    for (final list in _temporalBuffer.values) {
-      list.clear();
-    }
+    for (final list in _temporalBuffer.values) list.clear();
   }
 
   void _emitEvent(String eventType, double confidence) {
     final severity = _getSeverity(eventType);
-    final event = SoundEvent(
-      type: eventType,
-      confidence: confidence,
-      severity: severity,
-    );
+    final event = SoundEvent(type: eventType, confidence: confidence, severity: severity);
     _lastDetectionTime[eventType] = DateTime.now();
-    debugPrint('SoundDetection: $eventType ($confidence) [$severity]');
     onSoundDetected?.call(event);
   }
-
-  // ══════════════════════════════════════════════════════════════════════
-  // LABEL MAPPING
-  // ══════════════════════════════════════════════════════════════════════
 
   String? _mapLabelToEvent(String label) {
     final lower = label.toLowerCase();
@@ -379,6 +270,7 @@ class SoundDetectionService {
       case 'Doorbell':
       case 'Knock':
       case 'Phone':
+      case 'Phone/Ringtone':
       case 'Baby Cry':
         return 'warning';
       default:
@@ -386,37 +278,19 @@ class SoundDetectionService {
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // EXTERNAL CLASSIFICATION API
-  // ══════════════════════════════════════════════════════════════════════
-
   bool processClassification(String label, double confidence) {
     if (!_monitoring) return false;
-
     final eventType = _mapLabelToEvent(label);
     if (eventType == null) return false;
-
-    final threshold = _criticalEvents.contains(eventType)
-        ? _criticalThreshold
-        : _nonCriticalThreshold;
+    final threshold = _criticalEvents.contains(eventType) ? _criticalThreshold : _nonCriticalThreshold;
     if (confidence < threshold) return false;
-
     final now = DateTime.now();
     final last = _lastDetectionTime[eventType];
     if (last != null && now.difference(last) < _cooldownDuration) return false;
-
-    if (!_criticalEvents.contains(eventType) &&
-        !_passesTemporalConfirmation(eventType, now)) {
-      return false;
-    }
-
+    if (!_criticalEvents.contains(eventType) && !_passesTemporalConfirmation(eventType, now)) return false;
     _emitEvent(eventType, confidence);
     return true;
   }
-
-  // ══════════════════════════════════════════════════════════════════════
-  // CLEANUP
-  // ══════════════════════════════════════════════════════════════════════
 
   void dispose() {
     stopMonitoring();
