@@ -105,17 +105,6 @@ class EnvironmentalProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Manually trigger a test alert.
-  /// This uses the real SoundEvent model but is triggered manually.
-  void simulateAlert(String type, {double confidence = 0.85}) {
-    final event = SoundEvent(
-      type: type,
-      confidence: confidence,
-      severity: (type == 'Fire Alarm' || type == 'Smoke Alarm') ? 'critical' : 'warning',
-    );
-    processSoundEvent(event);
-  }
-
   @override
   void dispose() {
     _soundService.dispose();

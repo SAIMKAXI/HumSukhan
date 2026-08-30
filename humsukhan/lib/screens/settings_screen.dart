@@ -34,7 +34,7 @@ class SettingsScreen extends StatelessWidget {
 
           // Auth Section
           Consumer<AuthProvider>(
-            builder: (_, auth, _a) => Column(
+            builder: (_, auth, child) => Column(
               children: [
                 ListTile(
                   leading: Icon(
@@ -270,7 +270,9 @@ class SettingsScreen extends StatelessWidget {
               RadioListTile<String>(
                 title: const Text('English'),
                 value: 'en',
+                // ignore: deprecated_member_use
                 groupValue: selected,
+                // ignore: deprecated_member_use
                 onChanged: (v) {
                   setModalState(() => selected = v ?? 'en');
                   settings.setAppLanguage('en');
@@ -280,7 +282,9 @@ class SettingsScreen extends StatelessWidget {
               RadioListTile<String>(
                 title: const Text('اردو (Urdu)'),
                 value: 'ur',
+                // ignore: deprecated_member_use
                 groupValue: selected,
+                // ignore: deprecated_member_use
                 onChanged: (v) {
                   setModalState(() => selected = v ?? 'ur');
                   settings.setAppLanguage('ur');
@@ -307,7 +311,9 @@ class SettingsScreen extends StatelessWidget {
               RadioListTile<String>(
                 title: Text(lang),
                 value: lang,
+                // ignore: deprecated_member_use
                 groupValue: selected,
+                // ignore: deprecated_member_use
                 onChanged: (v) {
                   setModalState(() => selected = v ?? 'English');
                   settings.setCaptionLanguage(v ?? 'English');
@@ -331,11 +337,23 @@ class SettingsScreen extends StatelessWidget {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              RadioListTile<int>(title: Text(s.retention1Day), value: 1, groupValue: selected,
+              RadioListTile<int>(
+                title: Text(s.retention1Day), value: 1,
+                // ignore: deprecated_member_use
+                groupValue: selected,
+                // ignore: deprecated_member_use
                 onChanged: (v) { setModalState(() => selected = v ?? 1); settings.setDefaultRetentionDays(1); Navigator.pop(ctx); }),
-              RadioListTile<int>(title: Text(s.retention7Days), value: 7, groupValue: selected,
+              RadioListTile<int>(
+                title: Text(s.retention7Days), value: 7,
+                // ignore: deprecated_member_use
+                groupValue: selected,
+                // ignore: deprecated_member_use
                 onChanged: (v) { setModalState(() => selected = v ?? 7); settings.setDefaultRetentionDays(7); Navigator.pop(ctx); }),
-              RadioListTile<int>(title: Text(s.retention15Days), value: 15, groupValue: selected,
+              RadioListTile<int>(
+                title: Text(s.retention15Days), value: 15,
+                // ignore: deprecated_member_use
+                groupValue: selected,
+                // ignore: deprecated_member_use
                 onChanged: (v) { setModalState(() => selected = v ?? 15); settings.setDefaultRetentionDays(15); Navigator.pop(ctx); }),
             ],
           ),

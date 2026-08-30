@@ -38,7 +38,6 @@ class SherpaSTTProvider {
 
   // Sentence tracking
   String _lastFinalText = '';
-  int _sentenceIndex = 0;
 
   Stream<SherpaSTTResult> get onResult => _controller.stream;
   bool get isListening => _listening;
@@ -182,7 +181,6 @@ class SherpaSTTProvider {
 
     _currentLanguage = language;
     _listening = true;
-    _sentenceIndex = 0;
     _lastFinalText = '';
 
     try {
@@ -242,7 +240,6 @@ class SherpaSTTProvider {
             if (_onlineRecognizer!.isEndpoint(_onlineStream!)) {
               _onlineRecognizer!.reset(_onlineStream!);
               _lastFinalText = text;
-              _sentenceIndex++;
 
               // Emit final result
               _controller.add(SherpaSTTResult(

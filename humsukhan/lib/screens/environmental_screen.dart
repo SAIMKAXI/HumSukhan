@@ -65,38 +65,6 @@ class EnvironmentalScreen extends StatelessWidget {
             ),
           ),
 
-          // Manual test alerts (trigger real event processing)
-          if (env.monitoringEnabled) ...[
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'TEST ALERTS',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Theme.of(context).textTheme.bodySmall?.color,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: EnvironmentalProvider.alertDescriptions.keys.map((type) =>
-                      ActionChip(
-                        avatar: Icon(_alertIcon(type), size: 16),
-                        label: Text(_alertLabel(type, s), style: const TextStyle(fontSize: 12)),
-                        onPressed: () => env.simulateAlert(type),
-                      ),
-                    ).toList(),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(),
-          ],
-
           // Active Alert Overlay
           if (env.currentAlert != null)
             _ActiveAlertBanner(event: env.currentAlert!, onDismiss: () => env.dismissAlert(), s: s),
@@ -147,41 +115,6 @@ class EnvironmentalScreen extends StatelessWidget {
     );
   }
 
-  String _alertLabel(String type, AppStrings s) {
-    switch (type) {
-      case 'Fire Alarm': return s.fireAlarm;
-      case 'Smoke Alarm': return s.smokeAlarm;
-      case 'Siren': return s.siren;
-      case 'Doorbell': return s.doorbell;
-      case 'Knock': return s.knock;
-      case 'Phone': return s.phone;
-      case 'Alarm Clock': return s.alarmClock;
-      case 'Baby Cry': return s.babyCry;
-      default: return type;
-    }
-  }
-
-  IconData _alertIcon(String type) {
-    switch (type) {
-      case 'Fire Alarm':
-      case 'Smoke Alarm':
-        return Icons.local_fire_department;
-      case 'Siren':
-        return Icons.emergency;
-      case 'Doorbell':
-        return Icons.doorbell;
-      case 'Knock':
-        return Icons.back_hand;
-      case 'Phone':
-        return Icons.phone;
-      case 'Alarm Clock':
-        return Icons.alarm;
-      case 'Baby Cry':
-        return Icons.child_care;
-      default:
-        return Icons.volume_up;
-    }
-  }
 }
 
 class _ActiveAlertBanner extends StatelessWidget {
