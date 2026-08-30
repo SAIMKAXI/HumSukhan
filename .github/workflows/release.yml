@@ -12,6 +12,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: humsukhan-release
+  cancel-in-progress: true
+
 env:
   FLUTTER_VERSION: '3.47.1'
   APP_VERSION: '1.2.0'
@@ -60,7 +64,7 @@ jobs:
           name: HumSukhan-${{ env.APP_VERSION }}-android
           path: humsukhan/build/app/outputs/flutter-apk/HumSukhan-${{ env.APP_VERSION }}.apk
 
-      - name: Create GitHub release
+      - name: Create or update GitHub release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ env.APP_VERSION }}
