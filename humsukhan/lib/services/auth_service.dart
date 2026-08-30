@@ -4,9 +4,6 @@ import 'database_service.dart';
 import '../models/models.dart';
 import 'supabase_service.dart';
 
-/// Authentication service using Supabase Auth.
-/// Account passwords are restricted to exactly 8 characters containing
-/// uppercase, lowercase, digit, and special character.
 class AuthService {
   static AuthService? _instance;
   static AuthService get instance => _instance ??= AuthService._();
