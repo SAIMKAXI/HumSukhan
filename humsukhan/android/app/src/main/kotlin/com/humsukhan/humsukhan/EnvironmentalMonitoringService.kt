@@ -57,7 +57,6 @@ class EnvironmentalMonitoringService : Service() {
             stopSelf()
             return
         }
-
         EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.STARTING)
         try {
             val notification = buildMonitoringNotification("Environmental monitoring: starting")
@@ -81,7 +80,6 @@ class EnvironmentalMonitoringService : Service() {
             val loader = FlutterInjector.instance().flutterLoader()
             loader.startInitialization(applicationContext)
             loader.ensureInitializationComplete(applicationContext, emptyArray())
-
             val flutterEngine = FlutterEngine(applicationContext)
             GeneratedPluginRegistrant.registerWith(flutterEngine)
             engine = flutterEngine
@@ -104,7 +102,6 @@ class EnvironmentalMonitoringService : Service() {
                     else -> result.notImplemented()
                 }
             }
-
             val entrypoint = DartExecutor.DartEntrypoint(loader.findAppBundlePath(), "environmentalMonitoringBackgroundMain")
             flutterEngine.dartExecutor.executeDartEntrypoint(entrypoint)
         } catch (e: Exception) {
@@ -117,7 +114,7 @@ class EnvironmentalMonitoringService : Service() {
         if (stopping) return
         stopping = true
         EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.STOPPING)
-        try { channel?.invokeMethod("stop", null) } catch (_) {}
+        try { channel?.invokeMethod("stop", null) } catch (_: Exception) {}
         mainHandler.postDelayed({ cleanupAndStop() }, 400L)
     }
 
@@ -139,7 +136,6 @@ class EnvironmentalMonitoringService : Service() {
     private fun handleSoundEvent(type: String, confidence: Double, severity: String) {
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildMonitoringNotification("$type detected • local/offline"))
-
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             getSystemService(VibratorManager::class.java).defaultVibrator
         } else {
@@ -147,7 +143,6 @@ class EnvironmentalMonitoringService : Service() {
         }
         val duration = if (severity == "critical") 700L else 250L
         vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE))
-
         sendBroadcast(Intent(EnvironmentalMonitoringState.ACTION_STATE).setPackage(packageName)
             .putExtra(EnvironmentalMonitoringState.EXTRA_STATE, EnvironmentalMonitoringState.ACTIVE)
             .putExtra(EnvironmentalMonitoringState.EXTRA_EVENT, JSONObject()
@@ -161,7 +156,6 @@ class EnvironmentalMonitoringService : Service() {
         val openIntent = Intent(this, MainActivity::class.java)
         val openPendingIntent = PendingIntent.getActivity(this, 4109, openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("HumSukhan Environmental Monitoring")
@@ -193,7 +187,6 @@ class EnvironmentalMonitoringService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Closing/swiping away the Flutter Activity does not stop explicit monitoring.
         super.onTaskRemoved(rootIntent)
     }
 
@@ -202,8 +195,6 @@ class EnvironmentalMonitoringService : Service() {
         channel = null
         engine?.destroy()
         engine = null
-        // Do not write OFF here: onDestroy may be caused by system process
-        // interruption and START_STICKY must be able to restore ACTIVE state.
         super.onDestroy()
     }
 
