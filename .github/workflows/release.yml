@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: '3.47.1'
+  FLUTTER_VERSION: '3.1.1'
   APP_VERSION: '2.1.1'
   SUPABASE_URL: 'https://dxwlwnzdfdhfpeaeoagj.supabase.co'
 
