@@ -85,11 +85,8 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (monitoringEnabled) {
       _monitoringState = 'STOPPING';
       notifyListeners();
-      if (Platform.isIOS) {
-        _soundService.stopMonitoring();
-      } else {
-        await _bridge.stop();
-      }
+      _soundService.stopMonitoring();
+      await _bridge.stop();
       _monitoringState = 'OFF';
       notifyListeners();
       return;
@@ -106,6 +103,13 @@ class EnvironmentalProvider extends ChangeNotifier {
     notifyListeners();
 
     if (Platform.isIOS) {
+      // Native iOS configures the AVAudioSession; Flutter owns the local
+      // sherpa-ONNX stream. iOS may suspend/terminate the app under OS rules.
+      if (!await _bridge.start()) {
+        _monitoringState = 'ERROR';
+        notifyListeners();
+        return;
+      }
       _soundService.onSoundDetected = processSoundEvent;
       final started = await _soundService.startMonitoring();
       _monitoringState = started ? 'ACTIVE' : 'ERROR';
@@ -152,8 +156,7 @@ class EnvironmentalProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    // Android monitoring must survive Activity disposal; iOS monitoring is
-    // stopped only by the explicit provider action or OS lifecycle.
+    // Android service owns its own lifecycle; never stop it from Activity disposal.
     unawaited(_bridge.dispose());
     super.dispose();
   }
