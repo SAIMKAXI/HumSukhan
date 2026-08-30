@@ -5,7 +5,6 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let environmentalChannelName = "com.humsukhan/environmental_monitor"
-  private var environmentalChannel: FlutterMethodChannel?
   private var environmentalState = "OFF"
 
   override func application(
@@ -22,7 +21,6 @@ import UIKit
       name: environmentalChannelName,
       binaryMessenger: engineBridge.binaryMessenger
     )
-    environmentalChannel = channel
 
     channel.setMethodCallHandler { [weak self] call, result in
       guard let self else {
@@ -33,20 +31,13 @@ import UIKit
       switch call.method {
       case "getState":
         result(self.environmentalState)
-
       case "isSupported":
-        // iOS supports microphone capture while the app is active and can
-        // continue audio work in the background when the Audio background
-        // capability is enabled. The OS may still terminate the process.
         result(true)
-
       case "start":
         self.requestMicrophoneAndStart(result: result)
-
       case "stop":
         self.stopEnvironmentalMonitoring()
         result(true)
-
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -68,9 +59,6 @@ import UIKit
           try session.setCategory(.record, mode: .measurement, options: [.allowBluetooth])
           try session.setActive(true, options: [])
           self.environmentalState = "STARTING"
-          // The actual sherpa-ONNX pipeline remains in Flutter. This call
-          // asks the main Flutter isolate to start the shared local service.
-          self.environmentalChannel?.invokeMethod("startLocalMonitoring", arguments: nil)
           result(true)
         } catch {
           self.environmentalState = "ERROR"
@@ -82,7 +70,6 @@ import UIKit
 
   private func stopEnvironmentalMonitoring() {
     environmentalState = "STOPPING"
-    environmentalChannel?.invokeMethod("stopLocalMonitoring", arguments: nil)
     do {
       try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     } catch {
