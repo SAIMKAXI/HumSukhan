@@ -18,8 +18,9 @@ class EnvironmentalMonitoringTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        val state = EnvironmentalMonitoringState.get(this)
-        if (state == EnvironmentalMonitoringState.ACTIVE || state == EnvironmentalMonitoringState.STARTING) {
+        val monitoringState = EnvironmentalMonitoringState.get(this)
+        if (monitoringState == EnvironmentalMonitoringState.ACTIVE ||
+            monitoringState == EnvironmentalMonitoringState.STARTING) {
             EnvironmentalMonitoringState.requestStop(this)
             syncTile()
             return
@@ -51,11 +52,15 @@ class EnvironmentalMonitoringTileService : TileService() {
     }
 
     private fun syncTile() {
-        val state = EnvironmentalMonitoringState.get(this)
+        val monitoringState = EnvironmentalMonitoringState.get(this)
         qsTile?.apply {
             label = "Environmental"
-            state = if (state == EnvironmentalMonitoringState.ACTIVE || state == EnvironmentalMonitoringState.STARTING)
-                Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            this.state = if (monitoringState == EnvironmentalMonitoringState.ACTIVE ||
+                monitoringState == EnvironmentalMonitoringState.STARTING) {
+                Tile.STATE_ACTIVE
+            } else {
+                Tile.STATE_INACTIVE
+            }
             icon = Icon.createWithResource(this@EnvironmentalMonitoringTileService, android.R.drawable.ic_btn_speak_now)
             updateTile()
         }
