@@ -118,8 +118,6 @@ class EnvironmentalMonitoringService : Service() {
         stopping = true
         EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.STOPPING)
         try { channel?.invokeMethod("stop", null) } catch (_) {}
-        // Give the Dart isolate time to close AudioRecorder and release the
-        // sherpa native stream before destroying the background engine.
         mainHandler.postDelayed({ cleanupAndStop() }, 400L)
     }
 
@@ -128,7 +126,11 @@ class EnvironmentalMonitoringService : Service() {
         channel = null
         engine?.destroy()
         engine = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION") stopForeground(true)
+        }
         EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.OFF)
         stopping = false
         stopSelf()
@@ -191,7 +193,7 @@ class EnvironmentalMonitoringService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // The Flutter Activity lifecycle must not stop explicit monitoring.
+        // Closing/swiping away the Flutter Activity does not stop explicit monitoring.
         super.onTaskRemoved(rootIntent)
     }
 
@@ -200,9 +202,8 @@ class EnvironmentalMonitoringService : Service() {
         channel = null
         engine?.destroy()
         engine = null
-        if (EnvironmentalMonitoringState.get(this) != EnvironmentalMonitoringState.OFF) {
-            EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.OFF)
-        }
+        // Do not write OFF here: onDestroy may be caused by system process
+        // interruption and START_STICKY must be able to restore ACTIVE state.
         super.onDestroy()
     }
 
