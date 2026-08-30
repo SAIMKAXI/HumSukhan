@@ -27,4 +27,7 @@ class EnvConfig {
 
   // ── Retention ──
   static const int maxRetentionDays = 15;
+
+  static bool get hasSupabaseConfig =>
+      supabaseUrl.isNotEmpty && supabaseAnonKey.trim().isNotEmpty;
 }
