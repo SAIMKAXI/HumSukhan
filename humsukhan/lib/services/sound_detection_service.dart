@@ -66,7 +66,10 @@ class SoundDetectionService {
   static const Duration _temporalWindow = Duration(seconds: 8);
   final Map<String, List<DateTime>> _temporalBuffer = {};
 
-  // ── Label → Event mapping (AudioSet labels → HumSukhan events) ─────────
+  // ── Label → Event mapping ─────────────────────────────────────────────
+  // Each pattern is matched case-insensitively against the AudioSet label
+  // returned by the CED-Tiny model.  Only labels that actually exist in
+  // class_labels_indices.csv are listed.
   static const Map<String, List<String>> _labelMapping = {
     'Fire Alarm': [
       'smoke detector, smoke alarm',
@@ -76,12 +79,13 @@ class SoundDetectionService {
       'siren',
       'police car (siren)',
       'ambulance (siren)',
+      'fire engine, fire truck (siren)',
+      'civil defense siren',
       'emergency vehicle',
     ],
     'Doorbell': [
       'doorbell',
       'chime',
-      'bell',
     ],
     'Knock': [
       'knock',
@@ -91,28 +95,28 @@ class SoundDetectionService {
       'telephone',
       'telephone bell ringing',
       'ringtone',
-      'cell phone',
-      'mobile phone',
+      'car alarm',
     ],
     'Baby Cry': [
-      'crying, sobbing',
       'baby cry, infant cry',
+      'crying, sobbing',
+      'whimper',
     ],
     'Alarm Clock': [
       'alarm clock',
       'alarm',
       'buzzer',
-      'clock',
     ],
     'Vehicle Horn': [
-      'car horn, honking',
       'vehicle horn, car horn, honking',
+      'air horn, truck horn',
+      'honk',
     ],
     'Glass Break': [
       'glass',
+      'shatter',
     ],
     'Dog Bark': [
-      'dog',
       'bark',
     ],
   };
