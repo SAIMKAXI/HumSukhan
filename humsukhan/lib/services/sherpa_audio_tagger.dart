@@ -1,16 +1,10 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 
 import 'audio_model_manager.dart';
 
-/// Dedicated sherpa-ONNX audio tagger for environmental sound classification.
-///
-/// Wraps sherpa-ONNX CED-Tiny INT8. The tagger is deliberately unaware of
-/// networking and microphone lifecycle: it only consumes an already-installed
-/// local model and releases native resources when requested.
 class SherpaAudioTagger {
   sherpa_onnx.AudioTagging? _tagger;
   sherpa_onnx.OfflineStream? _stream;
@@ -28,20 +22,14 @@ class SherpaAudioTagger {
         debugPrint('SherpaAudioTagger: local model paths are not ready');
         return false;
       }
-
       _labels = await _loadLabels(mm.labelsPath!);
       if (_labels.isEmpty) return false;
-
       final config = sherpa_onnx.AudioTaggingConfig(
         model: sherpa_onnx.AudioTaggingModelConfig(
-          ced: mm.modelPath!,
-          numThreads: 1,
-          provider: 'cpu',
-          debug: false,
+          ced: mm.modelPath!, numThreads: 1, provider: 'cpu', debug: false,
         ),
         labels: mm.labelsPath!,
       );
-
       _tagger = sherpa_onnx.AudioTagging(config: config);
       _stream = _tagger!.createStream();
       _initialized = true;
@@ -99,9 +87,7 @@ class SherpaAudioTagger {
 class SherpaAudioResult {
   final String label;
   final double probability;
-
   const SherpaAudioResult({required this.label, required this.probability});
-
   @override
   String toString() => '$label (${(probability * 100).toStringAsFixed(1)}%)';
 }
