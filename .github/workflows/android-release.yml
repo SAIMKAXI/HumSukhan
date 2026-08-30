@@ -1,0 +1,90 @@
+name: HumSukhan Android Release (fixed)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'humsukhan/pubspec.yaml'
+      - 'humsukhan/lib/**'
+      - 'humsukhan/android/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.47.1'
+  SUPABASE_URL: 'https://dxwlwnzdfdhfpeaeoagj.supabase.co'
+
+jobs:
+  android-release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: humsukhan
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze --no-fatal-infos
+
+      - name: Tests
+        run: flutter test
+
+      - name: Check Supabase build configuration
+        env:
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "ERROR: GitHub Actions secret SUPABASE_ANON_KEY is not configured."
+            echo "Add the Supabase publishable/anon key under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Build release APK
+        env:
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
+
+      - name: Rename APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/HumSukhan-${{ github.ref_name }}-${{ github.run_number }}.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HumSukhan-android-${{ github.run_number }}
+          path: humsukhan/build/app/outputs/flutter-apk/HumSukhan-${{ github.ref_name }}-${{ github.run_number }}.apk
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.1.1
+          name: HumSukhan v2.1.1
+          generate_release_notes: true
+          files: humsukhan/build/app/outputs/flutter-apk/HumSukhan-${{ github.ref_name }}-${{ github.run_number }}.apk
