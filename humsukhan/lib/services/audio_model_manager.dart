@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
-/// Manages the sherpa-onnx CED-mini audio tagging model.
+/// Manages the sherpa-onnx CED-Tiny audio tagging model.
 ///
 /// Downloads model + labels on first activation, then operates completely offline.
 /// Uses .part files during download to prevent corrupt models from interrupted downloads.
@@ -14,13 +14,13 @@ class AudioModelManager {
 
   static const String _modelFileName = 'model.int8.onnx';
   static const String _labelsFileName = 'class_labels_indices.csv';
-  static const String _modelDirName = 'sherpa_ced_mini';
+  static const String _modelDirName = 'sherpa_ced_tiny';
 
-  // HuggingFace raw file URLs for k2-fsa/sherpa-onnx-ced-mini-audio-tagging-2024-04-19
+  // HuggingFace raw file URLs for k2-fsa/sherpa-onnx-ced-tiny-audio-tagging-2024-04-19
   static const String _modelUrl =
-      'https://huggingface.co/k2-fsa/sherpa-onnx-ced-mini-audio-tagging-2024-04-19/resolve/main/model.int8.onnx';
+      'https://huggingface.co/k2-fsa/sherpa-onnx-ced-tiny-audio-tagging-2024-04-19/resolve/main/model.int8.onnx';
   static const String _labelsUrl =
-      'https://huggingface.co/k2-fsa/sherpa-onnx-ced-mini-audio-tagging-2024-04-19/resolve/main/class_labels_indices.csv';
+      'https://huggingface.co/k2-fsa/sherpa-onnx-ced-tiny-audio-tagging-2024-04-19/resolve/main/class_labels_indices.csv';
 
   bool _initialized = false;
   bool _downloading = false;

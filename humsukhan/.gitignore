@@ -55,5 +55,5 @@ app.*.map.json
 
 # Model cache (downloaded at runtime)
 *.part
-sherpa_ced_mini/
+sherpa_ced_tiny/
 sherpa_models/
