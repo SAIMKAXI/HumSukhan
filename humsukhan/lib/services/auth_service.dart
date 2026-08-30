@@ -12,10 +12,13 @@ import 'supabase_service.dart';
 /// - Auth state monitoring
 class AuthService {
   static AuthService? _instance;
-  static AuthService get instance => _instance ?? AuthService._();
+  static AuthService get instance => _instance ??= AuthService._();
   AuthService._();
 
-  final SupabaseService _supabase = SupabaseService.instance;
+  SupabaseService get _supabase => SupabaseService.instance;
+
+  /// Whether Supabase auth is available.
+  bool get isAvailable => _supabase.auth != null;
 
   /// Current user.
   User? get currentUser => _supabase.currentUser;
@@ -28,8 +31,12 @@ class AuthService {
     required String password,
     String? name,
   }) async {
+    if (!isAvailable) {
+      return AuthResult.failure('Authentication unavailable. Please check your connection and try again.');
+    }
+
     try {
-      final response = await _supabase.auth.signUp(
+      final response = await _supabase.auth!.signUp(
         email: email,
         password: password,
         data: name != null ? {'name': name} : null,
@@ -54,8 +61,12 @@ class AuthService {
     required String email,
     required String password,
   }) async {
+    if (!isAvailable) {
+      return AuthResult.failure('Authentication unavailable. Please check your connection and try again.');
+    }
+
     try {
-      final response = await _supabase.auth.signInWithPassword(
+      final response = await _supabase.auth!.signInWithPassword(
         email: email,
         password: password,
       );
@@ -76,8 +87,12 @@ class AuthService {
 
   /// Sign in anonymously (for quick start without account).
   Future<AuthResult> signInAnonymously() async {
+    if (!isAvailable) {
+      return AuthResult.failure('Authentication unavailable. Please check your connection and try again.');
+    }
+
     try {
-      final response = await _supabase.auth.signInAnonymously();
+      final response = await _supabase.auth!.signInAnonymously();
 
       if (response.user != null) {
         debugPrint('Anonymous sign in successful: ${response.user!.id}');
@@ -95,8 +110,9 @@ class AuthService {
 
   /// Sign out.
   Future<void> signOut() async {
+    if (!isAvailable) return;
     try {
-      await _supabase.auth.signOut();
+      await _supabase.auth!.signOut();
       debugPrint('Sign out successful');
     } catch (e) {
       debugPrint('Sign out error: $e');
@@ -105,8 +121,9 @@ class AuthService {
 
   /// Reset password.
   Future<bool> resetPassword(String email) async {
+    if (!isAvailable) return false;
     try {
-      await _supabase.auth.resetPasswordForEmail(email);
+      await _supabase.auth!.resetPasswordForEmail(email);
       return true;
     } catch (e) {
       debugPrint('Password reset error: $e');

@@ -16,10 +16,12 @@ import 'supabase_service.dart';
 /// All operations respect Row Level Security (RLS).
 class DatabaseService {
   static DatabaseService? _instance;
-  static DatabaseService get instance => _instance ?? DatabaseService._();
+  static DatabaseService get instance => _instance ??= DatabaseService._();
   DatabaseService._();
 
-  final SupabaseService _supabase = SupabaseService.instance;
+  SupabaseService get _supabase => SupabaseService.instance;
+
+  bool get _isAvailable => _supabase.isReady && _supabase.client != null;
 
   // ──────────────────────────────────────────────
   // PROFILES
@@ -27,8 +29,9 @@ class DatabaseService {
 
   /// Upsert user profile to Supabase.
   Future<void> upsertProfile(UserProfile profile) async {
+    if (!_isAvailable) return;
     try {
-      await _supabase.client.from('profiles').upsert({
+      await _supabase.client!.from('profiles').upsert({
         'id': profile.id,
         'name': profile.name,
         'avatar_emoji': profile.avatarEmoji,
@@ -44,8 +47,9 @@ class DatabaseService {
 
   /// Fetch user profile from Supabase.
   Future<UserProfile?> fetchProfile(String userId) async {
+    if (!_isAvailable) return null;
     try {
-      final data = await _supabase.client
+      final data = await _supabase.client!
           .from('profiles')
           .select()
           .eq('id', userId)
@@ -72,11 +76,12 @@ class DatabaseService {
 
   /// Upsert user settings.
   Future<void> upsertSettings(Map<String, dynamic> settings) async {
+    if (!_isAvailable) return;
     try {
       final userId = _supabase.userId;
       if (userId.isEmpty) return;
 
-      await _supabase.client.from('settings').upsert({
+      await _supabase.client!.from('settings').upsert({
         'user_id': userId,
         'settings': settings,
         'updated_at': DateTime.now().toIso8601String(),
@@ -89,8 +94,9 @@ class DatabaseService {
 
   /// Fetch user settings.
   Future<Map<String, dynamic>?> fetchSettings(String userId) async {
+    if (!_isAvailable) return null;
     try {
-      final data = await _supabase.client
+      final data = await _supabase.client!
           .from('settings')
           .select()
           .eq('user_id', userId)
@@ -110,12 +116,13 @@ class DatabaseService {
 
   /// Upsert a professional session with its captions.
   Future<void> upsertSession(ProfessionalSession session) async {
+    if (!_isAvailable) return;
     try {
       final userId = _supabase.userId;
       if (userId.isEmpty) return;
 
       // Upsert session
-      await _supabase.client.from('sessions').upsert({
+      await _supabase.client!.from('sessions').upsert({
         'id': session.id,
         'user_id': userId,
         'title': session.title,
@@ -143,7 +150,7 @@ class DatabaseService {
           'is_own': c.isOwn,
         }).toList();
 
-        await _supabase.client.from('captions').upsert(captionsData);
+        await _supabase.client!.from('captions').upsert(captionsData);
       }
 
       debugPrint('Session upserted: ${session.id}');
@@ -154,11 +161,12 @@ class DatabaseService {
 
   /// Fetch all sessions for the current user.
   Future<List<ProfessionalSession>> fetchSessions() async {
+    if (!_isAvailable) return [];
     try {
       final userId = _supabase.userId;
       if (userId.isEmpty) return [];
 
-      final data = await _supabase.client
+      final data = await _supabase.client!
           .from('sessions')
           .select()
           .eq('user_id', userId)
@@ -167,7 +175,7 @@ class DatabaseService {
       final sessions = <ProfessionalSession>[];
       for (final row in data) {
         // Fetch captions for this session
-        final captionsData = await _supabase.client
+        final captionsData = await _supabase.client!
             .from('captions')
             .select()
             .eq('session_id', row['id'])
@@ -208,21 +216,22 @@ class DatabaseService {
 
   /// Delete a session and its captions.
   Future<void> deleteSession(String sessionId) async {
+    if (!_isAvailable) return;
     try {
       // Delete captions first (foreign key)
-      await _supabase.client
+      await _supabase.client!
           .from('captions')
           .delete()
           .eq('session_id', sessionId);
 
       // Delete associated insights
-      await _supabase.client
+      await _supabase.client!
           .from('insights')
           .delete()
           .eq('session_id', sessionId);
 
       // Delete session
-      await _supabase.client
+      await _supabase.client!
           .from('sessions')
           .delete()
           .eq('id', sessionId);
@@ -239,11 +248,12 @@ class DatabaseService {
 
   /// Upsert a folder.
   Future<void> upsertFolder(Folder folder) async {
+    if (!_isAvailable) return;
     try {
       final userId = _supabase.userId;
       if (userId.isEmpty) return;
 
-      await _supabase.client.from('folders').upsert({
+      await _supabase.client!.from('folders').upsert({
         'id': folder.id,
         'user_id': userId,
         'name': folder.name,
@@ -257,11 +267,12 @@ class DatabaseService {
 
   /// Fetch all folders.
   Future<List<Folder>> fetchFolders() async {
+    if (!_isAvailable) return [];
     try {
       final userId = _supabase.userId;
       if (userId.isEmpty) return [];
 
-      final data = await _supabase.client
+      final data = await _supabase.client!
           .from('folders')
           .select()
           .eq('user_id', userId)
@@ -280,8 +291,9 @@ class DatabaseService {
 
   /// Delete a folder.
   Future<void> deleteFolder(String folderId) async {
+    if (!_isAvailable) return;
     try {
-      await _supabase.client
+      await _supabase.client!
           .from('folders')
           .delete()
           .eq('id', folderId);
@@ -297,11 +309,12 @@ class DatabaseService {
 
   /// Upsert AI insight.
   Future<void> upsertInsight(ProfessionalInsight insight) async {
+    if (!_isAvailable) return;
     try {
       final userId = _supabase.userId;
       if (userId.isEmpty) return;
 
-      await _supabase.client.from('insights').upsert({
+      await _supabase.client!.from('insights').upsert({
         'id': insight.id,
         'session_id': insight.sessionId,
         'user_id': userId,
@@ -322,8 +335,9 @@ class DatabaseService {
 
   /// Fetch insights for a session.
   Future<ProfessionalInsight?> fetchInsight(String sessionId) async {
+    if (!_isAvailable) return null;
     try {
-      final data = await _supabase.client
+      final data = await _supabase.client!
           .from('insights')
           .select()
           .eq('session_id', sessionId)
@@ -354,12 +368,13 @@ class DatabaseService {
 
   /// Upsert quick replies.
   Future<void> upsertQuickReplies(List<QuickReply> replies) async {
+    if (!_isAvailable) return;
     try {
       final userId = _supabase.userId;
       if (userId.isEmpty) return;
 
       // Delete existing and re-insert
-      await _supabase.client
+      await _supabase.client!
           .from('quick_replies')
           .delete()
           .eq('user_id', userId);
@@ -374,7 +389,7 @@ class DatabaseService {
           'created_at': r.createdAt.toIso8601String(),
         }).toList();
 
-        await _supabase.client.from('quick_replies').upsert(data);
+        await _supabase.client!.from('quick_replies').upsert(data);
       }
       debugPrint('Quick replies upserted: ${replies.length}');
     } catch (e) {
@@ -384,11 +399,12 @@ class DatabaseService {
 
   /// Fetch quick replies.
   Future<List<QuickReply>> fetchQuickReplies() async {
+    if (!_isAvailable) return [];
     try {
       final userId = _supabase.userId;
       if (userId.isEmpty) return [];
 
-      final data = await _supabase.client
+      final data = await _supabase.client!
           .from('quick_replies')
           .select()
           .eq('user_id', userId);
@@ -412,6 +428,7 @@ class DatabaseService {
 
   /// Delete expired sessions (both local and cloud).
   Future<int> cleanupExpiredSessions() async {
+    if (!_isAvailable) return 0;
     try {
       final userId = _supabase.userId;
       if (userId.isEmpty) return 0;
@@ -419,7 +436,7 @@ class DatabaseService {
       final now = DateTime.now().toIso8601String();
 
       // Find expired sessions
-      final expired = await _supabase.client
+      final expired = await _supabase.client!
           .from('sessions')
           .select('id')
           .eq('user_id', userId)
@@ -441,18 +458,19 @@ class DatabaseService {
 
   /// Delete ALL user data from Supabase.
   Future<void> deleteAllUserData() async {
+    if (!_isAvailable) return;
     try {
       final userId = _supabase.userId;
       if (userId.isEmpty) return;
 
       // Delete in order (respect foreign keys)
-      await _supabase.client.from('captions').delete().eq('user_id', userId);
-      await _supabase.client.from('insights').delete().eq('user_id', userId);
-      await _supabase.client.from('sessions').delete().eq('user_id', userId);
-      await _supabase.client.from('folders').delete().eq('user_id', userId);
-      await _supabase.client.from('quick_replies').delete().eq('user_id', userId);
-      await _supabase.client.from('settings').delete().eq('user_id', userId);
-      await _supabase.client.from('profiles').delete().eq('id', userId);
+      await _supabase.client!.from('captions').delete().eq('user_id', userId);
+      await _supabase.client!.from('insights').delete().eq('user_id', userId);
+      await _supabase.client!.from('sessions').delete().eq('user_id', userId);
+      await _supabase.client!.from('folders').delete().eq('user_id', userId);
+      await _supabase.client!.from('quick_replies').delete().eq('user_id', userId);
+      await _supabase.client!.from('settings').delete().eq('user_id', userId);
+      await _supabase.client!.from('profiles').delete().eq('id', userId);
 
       debugPrint('All user data deleted from Supabase');
     } catch (e) {
