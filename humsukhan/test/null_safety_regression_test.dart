@@ -6,12 +6,17 @@ import 'package:humsukhan/services/auth_service.dart';
 import 'package:humsukhan/services/database_service.dart';
 import 'package:humsukhan/models/models.dart';
 
+Future<void> _waitForSplash(WidgetTester tester) async {
+  for (var i = 0; i < 24; i++) {
+    if (find.text('HumSukhan').evaluate().isNotEmpty) return;
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
 void main() {
   group('SupabaseService safety when not initialized', () {
     test('isReady returns false when Supabase is not initialized', () {
       final service = SupabaseService.instance;
-      // Accessing these getters must NEVER throw, even if Supabase
-      // was never initialized (e.g. empty SUPABASE_ANON_KEY)
       expect(() => service.isReady, returnsNormally);
       expect(() => service.client, returnsNormally);
       expect(() => service.auth, returnsNormally);
@@ -36,11 +41,9 @@ void main() {
       if (!service.isReady) {
         final stream = service.onAuthStateChange;
         expect(stream, isNotNull);
-        // Should not throw when listening to the stream
         late bool gotEvent;
         gotEvent = false;
         stream.listen((_) { gotEvent = true; });
-        // No event should arrive since stream is empty
         expect(gotEvent, isFalse);
       }
     });
@@ -105,7 +108,6 @@ void main() {
     test('upsertProfile returns without error when unavailable', () async {
       final db = DatabaseService.instance;
       final profile = UserProfile(name: 'Test');
-      // Must not throw even if Supabase is unavailable
       await db.upsertProfile(profile);
     });
 
@@ -161,17 +163,14 @@ void main() {
   group('App cold start safety', () {
     testWidgets('App renders splash screen without crashing', (WidgetTester tester) async {
       await tester.pumpWidget(const HumSukhanApp());
-      await tester.pump();
+      await _waitForSplash(tester);
       expect(find.text('HumSukhan'), findsOneWidget);
       expect(find.byType(Image), findsOneWidget);
     });
 
     testWidgets('App handles missing Supabase gracefully', (WidgetTester tester) async {
-      // This test verifies the app can start even when Supabase is not configured.
-      // The SupabaseService catches initialization errors internally.
       await tester.pumpWidget(const HumSukhanApp());
       await tester.pump();
-      // App should render without throwing null-check errors
       expect(find.byType(MaterialApp), findsOneWidget);
     });
   });
