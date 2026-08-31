@@ -18,6 +18,8 @@ class _EverydayScreenState extends State<EverydayScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   StreamSubscription? _speechSubscription;
+  bool _speakerPressActive = false;
+  int _speakerTurnToken = 0;
 
   @override
   void initState() {
@@ -29,36 +31,71 @@ class _EverydayScreenState extends State<EverydayScreen> {
     final speech = context.read<SpeechProvider>();
     await speech.initialize();
     _speechSubscription = speech.onResult.listen((result) {
-      if (!mounted) return;
+      if (!mounted || result.text.trim().isEmpty) return;
       final conv = context.read<ConversationProvider>();
-      if (result.text.trim().isEmpty) return;
-      if (result.isFinal) {
-        conv.finalizeCaption(result.text, language: result.language);
-        speech.detectLanguage(result.text);
-      } else {
-        conv.addPartialCaption(result.text, language: result.language);
-      }
+      // Conversational Mode is intentionally push-to-talk. STT results only
+      // belong to the currently held speaker turn and never start listening by
+      // themselves.
+      if (!conv.isSpeakerTurnActive) return;
+      conv.updateSpeakerTurn(result.text, language: result.language);
+      speech.detectLanguage(result.text);
       _scrollToBottom();
     });
   }
 
-  Future<void> _start() async {
+  Future<void> _startConversation() async {
     final conv = context.read<ConversationProvider>();
-    final speech = context.read<SpeechProvider>();
     conv.startConversation();
-    // Caption language is an explicit preference when set; otherwise English is
-    // the platform-neutral starting locale and the result language is surfaced.
-    final language = context.read<SettingsProvider>().captionLanguage;
-    await speech.startListening(language: language == 'Roman Urdu' ? 'Urdu' : language);
-    if (!speech.isLiveStt && mounted) {
-      conv.stopConversation();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _beginSpeakerPress() async {
+    if (!mounted || _speakerPressActive) return;
+    final conv = context.read<ConversationProvider>();
+    if (conv.state != ConversationState.active) return;
+
+    final settings = context.read<SettingsProvider>();
+    final speech = context.read<SpeechProvider>();
+    final language = settings.captionLanguage == 'Roman Urdu' ? 'Urdu' : settings.captionLanguage;
+
+    _speakerPressActive = true;
+    _speakerTurnToken++;
+    final token = _speakerTurnToken;
+    conv.beginSpeakerTurn(language: language);
+    if (mounted) setState(() {});
+
+    await speech.startListening(language: language);
+
+    if (!speech.isListening && mounted && token == _speakerTurnToken) {
+      _speakerPressActive = false;
+      conv.commitSpeakerTurn();
+      setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Speech recognition is unavailable. Download a speech model or check microphone access.')),
+        const SnackBar(content: Text('The speaker microphone could not start. Check microphone permission or the speech model.')),
       );
     }
   }
 
+  Future<void> _endSpeakerPress() async {
+    if (!_speakerPressActive) return;
+    _speakerPressActive = false;
+    _speakerTurnToken++;
+    final speech = context.read<SpeechProvider>();
+
+    // Stop the recognizer first so its trailing final event can update the
+    // current turn. A short drain window prevents the last word being lost.
+    await speech.stopListening();
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (!mounted) return;
+
+    context.read<ConversationProvider>().commitSpeakerTurn();
+    setState(() {});
+    _scrollToBottom();
+  }
+
   Future<void> _stop() async {
+    _speakerPressActive = false;
+    _speakerTurnToken++;
     await context.read<SpeechProvider>().stopListening();
     if (mounted) context.read<ConversationProvider>().stopConversation();
   }
@@ -77,6 +114,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
 
   @override
   void dispose() {
+    _speakerTurnToken++;
     _speechSubscription?.cancel();
     _textController.dispose();
     _scrollController.dispose();
@@ -100,96 +138,148 @@ class _EverydayScreenState extends State<EverydayScreen> {
           if (conv.state == ConversationState.active)
             Padding(
               padding: const EdgeInsets.only(right: 12),
-              child: Center(child: StatusIndicator(label: conv.listeningStatus, color: theme.colorScheme.primary, isActive: conv.isListening, icon: Icons.mic)),
+              child: Center(
+                child: StatusIndicator(
+                  label: conv.isListening ? 'Speaker talking' : 'Waiting for speaker',
+                  color: theme.colorScheme.primary,
+                  isActive: conv.isListening,
+                  icon: conv.isListening ? Icons.mic : Icons.mic_none,
+                ),
+              ),
             ),
         ],
       ),
-      body: Column(children: [
-        if (conv.state == ConversationState.active || conv.state == ConversationState.starting)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: theme.colorScheme.primary.withValues(alpha: .08),
-            child: Row(children: [
-              Icon(conv.isListening ? Icons.mic : Icons.hourglass_empty, color: theme.colorScheme.primary, size: 20),
-              const SizedBox(width: 8),
-              Expanded(child: Text(conv.isListening ? s.listeningStatus : conv.listeningStatus, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: theme.colorScheme.primary))),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(AppTokens.radiusFull)),
-                child: Text(speech.sttModeLabel, style: theme.textTheme.labelSmall),
-              ),
-            ]),
+      body: Column(
+        children: [
+          if (conv.state == ConversationState.active || conv.state == ConversationState.starting)
+            _buildSpeakerControls(context, conv, settings, theme),
+          if (conv.state == ConversationState.idle) PrivacyNotice(text: s.privacyNote),
+          Expanded(
+            child: conv.state == ConversationState.idle
+                ? _buildIdleState(context, s)
+                : conv.state == ConversationState.saveDecision
+                    ? _buildSaveDecision(context, s)
+                    : _buildCaptionArea(context, conv, settings, s),
           ),
-        if (conv.state == ConversationState.idle) PrivacyNotice(text: s.privacyNote),
-        Expanded(
-          child: conv.state == ConversationState.idle
-              ? _buildIdleState(context, s)
-              : conv.state == ConversationState.saveDecision
-                  ? _buildSaveDecision(context, s)
-                  : _buildCaptionArea(context, conv, settings, s),
-        ),
-        if (conv.state == ConversationState.active)
-          Container(
-            height: 50,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: quickReplies.replies.take(6).map((reply) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: QuickReplyChip(
-                  reply: reply,
-                  isHighContrast: settings.isHighContrast,
-                  onTap: () {
-                    conv.addOwnCaption(reply.text);
-                    _scrollToBottom();
-                  },
-                ),
-              )).toList(),
-            ),
-          ),
-        if (conv.state == ConversationState.active)
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: theme.scaffoldBackgroundColor,
-              border: Border(top: BorderSide(color: theme.dividerColor.withValues(alpha: .3))),
-            ),
-            child: Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _textController,
-                  decoration: InputDecoration(
-                    hintText: s.typeResponse,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTokens.radiusFull), borderSide: BorderSide.none),
-                    filled: true,
-                    fillColor: theme.cardColor,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          if (conv.state == ConversationState.active)
+            Container(
+              height: 50,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: quickReplies.replies.take(6).map((reply) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: QuickReplyChip(
+                    reply: reply,
+                    isHighContrast: settings.isHighContrast,
+                    onTap: conv.isListening
+                        ? null
+                        : () {
+                            conv.addOwnCaption(reply.text);
+                            _scrollToBottom();
+                          },
                   ),
-                  onChanged: (_) => setState(() {}),
-                  onSubmitted: _sendTypedText,
+                )).toList(),
+              ),
+            ),
+          if (conv.state == ConversationState.active)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.scaffoldBackgroundColor,
+                border: Border(top: BorderSide(color: theme.dividerColor.withValues(alpha: .3))),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _textController,
+                      enabled: !conv.isListening,
+                      decoration: InputDecoration(
+                        hintText: conv.isListening ? 'Speaker is talking…' : s.typeResponse,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTokens.radiusFull), borderSide: BorderSide.none),
+                        filled: true,
+                        fillColor: theme.cardColor,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      onSubmitted: _sendTypedText,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    tooltip: 'Speak response',
+                    icon: Icon(speech.isSpeaking ? Icons.stop : Icons.volume_up),
+                    onPressed: conv.isListening || _textController.text.trim().isEmpty
+                        ? null
+                        : () => speech.isSpeaking
+                            ? speech.stopSpeaking()
+                            : speech.speak(_textController.text.trim(), language: settings.captionLanguage),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton.filled(
+                    tooltip: 'Send response',
+                    icon: const Icon(Icons.send),
+                    onPressed: conv.isListening ? null : () => _sendTypedText(_textController.text),
+                  ),
+                ],
+              ),
+            ),
+          if (conv.state == ConversationState.active)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: PrimaryActionButton(label: s.stopConversation, icon: Icons.stop, onPressed: _stop),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpeakerControls(BuildContext context, ConversationProvider conv, SettingsProvider settings, ThemeData theme) {
+    final language = settings.captionLanguage;
+    return Material(
+      color: theme.colorScheme.primary.withValues(alpha: .08),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          children: [
+            Text(
+              conv.isListening
+                  ? 'Release when the speaker finishes'
+                  : 'Speaker: hold the microphone while talking',
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (_) => _beginSpeakerPress(),
+              onTapUp: (_) => _endSpeakerPress(),
+              onTapCancel: _endSpeakerPress,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                width: 82,
+                height: 82,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: conv.isListening ? theme.colorScheme.error : theme.colorScheme.primary,
+                  boxShadow: [
+                    if (conv.isListening)
+                      BoxShadow(color: theme.colorScheme.error.withValues(alpha: .30), blurRadius: 18, spreadRadius: 3),
+                  ],
+                ),
+                child: Icon(
+                  conv.isListening ? Icons.mic : Icons.mic_none,
+                  color: theme.colorScheme.onPrimary,
+                  size: 40,
                 ),
               ),
-              const SizedBox(width: 8),
-              IconButton.filled(
-                tooltip: 'Speak reply',
-                icon: Icon(speech.isSpeaking ? Icons.stop : Icons.volume_up),
-                onPressed: _textController.text.trim().isEmpty ? null : () => speech.isSpeaking ? speech.stopSpeaking() : speech.speak(_textController.text.trim(), language: settings.captionLanguage),
-              ),
-              const SizedBox(width: 4),
-              IconButton.filled(
-                tooltip: 'Send reply',
-                icon: const Icon(Icons.send),
-                onPressed: () => _sendTypedText(_textController.text),
-              ),
-            ]),
-          ),
-        if (conv.state == ConversationState.active)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: PrimaryActionButton(label: s.stopConversation, icon: Icons.stop, onPressed: _stop),
-          ),
-      ]),
+            ),
+            const SizedBox(height: 6),
+            Text(language, style: theme.textTheme.labelLarge),
+          ],
+        ),
+      ),
     );
   }
 
@@ -212,9 +302,9 @@ class _EverydayScreenState extends State<EverydayScreen> {
           const SizedBox(height: 24),
           Text(s.startConversation, style: theme.textTheme.headlineMedium, textAlign: TextAlign.center),
           const SizedBox(height: 12),
-          Text(s.listeningDots, style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
+          Text('Start a conversation, then the speaker can hold the microphone for each turn.', style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
           const SizedBox(height: 32),
-          PrimaryActionButton(label: s.startListening, icon: Icons.mic, onPressed: _start),
+          PrimaryActionButton(label: s.startListening, icon: Icons.chat, onPressed: _startConversation),
         ]),
       ),
     );
@@ -234,7 +324,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
       ),
       Expanded(
         child: captions.isEmpty && conv.currentPartial == null
-            ? Center(child: Text(s.listeningDots, style: theme.textTheme.bodyLarge))
+            ? Center(child: Text('Waiting for the speaker…', style: theme.textTheme.bodyLarge))
             : ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.symmetric(vertical: 8),
