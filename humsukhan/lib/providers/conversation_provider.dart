@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +9,8 @@ class ConversationProvider extends ChangeNotifier {
   ConversationState _state = ConversationState.idle;
   final List<Caption> _captions = [];
   Caption? _currentPartial;
+  DateTime? _currentPartialStartedAt;
+  DateTime? _lastCaptionTimestamp;
   bool _isListening = false;
   String _currentLanguage = 'English';
   String _listeningStatus = 'Not listening';
@@ -33,6 +34,8 @@ class ConversationProvider extends ChangeNotifier {
   void startConversation() {
     _captions.clear();
     _currentPartial = null;
+    _currentPartialStartedAt = null;
+    _lastCaptionTimestamp = null;
     _state = ConversationState.active;
     _isListening = true;
     _conversationStartedAt = DateTime.now();
@@ -46,6 +49,7 @@ class ConversationProvider extends ChangeNotifier {
     _isListening = false;
     _listeningStatus = 'Stopping...';
     _currentPartial = null;
+    _currentPartialStartedAt = null;
     notifyListeners();
     _state = ConversationState.saveDecision;
     _listeningStatus = 'Stopped';
@@ -59,8 +63,11 @@ class ConversationProvider extends ChangeNotifier {
     }
     try {
       final prefs = await SharedPreferences.getInstance();
-      final conversations = List<dynamic>.from(jsonDecode(prefs.getString('everydayConversations') ?? '[]'));
-      final sorted = List<Caption>.from(_captions)..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      final conversations = List<dynamic>.from(
+        jsonDecode(prefs.getString('everydayConversations') ?? '[]'),
+      );
+      final sorted = List<Caption>.from(_captions)
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
       final session = {
         'id': _currentSessionId ?? 'everyday_${DateTime.now().millisecondsSinceEpoch}',
         'captions': sorted.map((c) => c.toJson()).toList(),
@@ -100,6 +107,8 @@ class ConversationProvider extends ChangeNotifier {
     _conversationStartedAt = null;
     _captions.clear();
     _currentPartial = null;
+    _currentPartialStartedAt = null;
+    _lastCaptionTimestamp = null;
     _currentSessionId = null;
     notifyListeners();
   }
@@ -111,34 +120,86 @@ class ConversationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addPartialCaption(String text, {String speaker = 'Speaker 1', String language = 'English'}) {
-    if (text.trim().isEmpty) return;
-    _currentPartial = Caption(text: text, speaker: speaker, language: language, isPartial: true);
+  void addPartialCaption(
+    String text, {
+    String speaker = 'Speaker 1',
+    String language = 'English',
+  }) {
+    final value = text.trim();
+    if (value.isEmpty) return;
+
+    // A partial result belongs to one utterance. Keep its original start time
+    // so the finalized message retains the speaker's true chronological slot.
+    _currentPartialStartedAt ??= DateTime.now();
+    _currentPartial = Caption(
+      text: value,
+      speaker: speaker,
+      language: language,
+      timestamp: _currentPartialStartedAt,
+      isPartial: true,
+    );
     _currentLanguage = language;
     notifyListeners();
   }
 
-  void finalizeCaption(String text, {String speaker = 'Speaker 1', String language = 'English'}) {
-    if (text.trim().isEmpty) return;
-    final caption = Caption(text: text.trim(), speaker: speaker, language: language, isPartial: false);
+  void finalizeCaption(
+    String text, {
+    String speaker = 'Speaker 1',
+    String language = 'English',
+  }) {
+    final value = text.trim();
+    if (value.isEmpty) return;
+
+    // Use the beginning of the utterance rather than the recognition-final time.
+    // This prevents a speaker's message from jumping below a user reply that
+    // happened while the recognizer was finishing the speaker's sentence.
+    final candidateTimestamp = _currentPartialStartedAt ?? DateTime.now();
+    final timestamp = _monotonicTimestamp(candidateTimestamp);
+    final caption = Caption(
+      text: value,
+      speaker: speaker,
+      language: language,
+      timestamp: timestamp,
+      isPartial: false,
+    );
+
     _captions.add(caption);
-    _captions.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    _lastCaptionTimestamp = timestamp;
     _currentLanguage = language;
     _currentPartial = null;
+    _currentPartialStartedAt = null;
     notifyListeners();
   }
 
   void addOwnCaption(String text) {
     final value = text.trim();
     if (value.isEmpty) return;
-    _captions.add(Caption(text: value, speaker: 'You', language: _currentLanguage, isOwn: true));
-    _captions.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    final timestamp = _monotonicTimestamp(DateTime.now());
+    _captions.add(
+      Caption(
+        text: value,
+        speaker: 'You',
+        language: _currentLanguage,
+        timestamp: timestamp,
+        isOwn: true,
+      ),
+    );
+    _lastCaptionTimestamp = timestamp;
     notifyListeners();
+  }
+
+  DateTime _monotonicTimestamp(DateTime candidate) {
+    final last = _lastCaptionTimestamp;
+    if (last == null || candidate.isAfter(last)) return candidate;
+    return last.add(const Duration(microseconds: 1));
   }
 
   void clearCaptions() {
     _captions.clear();
     _currentPartial = null;
+    _currentPartialStartedAt = null;
+    _lastCaptionTimestamp = null;
     notifyListeners();
   }
 
