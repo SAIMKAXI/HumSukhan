@@ -86,5 +86,26 @@ class SettingsProvider extends ChangeNotifier {
   void setDefaultRetentionDays(int days) { _defaultRetentionDays = days.clamp(1, 15); notifyListeners(); _save('defaultRetentionDays', _defaultRetentionDays); }
   void toggleMonitoring() { _monitoringEnabled = !_monitoringEnabled; notifyListeners(); _save('monitoringEnabled', _monitoringEnabled); }
   void toggleAllowedAlert(String alertType) { _allowedAlerts[alertType] = !(_allowedAlerts[alertType] ?? true); notifyListeners(); _save('allowedAlerts', jsonEncode(_allowedAlerts)); }
-  Future<void> completeOnboarding() async { _isOnboardingComplete = true; await _save('onboardingComplete', true); notifyListeners(); }
+
+  bool isOnboardingCompleteForUser(String userId) {
+    if (userId.isEmpty) return false;
+    return _isOnboardingComplete || SharedPreferences.getInstance().then((_) => false) as bool;
+  }
+
+  Future<bool> hasCompletedOnboardingForUser(String userId) async {
+    if (userId.isEmpty) return false;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('onboardingComplete:$userId') ?? _isOnboardingComplete;
+  }
+
+  Future<void> completeOnboardingForUser(String userId) async {
+    if (userId.isEmpty) return;
+    _isOnboardingComplete = true;
+    await _save('onboardingComplete', true);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('onboardingComplete:$userId', true);
+    notifyListeners();
+  }
+
+  Future<void> completeOnboarding() async => completeOnboardingForUser('legacy');
 }
