@@ -22,6 +22,8 @@ class EnhancedSpeechProvider {
   STTMode _currentMode = STTMode.none;
   String _currentLanguage = 'English';
   String _platformLocale = 'en-US';
+  String _platformLastText = '';
+  String _lastEmittedPlatformText = '';
   StreamSubscription<SherpaSTTResult>? _sherpaSubscription;
   Timer? _platformRestartTimer;
 
@@ -47,7 +49,14 @@ class EnhancedSpeechProvider {
     await _modelManager.initialize();
 
     try {
-      _sherpaAvailable = await _sherpaSTT.initialize(language: preferredLanguage);
+      // Auto mode prefers the multilingual Dolphin model when the user has it
+      // downloaded. It can return either Urdu-script or Latin-script text, so
+      // the result language is detected from the actual recognized text rather
+      // than from the application's UI language.
+      final sherpaLanguage = preferredLanguage.toLowerCase() == 'auto'
+          ? (_modelManager.isModelReady('Urdu') ? 'Urdu' : 'English')
+          : preferredLanguage;
+      _sherpaAvailable = await _sherpaSTT.initialize(language: sherpaLanguage);
     } catch (e) {
       debugPrint('Sherpa STT init failed: $e');
       _sherpaAvailable = false;
@@ -74,6 +83,22 @@ class EnhancedSpeechProvider {
   }
 
   void _updateModeForLanguage(String language) {
+    if (language.toLowerCase() == 'auto') {
+      // The Dolphin model is multilingual and is the only bundled offline
+      // model capable of accepting the bilingual speaker flow. Prefer it when
+      // downloaded; otherwise use the English streaming model/platform STT.
+      if (_modelManager.isModelReady('Urdu') && _sherpaAvailable) {
+        _currentMode = STTMode.sherpaBatch;
+        return;
+      }
+      if (_modelManager.isModelReady('English') && _sherpaAvailable) {
+        _currentMode = STTMode.sherpaStreaming;
+        return;
+      }
+      _currentMode = _platformAvailable ? STTMode.platform : STTMode.none;
+      return;
+    }
+
     if (_sherpaAvailable && _modelManager.isModelReady(language)) {
       final model = _modelManager.getBestModel(language);
       _currentMode = model?.isStreaming == true
@@ -88,11 +113,23 @@ class EnhancedSpeechProvider {
 
   void _onPlatformStatus(String status) {
     if (!_listening || _currentMode != STTMode.platform) return;
-    // Android's platform recognizer can terminate a recognition window even
-    // while the app is still in an active conversation/session. Keep the app's
-    // listening state alive and restart the recognizer without touching the
-    // accumulated transcript.
     if (status == 'notListening' || status == 'done') {
+      // speech_to_text can finish a recognition segment after a pause even
+      // though the application is still listening. Commit the latest partial
+      // before restarting the recognizer so a new segment can never replace it.
+      final pending = _platformLastText.trim();
+      if (pending.isNotEmpty && pending != _lastEmittedPlatformText) {
+        _controller.add(SpeechResultEvent(
+          text: pending,
+          isFinal: true,
+          confidence: 0.8,
+          language: _detectLanguage(pending, fallback: _currentLanguage),
+          isLive: true,
+          mode: STTMode.platform,
+        ));
+        _lastEmittedPlatformText = pending;
+      }
+      _platformLastText = '';
       _schedulePlatformRestart(delay: const Duration(milliseconds: 350));
     }
   }
@@ -102,6 +139,7 @@ class EnhancedSpeechProvider {
     if (_platformRestartTimer?.isActive == true || _platformRestartInFlight) return;
 
     _platformRestartTimer = Timer(delay, () async {
+      _platformRestartTimer = null;
       if (!_listening || _currentMode != STTMode.platform || _platformRestartInFlight) return;
       _platformRestartInFlight = true;
       try {
@@ -122,7 +160,6 @@ class EnhancedSpeechProvider {
             _platformRestartTimer = null;
             _schedulePlatformRestart(delay: Duration.zero);
           });
-          return;
         }
       } finally {
         _platformRestartInFlight = false;
@@ -141,14 +178,16 @@ class EnhancedSpeechProvider {
     _currentLanguage = language;
     _updateModeForLanguage(language);
     _listening = true;
+    _platformLastText = '';
+    _lastEmittedPlatformText = '';
 
     try {
       switch (_currentMode) {
         case STTMode.sherpaStreaming:
-          await _startSherpaStreaming(language);
+          await _startSherpaStreaming(language.toLowerCase() == 'auto' ? 'Urdu' : language);
           break;
         case STTMode.sherpaBatch:
-          await _startSherpaBatch(language);
+          await _startSherpaBatch(language.toLowerCase() == 'auto' ? 'Urdu' : language);
           break;
         case STTMode.platform:
           await _startPlatformListening(language);
@@ -210,7 +249,12 @@ class EnhancedSpeechProvider {
   }
 
   void _onPlatformResult(SpeechRecognitionResult result) {
-    final text = result.recognizedWords;
+    final text = result.recognizedWords.trim();
+    if (text.isEmpty) return;
+    _platformLastText = text;
+    if (result.finalResult) {
+      _lastEmittedPlatformText = text;
+    }
     _controller.add(SpeechResultEvent(
       text: text,
       isFinal: result.finalResult,
@@ -226,6 +270,8 @@ class EnhancedSpeechProvider {
     _platformRestartTimer?.cancel();
     _platformRestartTimer = null;
     _platformRestartInFlight = false;
+    _platformLastText = '';
+    _lastEmittedPlatformText = '';
     _sherpaSubscription?.cancel();
     _sherpaSubscription = null;
 
@@ -252,7 +298,10 @@ class EnhancedSpeechProvider {
     _currentMode = STTMode.none;
 
     try {
-      final available = await _sherpaSTT.switchLanguage(language);
+      final sherpaLanguage = language.toLowerCase() == 'auto'
+          ? (_modelManager.isModelReady('Urdu') ? 'Urdu' : 'English')
+          : language;
+      final available = await _sherpaSTT.switchLanguage(sherpaLanguage);
       _sherpaAvailable = available;
     } catch (_) {
       _sherpaAvailable = false;
@@ -267,7 +316,8 @@ class EnhancedSpeechProvider {
   Future<bool> downloadModel(String language) async {
     final success = await _modelManager.downloadModel(language);
     if (success) {
-      _sherpaAvailable = await _sherpaSTT.initialize(language: language);
+      final sherpaLanguage = language.toLowerCase() == 'auto' ? 'Urdu' : language;
+      _sherpaAvailable = await _sherpaSTT.initialize(language: sherpaLanguage);
       _updateModeForLanguage(language);
     }
     return success;
@@ -299,11 +349,10 @@ class EnhancedSpeechProvider {
       case 'roman urdu':
         return 'ur-PK';
       case 'auto':
-        // Conversational Mode can be used regardless of the app UI language.
-        // Urdu is the preferred recognition locale for the bilingual speaker
-        // flow; recognized script is surfaced as Urdu and Roman Urdu when the
-        // provider returns Latin-script Urdu.
-        return 'ur-PK';
+        // Do not force the application's UI language onto the speaker.
+        // The offline multilingual model is preferred for Auto mode. The
+        // online fallback uses English only when no bilingual model is ready.
+        return 'en-US';
       default:
         return 'en-US';
     }
