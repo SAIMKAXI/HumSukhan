@@ -6,6 +6,7 @@ import 'providers/providers.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
 import 'screens/splash_screen.dart';
+import 'screens/auth_screen.dart';
 import 'l10n/app_strings.dart';
 import 'services/supabase_service.dart';
 import 'services/sound_detection_service.dart';
@@ -176,8 +177,8 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
         ChangeNotifierProvider(create: (_) => QuickReplyProvider()),
         ChangeNotifierProvider(create: (_) => ConnectivityProvider()..initialize()),
       ],
-      child: Consumer<SettingsProvider>(
-        builder: (context, settings, _) {
+      child: Consumer2<SettingsProvider, AuthProvider>(
+        builder: (context, settings, auth, _) {
           if (settings.appLanguage != _lastLanguage) {
             _lastLanguage = settings.appLanguage;
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -210,7 +211,6 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
           final darkBase = highContrast ? _highContrastTheme(fontFamily: urduFont, dark: true) : AppTheme.darkTheme(fontFamily: urduFont);
           final lightTheme = _withUrduMetrics(lightBase, isUrdu);
           final darkTheme = _withUrduMetrics(darkBase, isUrdu);
-
           final themeMode = settings.isDarkMode ? ThemeMode.dark : ThemeMode.light;
 
           if (_showSplash) {
@@ -227,15 +227,20 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
             );
           }
 
+          final landingRoute = !auth.isAuthenticated
+              ? AppRouter.auth
+              : (settings.isOnboardingComplete ? AppRouter.home : AppRouter.onboarding);
+
           return Directionality(
             textDirection: direction,
             child: MaterialApp(
+              key: ValueKey('${auth.isAuthenticated}-${settings.isOnboardingComplete}'),
               title: 'HumSukhan',
               debugShowCheckedModeBanner: false,
               theme: lightTheme,
               darkTheme: darkTheme,
               themeMode: themeMode,
-              initialRoute: settings.isOnboardingComplete ? AppRouter.home : AppRouter.onboarding,
+              initialRoute: landingRoute,
               onGenerateRoute: AppRouter.generateRoute,
               locale: appLocale,
               supportedLocales: locales,
