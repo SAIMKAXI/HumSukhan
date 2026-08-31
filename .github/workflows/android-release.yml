@@ -8,6 +8,7 @@ on:
     paths:
       - 'humsukhan/pubspec.yaml'
       - 'humsukhan/lib/**'
+      - 'humsukhan/test/**'
       - 'humsukhan/android/**'
       - '.github/workflows/**'
 
