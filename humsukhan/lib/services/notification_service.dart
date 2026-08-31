@@ -10,21 +10,20 @@ class NotificationService {
 
   Future<void> initialize() async {
     if (_initialized) return;
-
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    final iosSettings = DarwinInitializationSettings(
+    const appleSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
     );
-    final settings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-      macOS: iosSettings,
-    );
-
     try {
-      await _plugin.initialize(settings);
+      await _plugin.initialize(
+        settings: InitializationSettings(
+          android: androidSettings,
+          iOS: appleSettings,
+          macOS: appleSettings,
+        ),
+      );
       final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       await android?.requestNotificationsPermission();
       _initialized = true;
@@ -33,14 +32,9 @@ class NotificationService {
     }
   }
 
-  Future<void> showEnvironmentalAlert({
-    required String type,
-    required String severity,
-    required double confidence,
-  }) async {
+  Future<void> showEnvironmentalAlert({required String type, required String severity, required double confidence}) async {
     await initialize();
     if (!_initialized) return;
-
     final importance = severity == 'critical' ? Importance.max : Importance.high;
     final priority = severity == 'critical' ? Priority.max : Priority.high;
     final androidDetails = AndroidNotificationDetails(
@@ -53,19 +47,16 @@ class NotificationService {
       playSound: true,
       enableVibration: true,
     );
-    const iosDetails = DarwinNotificationDetails(
+    const appleDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
     );
-
-    final details = NotificationDetails(android: androidDetails, iOS: iosDetails, macOS: iosDetails);
-    final id = DateTime.now().millisecondsSinceEpoch.remainder(2147483647);
     await _plugin.show(
-      id,
-      '$type detected',
-      '${(confidence * 100).round()}% confidence${severity == 'critical' ? ' — urgent' : ''}',
-      details,
+      id: DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
+      title: '$type detected',
+      body: '${(confidence * 100).round()}% confidence${severity == 'critical' ? ' — urgent' : ''}',
+      notificationDetails: NotificationDetails(android: androidDetails, iOS: appleDetails, macOS: appleDetails),
     );
   }
 }
