@@ -5,7 +5,6 @@ import '../services/auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _auth = AuthService.instance;
-
   User? _user;
   bool _isLoading = false;
   String? _error;
@@ -17,9 +16,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
   String get userId => _user?.id ?? '';
 
-  AuthProvider() {
-    _init();
-  }
+  AuthProvider() { _init(); }
 
   void _init() {
     _user = _auth.currentUser;
@@ -40,39 +37,32 @@ class AuthProvider extends ChangeNotifier {
     });
   }
 
-  Future<bool> signUp({
-    required String email,
-    required String password,
-    String? name,
-  }) async {
+  Future<bool> signUp({required String email, required String password, String? name}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
-
     final result = await _auth.signUp(email: email, password: password, name: name);
     _isLoading = false;
-
-    if (result.success) {
-      _user = result.hasActiveSession ? result.user : null;
-      _error = null;
-    } else {
+    if (!result.success) {
+      _user = null;
       _error = result.errorMessage;
+    } else if (!result.hasActiveSession) {
+      _user = null;
+      _error = 'Account created. Please verify your email, then sign in to continue.';
+    } else {
+      _user = result.user;
+      _error = null;
     }
     notifyListeners();
-    return result.success;
+    return result.success && result.hasActiveSession;
   }
 
-  Future<bool> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<bool> signIn({required String email, required String password}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
-
     final result = await _auth.signIn(email: email, password: password);
     _isLoading = false;
-
     if (result.success && result.hasActiveSession) {
       _user = result.user;
       _error = null;
@@ -88,10 +78,8 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     _error = null;
     notifyListeners();
-
     final result = await _auth.signInAnonymously();
     _isLoading = false;
-
     if (result.success && result.hasActiveSession) {
       _user = result.user;
       _error = null;
@@ -113,14 +101,8 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearError() {
-    _error = null;
-    notifyListeners();
-  }
+  void clearError() { _error = null; notifyListeners(); }
 
   @override
-  void dispose() {
-    _authSubscription?.cancel();
-    super.dispose();
-  }
+  void dispose() { _authSubscription?.cancel(); super.dispose(); }
 }
