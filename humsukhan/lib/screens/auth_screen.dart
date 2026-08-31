@@ -42,17 +42,10 @@ class _AuthScreenState extends State<AuthScreen> {
     final haveAccount = isUrdu ? 'پہلے سے اکاؤنٹ ہے؟ سائن اِن کریں' : 'Already have an account? Sign in';
     final needAccount = isUrdu ? 'اکاؤنٹ نہیں ہے؟ سائن اَپ کریں' : "Don't have an account? Sign up";
     final privacy = isUrdu ? 'آپ کے اکاؤنٹ کا ڈیٹا محفوظ رکھا جاتا ہے۔ کیپشنز کے لیے آڈیو عارضی طور پر پروسیس ہوتی ہے؛ معمول کے کیپشن ورک فلو میں خام مائیکروفون آڈیو محفوظ نہیں کی جاتی۔' : 'Your account data is stored securely. Audio is processed for captions; HumSukhan does not store raw microphone audio as part of the normal caption workflow.';
-    final missingCredentials = isUrdu ? 'براہ کرم ای میل اور پاس ورڈ درج کریں' : 'Please enter email and password';
 
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [theme.scaffoldBackgroundColor, theme.colorScheme.surfaceContainerHighest],
-          ),
-        ),
+        decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [theme.scaffoldBackgroundColor, theme.colorScheme.surfaceContainerHighest])),
         child: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -60,12 +53,7 @@ class _AuthScreenState extends State<AuthScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 40),
-                Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: Image.asset('assets/logo.png', width: 140, height: 140, fit: BoxFit.cover),
-                  ),
-                ),
+                Center(child: ClipRRect(borderRadius: BorderRadius.circular(24), child: Image.asset('assets/logo.png', width: 140, height: 140, fit: BoxFit.cover))),
                 const SizedBox(height: 24),
                 Text(_isSignUp ? createTitle : signInTitle, style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700), textAlign: TextAlign.center),
                 const SizedBox(height: 8),
@@ -77,24 +65,13 @@ class _AuthScreenState extends State<AuthScreen> {
                 ],
                 TextField(controller: _emailController, keyboardType: TextInputType.emailAddress, textInputAction: TextInputAction.next, decoration: InputDecoration(labelText: emailLabel, prefixIcon: const Icon(Icons.email_outlined))),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  maxLength: _isSignUp ? 8 : null,
-                  decoration: InputDecoration(
-                    labelText: passwordLabel,
-                    helperText: _isSignUp ? passwordHint : null,
-                    helperMaxLines: 2,
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _obscurePassword = !_obscurePassword)),
-                  ),
-                ),
+                TextField(controller: _passwordController, obscureText: _obscurePassword, maxLength: _isSignUp ? 8 : null, decoration: InputDecoration(labelText: passwordLabel, helperText: _isSignUp ? passwordHint : null, helperMaxLines: 2, prefixIcon: const Icon(Icons.lock_outline), suffixIcon: IconButton(icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _obscurePassword = !_obscurePassword)))),
                 if (auth.error != null) ...[
                   const SizedBox(height: 12),
                   Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: theme.colorScheme.errorContainer, borderRadius: BorderRadius.circular(8)), child: Text(auth.error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
                 ],
                 const SizedBox(height: 24),
-                PrimaryActionButton(label: auth.isLoading ? waitLabel : (_isSignUp ? createTitle : (isUrdu ? 'سائن اِن' : 'Sign In')), icon: _isSignUp ? Icons.person_add : Icons.login, onPressed: auth.isLoading ? () {} : _handleSubmit),
+                PrimaryActionButton(label: auth.isLoading ? waitLabel : (_isSignUp ? createTitle : (isUrdu ? 'سائن اِن' : 'Sign In')), icon: _isSignUp ? Icons.person_add : Icons.login, onPressed: () { if (!auth.isLoading) _handleSubmit(); }),
                 const SizedBox(height: 12),
                 TextButton(onPressed: auth.isLoading ? null : () { context.read<AuthProvider>().clearError(); setState(() => _isSignUp = !_isSignUp); }, child: Text(_isSignUp ? haveAccount : needAccount)),
                 const SizedBox(height: 24),
@@ -124,8 +101,10 @@ class _AuthScreenState extends State<AuthScreen> {
       }
     }
     final auth = context.read<AuthProvider>();
-    final success = _isSignUp ? await auth.signUp(email: email, password: password, name: name) : await auth.signIn(email: email, password: password);
-    if (!mounted) return;
-    if (success) Navigator.of(context).pushReplacementNamed('/home');
+    if (_isSignUp) {
+      await auth.signUp(email: email, password: password, name: name);
+    } else {
+      await auth.signIn(email: email, password: password);
+    }
   }
 }

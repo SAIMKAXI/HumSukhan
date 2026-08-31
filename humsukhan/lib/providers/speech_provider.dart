@@ -35,17 +35,23 @@ class RealTtsProvider implements TtsProvider {
     }
   }
 
-  String _localeForLanguage(String language) {
-    switch (language.toLowerCase()) {
-      case 'urdu':
-        return 'ur-PK';
-      case 'roman urdu':
-        // Roman Urdu is Latin-script text, so an English voice is more reliable
-        // than an Urdu-script locale for the synthesized output.
-        return 'en-US';
-      default:
-        return 'en-US';
+  String _localeForText(String language, String text) {
+    final normalizedLanguage = language.toLowerCase().trim();
+    if (normalizedLanguage == 'urdu') return 'ur-PK';
+    if (normalizedLanguage == 'roman urdu') return 'ur-PK';
+    if (normalizedLanguage == 'auto') {
+      if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'ur-PK';
+      final normalized = text.toLowerCase().replaceAll(RegExp(r"[^a-z0-9\s']"), ' ');
+      final tokens = normalized.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
+      const romanUrduWords = {
+        'aap', 'ap', 'aapko', 'aapki', 'aapke', 'aapka', 'kya', 'kyun', 'hai', 'hain',
+        'ho', 'mein', 'main', 'mujhe', 'tum', 'se', 'ko', 'ka', 'ki', 'ke', 'yeh', 'woh',
+        'ham', 'hum', 'mera', 'meri', 'mere', 'apna', 'nahi', 'nahin', 'acha', 'achha',
+        'theek', 'karo', 'karna', 'jana', 'jao', 'chahiye', 'bhi', 'par',
+      };
+      if (tokens.intersection(romanUrduWords).length >= 1) return 'ur-PK';
     }
+    return 'en-US';
   }
 
   @override
@@ -55,7 +61,8 @@ class RealTtsProvider implements TtsProvider {
 
     _speaking = true;
     try {
-      await _tts.setLanguage(_localeForLanguage(language));
+      final locale = _localeForText(language, value);
+      await _tts.setLanguage(locale);
       await _tts.speak(value);
       while (_speaking) {
         await Future.delayed(const Duration(milliseconds: 100));
@@ -82,11 +89,6 @@ class RealTtsProvider implements TtsProvider {
 }
 
 /// Speech provider with hybrid STT support and model management.
-///
-/// Architecture:
-/// - English: Streaming Zipformer (real-time captions, offline)
-/// - Urdu/Hindi: Dolphin CTC (batch mode, offline)
-/// - Fallback: Platform STT (requires internet) → Demo mode
 class SpeechProvider extends ChangeNotifier {
   late final EnhancedSpeechProvider _sttProvider;
   late final TtsProvider _ttsProvider;
@@ -100,7 +102,6 @@ class SpeechProvider extends ChangeNotifier {
   String _currentLanguage = 'English';
   StreamSubscription<SpeechResultEvent>? _sttSubscription;
   StreamSubscription<ModelDownloadProgress>? _downloadSubscription;
-
   final Map<String, ModelDownloadProgress> _downloadProgress = {};
   bool _isDownloading = false;
 
@@ -118,64 +119,46 @@ class SpeechProvider extends ChangeNotifier {
   LanguageResult? get detectedLanguage => _detectedLanguage;
   STTMode get currentMode => _currentMode;
   String get currentLanguage => _currentLanguage;
-
   bool get isOfflineMode => _currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch;
   bool get isStreamingMode => _currentMode == STTMode.sherpaStreaming;
   bool get isBatchMode => _currentMode == STTMode.sherpaBatch;
   bool get isOnlineMode => _currentMode == STTMode.platform;
   bool get isDemoMode => _currentMode == STTMode.demo;
   bool get isLiveStt => _currentMode != STTMode.none && _currentMode != STTMode.demo;
-
   bool get isDownloading => _isDownloading;
   Map<String, ModelDownloadProgress> get downloadProgress => Map.unmodifiable(_downloadProgress);
 
   String get sttModeLabel {
     switch (_currentMode) {
-      case STTMode.sherpaStreaming:
-        return 'Offline (Streaming)';
-      case STTMode.sherpaBatch:
-        return 'Offline (Batch)';
-      case STTMode.platform:
-        return 'Online (Google)';
-      case STTMode.demo:
-        return 'Demo Mode';
-      case STTMode.none:
-        return 'Unavailable';
+      case STTMode.sherpaStreaming: return 'Offline (Streaming)';
+      case STTMode.sherpaBatch: return 'Offline (Batch)';
+      case STTMode.platform: return 'Online';
+      case STTMode.demo: return 'Demo Mode';
+      case STTMode.none: return 'Unavailable';
     }
   }
 
   String get sttModeDescription {
     switch (_currentMode) {
-      case STTMode.sherpaStreaming:
-        return 'Real-time offline speech recognition using Sherpa-ONNX. No internet required.';
-      case STTMode.sherpaBatch:
-        return 'Offline speech recognition using Sherpa-ONNX. Short processing delay.';
-      case STTMode.platform:
-        return 'Online speech recognition using Google STT. Requires internet connection.';
-      case STTMode.demo:
-        return 'Demo mode with simulated captions. No actual speech recognition.';
-      case STTMode.none:
-        return 'Speech recognition unavailable. Please download a language model.';
+      case STTMode.sherpaStreaming: return 'Real-time offline speech recognition using Sherpa-ONNX. No internet required.';
+      case STTMode.sherpaBatch: return 'Offline speech recognition using Sherpa-ONNX. Short processing delay.';
+      case STTMode.platform: return 'Online speech recognition using the configured online transcription service.';
+      case STTMode.demo: return 'Demo mode with simulated captions. No actual speech recognition.';
+      case STTMode.none: return 'Speech recognition unavailable. Please download a language model.';
     }
   }
 
   Future<void> initialize({String preferredLanguage = 'English'}) async {
     if (_isInitialized) return;
-
     _currentLanguage = preferredLanguage;
     await _modelManager.initialize();
-
     _downloadSubscription = _modelManager.onProgress.listen((progress) {
       _downloadProgress[progress.language] = progress;
-      _isDownloading = _downloadProgress.values.any(
-        (p) => p.status == DownloadStatus.downloading,
-      );
+      _isDownloading = _downloadProgress.values.any((p) => p.status == DownloadStatus.downloading);
       notifyListeners();
     });
-
     await _sttProvider.initialize(preferredLanguage: preferredLanguage);
     await _ttsProvider.initialize();
-
     _currentMode = _sttProvider.currentMode;
     _isInitialized = true;
     notifyListeners();
@@ -185,9 +168,9 @@ class SpeechProvider extends ChangeNotifier {
     _sttSubscription?.cancel();
     _sttSubscription = _sttProvider.onResult.listen((result) {
       _currentMode = result.mode;
+      if (result.isFinal && result.text.trim().isNotEmpty) detectLanguage(result.text);
       notifyListeners();
     });
-
     await _sttProvider.startListening(language: language);
     _currentMode = _sttProvider.currentMode;
     _currentLanguage = language;
@@ -231,9 +214,7 @@ class SpeechProvider extends ChangeNotifier {
 
   List<String> get offlineLanguages => ModelManager.availableModels.keys.toList();
   List<String> get readyLanguages => _modelManager.readyLanguages;
-
   bool isModelReady(String language) => _modelManager.isModelReady(language);
-
   ModelStatus? getModelStatus(String language) => _modelManager.statuses[language];
 
   Future<bool> downloadOfflineModel(String language) async {
@@ -258,13 +239,9 @@ class SpeechProvider extends ChangeNotifier {
 
   Stream<SpeechResultEvent> get onResult => _sttProvider.onResult;
 
-  /// Speak a caption or user reply without allowing the STT microphone to hear
-  /// the synthesized audio. The previous listening state is restored when TTS
-  /// finishes so conversational mode keeps running.
   Future<void> speak(String text, {String language = 'English'}) async {
     final value = text.trim();
     if (value.isEmpty) return;
-
     final wasListening = _sttProvider.isListening;
     final resumeLanguage = _currentLanguage;
     if (wasListening) {
@@ -272,19 +249,15 @@ class SpeechProvider extends ChangeNotifier {
       await _sttSubscription?.cancel();
       _sttSubscription = null;
     }
-
     _isSpeaking = true;
     _lastSpokenText = value;
     notifyListeners();
-
     try {
       await _ttsProvider.speak(value, language: language);
     } finally {
       _isSpeaking = false;
       notifyListeners();
-      if (wasListening) {
-        await startListening(language: resumeLanguage);
-      }
+      if (wasListening) await startListening(language: resumeLanguage);
     }
   }
 
@@ -299,7 +272,7 @@ class SpeechProvider extends ChangeNotifier {
     final romanUrduWords = ['kya', 'hai', 'mein', 'tum', 'aap', 'ho', 'se', 'ko', 'ka', 'ki', 'ke'];
     if (urduScriptRegex.hasMatch(text)) {
       _detectedLanguage = const LanguageResult(language: 'Urdu', confidence: 0.9, script: 'Arabic');
-    } else if (romanUrduWords.any((w) => text.toLowerCase().contains(w))) {
+    } else if (romanUrduWords.any((w) => text.toLowerCase().split(RegExp(r'\s+')).contains(w))) {
       _detectedLanguage = const LanguageResult(language: 'Roman Urdu', confidence: 0.7, script: 'Latin');
     } else {
       _detectedLanguage = const LanguageResult(language: 'English', confidence: 0.85, script: 'Latin');
