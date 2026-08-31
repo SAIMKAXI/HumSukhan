@@ -12,11 +12,7 @@ class DeepgramTranscriptResult {
   final String language;
   final double confidence;
 
-  const DeepgramTranscriptResult({
-    required this.transcript,
-    required this.language,
-    this.confidence = 0.0,
-  });
+  const DeepgramTranscriptResult({required this.transcript, required this.language, this.confidence = 0.0});
 }
 
 /// Hold-to-talk transcription path for Conversational Mode.
@@ -36,18 +32,10 @@ class DeepgramTranscriptionService {
   Future<bool> start() async {
     if (_recording) return true;
     if (!await _recorder.hasPermission()) return false;
-
     final dir = await getTemporaryDirectory();
     _path = '${dir.path}/humsukhan-dg-${DateTime.now().microsecondsSinceEpoch}.wav';
     try {
-      await _recorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.wav,
-          sampleRate: 16000,
-          numChannels: 1,
-        ),
-        path: _path!,
-      );
+      await _recorder.start(const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000, numChannels: 1), path: _path!);
       _recording = true;
       return true;
     } catch (e) {
@@ -57,14 +45,13 @@ class DeepgramTranscriptionService {
     }
   }
 
-  Future<DeepgramTranscriptResult?> stopAndTranscribe({String language = 'multi'}) async {
+  Future<DeepgramTranscriptResult?> stopAndTranscribe({String language = 'auto'}) async {
     if (!_recording) return null;
     _recording = false;
     final recordedPath = await _recorder.stop();
     final filePath = recordedPath ?? _path;
     _path = null;
     if (filePath == null) return null;
-
     final file = File(filePath);
     if (!await file.exists()) return null;
     final bytes = await file.readAsBytes();
@@ -72,10 +59,9 @@ class DeepgramTranscriptionService {
       await file.delete().catchError((_) {});
       return null;
     }
-
     try {
       final response = await SupabaseService.instance.client!.functions.invoke(
-        'deepgram-transcribe',
+        'deepgram-transcribe-bilingual',
         body: {
           'audioBase64': base64Encode(bytes),
           'mimeType': 'audio/wav',
@@ -100,12 +86,8 @@ class DeepgramTranscriptionService {
   Future<void> cancel() async {
     _recording = false;
     _path = null;
-    try {
-      await _recorder.cancel();
-    } catch (_) {}
+    try { await _recorder.cancel(); } catch (_) {}
   }
 
-  void dispose() {
-    _recorder.dispose();
-  }
+  void dispose() => _recorder.dispose();
 }
