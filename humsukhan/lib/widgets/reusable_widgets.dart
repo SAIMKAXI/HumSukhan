@@ -67,7 +67,7 @@ class OfflineBadge extends StatelessWidget {
 // ===== QUICK REPLY CHIP =====
 class QuickReplyChip extends StatelessWidget {
   final QuickReply reply;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool isHighContrast;
   const QuickReplyChip({super.key, required this.reply, required this.onTap, this.isHighContrast = false});
 
