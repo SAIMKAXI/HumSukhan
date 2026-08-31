@@ -143,15 +143,30 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
     );
   }
 
-  Widget _applyAccessibilityScale(BuildContext context, Widget? child, SettingsProvider settings) {
+  Widget _applyAccessibilityScale(
+    BuildContext context,
+    Widget? child,
+    SettingsProvider settings,
+  ) {
     if (child == null) return const SizedBox.shrink();
     final baseScale = MediaQuery.textScalerOf(context).scale(1.0);
     final scale = baseScale * (settings.isLargeText ? 1.2 : 1.0);
-    return MediaQuery(
-      data: MediaQuery.of(context).copyWith(
-        textScaler: TextScaler.linear(scale),
+    final brightness = Theme.of(context).brightness;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness:
+            brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+        statusBarBrightness:
+            brightness == Brightness.dark ? Brightness.dark : Brightness.light,
       ),
-      child: child,
+      child: MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(scale),
+        ),
+        child: child,
+      ),
     );
   }
 
@@ -203,8 +218,9 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
           final highContrast = settings.isHighContrast;
           final regularLightTheme = AppTheme.lightTheme(fontFamily: urduFont);
           final regularDarkTheme = AppTheme.darkTheme(fontFamily: urduFont);
-          final highContrastTheme = _highContrastTheme().copyWith(
-            textTheme: _highContrastTheme().textTheme.apply(fontFamily: urduFont),
+          final highContrastBase = _highContrastTheme();
+          final highContrastTheme = highContrastBase.copyWith(
+            textTheme: highContrastBase.textTheme.apply(fontFamily: urduFont),
           );
 
           if (_showSplash) {
@@ -216,7 +232,8 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
               locale: appLocale,
               supportedLocales: supportedLocales,
               localizationsDelegates: localizationDelegates,
-              builder: (context, child) => _applyAccessibilityScale(context, child, settings),
+              builder: (context, child) =>
+                  _applyAccessibilityScale(context, child, settings),
               home: SplashScreen(
                 onComplete: () => setState(() => _showSplash = false),
               ),
@@ -231,12 +248,15 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
               theme: highContrast ? highContrastTheme : regularLightTheme,
               darkTheme: highContrast ? highContrastTheme : regularDarkTheme,
               themeMode: highContrast ? ThemeMode.light : settings.themeMode,
-              initialRoute: settings.isOnboardingComplete ? AppRouter.home : AppRouter.onboarding,
+              initialRoute: settings.isOnboardingComplete
+                  ? AppRouter.home
+                  : AppRouter.onboarding,
               onGenerateRoute: AppRouter.generateRoute,
               locale: appLocale,
               supportedLocales: supportedLocales,
               localizationsDelegates: localizationDelegates,
-              builder: (context, child) => _applyAccessibilityScale(context, child, settings),
+              builder: (context, child) =>
+                  _applyAccessibilityScale(context, child, settings),
             ),
           );
         },
