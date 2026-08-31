@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../screens/screens.dart';
 import '../widgets/main_scaffold.dart';
+import '../services/auth_service.dart';
 
 class AppRouter {
   static const String onboarding = '/';
@@ -12,9 +13,16 @@ class AppRouter {
   static const String sessionLive = '/session/live';
   static const String environmental = '/environmental';
   static const String settings = '/settings';
-  static const String psl = '/psl';
+
+  static bool _requiresAuthentication(String? name) =>
+      name != null && name != onboarding && name != auth;
 
   static Route<dynamic> generateRoute(RouteSettings routeSettings) {
+    if (_requiresAuthentication(routeSettings.name) &&
+        !AuthService.instance.isAuthenticated) {
+      return MaterialPageRoute(builder: (_) => const AuthScreen());
+    }
+
     switch (routeSettings.name) {
       case onboarding:
         return MaterialPageRoute(builder: (_) => const OnboardingScreen());
@@ -36,10 +44,12 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => const EnvironmentalScreen());
       case settings:
         return MaterialPageRoute(builder: (_) => const SettingsScreen());
-      case psl:
-        return MaterialPageRoute(builder: (_) => const PslScreen());
       default:
-        return MaterialPageRoute(builder: (_) => const MainScaffold());
+        return MaterialPageRoute(
+          builder: (_) => AuthService.instance.isAuthenticated
+              ? const MainScaffold()
+              : const AuthScreen(),
+        );
     }
   }
 }
