@@ -15,8 +15,8 @@ class AppStrings {
 
   // ── General ──
   String get appName => 'HumSukhan';
-  String get appTagline => _isUrdu ? 'llvmartbasis AI saathi' : 'Accessibility-first AI Companion';
-  String get versionLabel => _isUrdu ? 'Version 1.0.0 — llvmartbasis AI saathi' : 'Version 1.0.0 — Accessibility-first AI companion';
+  String get appTagline => _isUrdu ? 'قابلِ رسائی AI معاون' : 'Accessibility-first AI Companion';
+  String get versionLabel => _isUrdu ? 'نسخہ 2.1.4 — قابلِ رسائی AI معاون' : 'Version 2.1.4 — Accessibility-first AI companion';
 
   // ── Navigation ──
   String get navHome => _isUrdu ? 'گھر' : 'Home';
@@ -29,7 +29,7 @@ class AppStrings {
   String get goodMorning => _isUrdu ? 'صبح بخیر' : 'morning';
   String get goodAfternoon => _isUrdu ? 'دوپہر بخیر' : 'afternoon';
   String get goodEvening => _isUrdu ? 'شام بخیر' : 'evening';
-  String get yourCompanion => _isUrdu ? 'آپ کا llvmartbasis ساتھی' : 'Your accessibility companion';
+  String get yourCompanion => _isUrdu ? 'آپ کا قابلِ رسائی ساتھی' : 'Your accessibility companion';
   String get quickActions => _isUrdu ? 'فوری اعمال' : 'QUICK ACTIONS';
   String get everydayMode => _isUrdu ? 'ہر روز کا موڈ' : 'Everyday Mode';
   String get startConversation => _isUrdu ? 'گفتگو شروع کریں' : 'Start a Conversation';
@@ -54,9 +54,9 @@ class AppStrings {
   String get onboardingProfessional => _isUrdu ? 'پیشہ ورانہ سننا' : 'Professional Listening';
   String get onboardingProfessionalDesc => _isUrdu ? 'لیکچرز اور میٹنگز کیپچر کریں۔ AI سے چلائی جانے والی خلاصے، اعمال کے اقدامات، اور بصیرت حاصل کریں۔' : 'Capture lectures and meetings. Get AI-powered summaries, action items, and insights.';
   String get onboardingEnvironmental => _isUrdu ? 'ماحولیاتی آگاہی' : 'Environmental Awareness';
-  String get onboardingEnvironmentalDesc => _isUrdu ? 'اپنے آس پاس اہم آوازوں کے بارے میں جانیں — آگ کی الرٹ، دروازے کی گھنٹی، فون کے کالز، اور بہت کچھ۔' : 'Know about important sounds around you — fire alarms, doorbells, phone calls, and more.';
+  String get onboardingEnvironmentalDesc => _isUrdu ? 'اپنے آس پاس اہم آوازوں کے بارے میں جانیں — فائر الارم، دروازے کی گھنٹی، فون کالز، اور بہت کچھ۔' : 'Know about important sounds around you — fire alarms, doorbells, phone calls, and more.';
   String get onboardingPrivacy => _isUrdu ? 'رازداری پہلے' : 'Privacy First';
-  String get onboardingPrivacyDesc => _isUrdu ? 'آڈیو عارضی طور پر پروسیس ہوتا ہے اور ریلیز ہو جاتا ہے۔ کچھ خام آڈیو کبھی نہیں رکھا جاتا۔' : 'Audio is processed temporarily and released. No raw audio is ever stored.';
+  String get onboardingPrivacyDesc => _isUrdu ? 'آڈیو عارضی طور پر پروسیس ہوتا ہے اور ریلیز ہو جاتا ہے۔ خام آڈیو کبھی محفوظ نہیں کیا جاتا۔' : 'Audio is processed temporarily and released. No raw audio is ever stored.';
 
   // ── Everyday ──
   String get everydayTitle => _isUrdu ? 'ہر روز' : 'Everyday';
@@ -79,6 +79,7 @@ class AppStrings {
   String get foldersTab => _isUrdu ? 'فولڈرز' : 'Folders';
   String get classesTab => _isUrdu ? 'کلاسز' : 'Classes';
   String get meetingsTab => _isUrdu ? 'میٹنگز' : 'Meetings';
+  String get lecturesTab => _isUrdu ? 'لیکچرز' : 'Lectures';
   String get generalFolder => _isUrdu ? 'عمومی' : 'General';
   String get sessionsCount => _isUrdu ? 'اجلاس' : 'sessions';
   String get noSavedSessions => _isUrdu ? 'ابھی تک کوئی محفوظ شدہ اجلاس نہیں' : 'No saved sessions yet';
@@ -88,9 +89,11 @@ class AppStrings {
   String get noFoldersDesc => _isUrdu ? 'اپنے اجلاس کو ترتیب دینے کے لیے فولڈر بنائیں۔' : 'Create a folder to organize your sessions.';
   String get createFolder => _isUrdu ? 'فولڈر بنائیں' : 'Create Folder';
   String get noClassSessions => _isUrdu ? 'کوئی کلاس اجلاس نہیں' : 'No class sessions';
-  String get noClassSessionsDesc => _isUrdu ? 'اجلاس شروع کریں اور انہیں یہاں دیکھنے کے لیے "کلاس" کو قسم منتخب کریں۔' : 'Start a session and select "Class" as the type to see them here.';
+  String get noClassSessionsDesc => _isUrdu ? 'اجلاس شروع کریں اور انہیں یہاں دیکھنے کے لیے "کلاس" کی قسم منتخب کریں۔' : 'Start a session and select "Class" as the type to see them here.';
   String get noMeetingSessions => _isUrdu ? 'کوئی میٹنگ اجلاس نہیں' : 'No meeting sessions';
-  String get noMeetingSessionsDesc => _isUrdu ? 'اجلاس شروع کریں اور انہیں یہاں دیکھنے کے لیے "میٹنگ" کو قسم منتخب کریں۔' : 'Start a session and select "Meeting" as the type to see them here.';
+  String get noMeetingSessionsDesc => _isUrdu ? 'اجلاس شروع کریں اور انہیں یہاں دیکھنے کے لیے "میٹنگ" کی قسم منتخب کریں۔' : 'Start a session and select "Meeting" as the type to see them here.';
+  String get noLectureSessions => _isUrdu ? 'کوئی لیکچر اجلاس نہیں' : 'No lecture sessions';
+  String get noLectureSessionsDesc => _isUrdu ? 'لیکچر کیپچر کرنے کے لیے نیا اجلاس شروع کریں۔' : 'Start a new session to capture a lecture.';
   String get recentLabel => _isUrdu ? 'حالیہ' : 'RECENT';
   String get allSessionsLabel => _isUrdu ? 'تمام اجلاس' : 'ALL SESSIONS';
   String get sessionTitle => _isUrdu ? 'اجلاس کا عنوان' : 'Session Title';
@@ -117,7 +120,7 @@ class AppStrings {
   String get transcriptTab => _isUrdu ? 'ٹرانسکرپٹ' : 'Transcript';
   String get summaryTab => _isUrdu ? 'خلاصہ' : 'Summary';
   String get vocabularyTab => _isUrdu ? 'ذخیرہ الفاظ' : 'Vocabulary';
-  String get themesTab => _isUrdu ? 'تھیمز' : 'Themes';
+  String get themesTab => _isUrdu ? 'موضوعات' : 'Themes';
   String get actionsTab => _isUrdu ? 'اقدامات' : 'Actions';
   String get exportAction => _isUrdu ? 'برآمد' : 'Export';
   String get deleteAction => _isUrdu ? 'حذف' : 'Delete';
@@ -134,10 +137,10 @@ class AppStrings {
   String get viewTranscript => _isUrdu ? 'ٹرانسکرپٹ دیکھیں' : 'View Transcript';
   String get noVocabulary => _isUrdu ? 'کوئی ذخیرہ الفاظ نہیں' : 'No vocabulary';
   String get noVocabularyDesc => _isUrdu ? 'AI تجزیے کے بعد کلیدی اصطلاحات یہاں ظاہر ہوں گی۔' : 'Key terms will appear here after AI analysis.';
-  String get noThemes => _isUrdu ? 'کوئی تھیمز نہیں' : 'No themes';
-  String get noThemesDesc => _isUrdu ? 'AI تجزیے کے بعد تھیمز یہاں ظاہر ہوں گی۔' : 'Themes will appear here after AI analysis.';
+  String get noThemes => _isUrdu ? 'کوئی موضوعات نہیں' : 'No themes';
+  String get noThemesDesc => _isUrdu ? 'AI تجزیے کے بعد موضوعات یہاں ظاہر ہوں گے۔' : 'Themes will appear here after AI analysis.';
   String get noActionItems => _isUrdu ? 'کوئی عمل کے اقدامات نہیں' : 'No action items';
-  String get noActionItemsDesc => _isUrdu ? 'AI تجزیے کے بعد عمل کے اقدامات یہاں ظاہر ہوں گی۔' : 'Action items will appear here after AI analysis.';
+  String get noActionItemsDesc => _isUrdu ? 'AI تجزیے کے بعد عمل کے اقدامات یہاں ظاہر ہوں گے۔' : 'Action items will appear here after AI analysis.';
   String get noItemsAvailable => _isUrdu ? 'کوئی اشیاء دستیاب نہیں' : 'No items available';
   String get exportTxt => _isUrdu ? 'TXT کے طور پر برآمد کریں' : 'Export as TXT';
   String get exportPdf => _isUrdu ? 'PDF کے طور پر برآمد کریں' : 'Export as PDF';
@@ -160,7 +163,7 @@ class AppStrings {
   String get noAlertsYet => _isUrdu ? 'ابھی تک کوئی الرٹس نہیں' : 'No alerts yet';
   String get noAlertsDesc => _isUrdu ? 'آوازوں کا پتہ لگنے پر الرٹ کی تاریخ یہاں ظاہر ہوگی۔' : 'Alert history will appear here when sounds are detected.';
   String get fireAlarm => _isUrdu ? 'آگ کی الرٹ' : 'Fire Alarm';
-  String get smokeAlarm => _isUrdu ? 'دھواں کی الرٹ' : 'Smoke Alarm';
+  String get smokeAlarm => _isUrdu ? 'دھوئیں کی الرٹ' : 'Smoke Alarm';
   String get siren => _isUrdu ? 'سائرن' : 'Siren';
   String get doorbell => _isUrdu ? 'دروازے کی گھنٹی' : 'Doorbell';
   String get knock => _isUrdu ? 'دستک' : 'Knock';
@@ -169,7 +172,7 @@ class AppStrings {
   String get babyCry => _isUrdu ? 'بچے کی رو' : 'Baby Cry';
   String get detected => _isUrdu ? 'پتہ لگا' : 'DETECTED';
   String get confidence => _isUrdu ? 'اعتماد' : 'confidence';
-  String get dismiss => _isUrdu ? 'مسخ کر دیں' : 'Dismiss';
+  String get dismiss => _isUrdu ? 'بند کریں' : 'Dismiss';
 
   // ── Settings ──
   String get settingsTitle => _isUrdu ? 'ترتیبات' : 'Settings';
@@ -178,19 +181,19 @@ class AppStrings {
   String get tapToEdit => _isUrdu ? 'ترمیم کے لیے ٹیپ کریں' : 'Tap to edit';
   String get editProfile => _isUrdu ? 'پروفائل میں ترمیم کریں' : 'Edit Profile';
   String get nameLabel => _isUrdu ? 'نام' : 'Name';
-  String get accessibility => _isUrdu ? 'llvmartbasis' : 'Accessibility';
+  String get accessibility => _isUrdu ? 'رسائی پذیری' : 'Accessibility';
   String get darkMode => _isUrdu ? 'ڈارک موڈ' : 'Dark Mode';
   String get darkModeDesc => _isUrdu ? 'کم روشنی میں آنکھوں پر دباؤ کم کریں' : 'Reduce eye strain in low light';
   String get highContrast => _isUrdu ? 'اعلیٰ کنٹراسٹ' : 'High Contrast';
   String get highContrastDesc => _isUrdu ? 'بہتر نظارے کے لیے کنٹراسٹ بڑھائیں' : 'Increase contrast for better visibility';
-  String get largeText => _isUrdu ? 'بڑا ٹیکسٹ' : 'Large Text';
-  String get largeTextDesc => _isUrdu ? 'مجموعی ٹیکسٹ کا سائز بڑھائیں' : 'Increase overall text size';
+  String get largeText => _isUrdu ? 'بڑا متن' : 'Large Text';
+  String get largeTextDesc => _isUrdu ? 'مجموعی متن کا سائز بڑھائیں' : 'Increase overall text size';
   String get simplifiedLanguage => _isUrdu ? 'سادہ زبان' : 'Simplified Language';
-  String get simplifiedLanguageDesc => _isUrdu ? 'پورے میں سادہ زبان استعمال کریں' : 'Use simpler language throughout';
-  String get captionTextSize => _isUrdu ? 'کیپشن ٹیکسٹ کا سائز' : 'Caption Text Size';
+  String get simplifiedLanguageDesc => _isUrdu ? 'پوری ایپ میں سادہ زبان استعمال کریں' : 'Use simpler language throughout';
+  String get captionTextSize => _isUrdu ? 'کیپشن متن کا سائز' : 'Caption Text Size';
   String get alertPreferences => _isUrdu ? 'الرٹ ترجیحات' : 'Alert Preferences';
   String get hapticAlerts => _isUrdu ? 'ہیپٹک الرٹس' : 'Haptic Alerts';
-  String get hapticAlertsDesc => _isUrdu ? 'الرٹس کے لیے وبریٹ' : 'Vibrate for alerts';
+  String get hapticAlertsDesc => _isUrdu ? 'الرٹس کے لیے وائبریشن' : 'Vibrate for alerts';
   String get visualAlerts => _isUrdu ? 'بصری الرٹس' : 'Visual Alerts';
   String get visualAlertsDesc => _isUrdu ? 'بصری الرٹ اشارے دکھائیں' : 'Show visual alert indicators';
   String get screenFlashAlerts => _isUrdu ? 'اسکرین فلیش الرٹس' : 'Screen Flash Alerts';
@@ -205,25 +208,41 @@ class AppStrings {
   String get urduLabel => _isUrdu ? 'اردو' : 'Urdu';
   String get downloadLabel => _isUrdu ? 'ڈاؤن لوڈ' : 'Download';
   String get readyLabel => _isUrdu ? 'تیار' : 'Ready';
-  String get notDownloaded => _isUrdu ? 'ڈاؤن لوڈ نہیں کیا' : 'Not downloaded';
-  String get offlineSttDesc => _isUrdu ? 'آف لائن سپیچ ریکگنیشن کے لیے زبان ماڈلز ڈاؤن لوڈ کریں۔ انگریزی ریئل ٹائم اسٹریمنگ کی اجازت دیتی ہے۔ اردو مختصر تاخیر کے ساتھ بیچ پروسیسنگ استعمال کرتی ہے۔' : 'Download language models for offline speech recognition. English supports real-time streaming. Urdu uses batch processing with a short delay.';
-  String deleteModelDesc(int sizeMB) => _isUrdu ? 'یہ ${sizeMB}MB اسٹوریج فری کرے گا۔ آپ اسے بعد میں دوبارہ ڈاؤن لوڈ کر سکتے ہیں۔' : 'This will free up ${sizeMB}MB of storage. You can download it again later.';
+  String get notDownloaded => _isUrdu ? 'ڈاؤن لوڈ نہیں کیا گیا' : 'Not downloaded';
+  String get offlineSttDesc => _isUrdu ? 'آف لائن بولی کی پہچان کے لیے زبان ماڈلز ڈاؤن لوڈ کریں۔ انگریزی ریئل ٹائم اسٹریمنگ کی اجازت دیتی ہے۔ اردو مختصر تاخیر کے ساتھ بیچ پروسیسنگ استعمال کرتی ہے۔' : 'Download language models for offline speech recognition. English supports real-time streaming. Urdu uses batch processing with a short delay.';
+  String deleteModelDesc(int sizeMB) => _isUrdu ? 'یہ ${sizeMB}MB اسٹوریج خالی کرے گا۔ آپ اسے بعد میں دوبارہ ڈاؤن لوڈ کر سکتے ہیں۔' : 'This will free up ${sizeMB}MB of storage. You can download it again later.';
   String get defaultRetention => _isUrdu ? 'ڈیفالٹ رٹینشن' : 'Default Retention';
   String get defaultRetentionPeriod => _isUrdu ? 'ڈیفالٹ رٹینشن مدت' : 'Default Retention Period';
   String get deleteAllData => _isUrdu ? 'ڈیٹا حذف کریں' : 'Delete All Data';
   String get deleteAllDataDesc => _isUrdu ? 'تمام محفوظ شدہ اجلاس، ٹرانسکرپٹس، اور ترتیبات کو ہٹا دیں' : 'Remove all saved sessions, transcripts, and settings';
   String get privacySection => _isUrdu ? 'رازداری' : 'Privacy';
-  String get privacyNoticeText => _isUrdu ? 'HumSukhan آڈیو کو عارضی طور پر پروسیس کرتا ہے اور ریلیز کرتا ہے۔ کچھ خام آڈیو کبھی نہیں رکھا جاتا۔ محفوظ شدہ ریکارڈز صرف کیپشنز اور میٹا ڈیٹا رکھتے ہیں۔ برآمد شدہ فائلیں HumSukhan کے باہر رکھی جاتی ہیں۔' : 'HumSukhan processes audio temporarily and releases it. No raw audio is ever stored. Saved records contain captions and metadata only. Exported files are stored outside HumSukhan.';
-  String get aboutSection => _isUrdu ? 'کے بارے میں' : 'About';
+  String get privacyNoticeText => _isUrdu ? 'HumSukhan آڈیو کو عارضی طور پر پروسیس کرتا ہے اور ریلیز کرتا ہے۔ خام آڈیو کبھی محفوظ نہیں کیا جاتا۔ محفوظ شدہ ریکارڈز صرف کیپشنز اور میٹا ڈیٹا رکھتے ہیں۔ برآمد شدہ فائلیں HumSukhan کے باہر رکھی جاتی ہیں۔' : 'HumSukhan processes audio temporarily and releases it. No raw audio is ever stored. Saved records contain captions and metadata only. Exported files are stored outside HumSukhan.';
+  String get aboutSection => _isUrdu ? 'ہمارے بارے میں' : 'About';
   String get fontLabel => _isUrdu ? 'فونٹ' : 'Font';
-  String get fontDesc => _isUrdu ? 'ایٹکسن ہائپرلیجیبل — زیادہ سے زیادہ وضاحت کے لیے ڈیزائن کیا گیا' : 'Atkinson Hyperlegible — Designed for maximum legibility';
+  String get fontDesc => _isUrdu ? 'ایٹکنسن ہائپرلیجیبل — زیادہ سے زیادہ وضاحت کے لیے ڈیزائن کیا گیا' : 'Atkinson Hyperlegible — Designed for maximum legibility';
   String get maximumAllowed => _isUrdu ? 'زیادہ سے زیادہ اجازت' : 'Maximum allowed';
   String get cancel => _isUrdu ? 'منسوخ' : 'Cancel';
   String get deleteEverything => _isUrdu ? 'سب کچھ حذف کریں' : 'Delete Everything';
   String get deleteAllConfirm => _isUrdu ? 'سب ڈیٹا حذف کریں؟' : 'Delete All Data?';
   String get deleteAllConfirmDesc => _isUrdu ? 'یہ تمام محفوظ شدہ اجلاس، ٹرانسکرپٹس، بصیرت، اور ترتیبات کو مستقل طور پر ہٹا دے گا۔ یہ واپس نہیں کیا جا سکتا۔' : 'This will permanently remove all saved sessions, transcripts, insights, and settings. This cannot be undone.';
-  String get allDataDeleted => _isUrdu ? 'سب ڈیٹا حذف ہو گیا' : 'All data deleted';
+  String get allDataDeleted => _isUrdu ? 'تمام ڈیٹا حذف ہو گیا' : 'All data deleted';
   String get appLanguage => _isUrdu ? 'ایپ کی زبان' : 'App Language';
+  String get syncedWithSupabase => _isUrdu ? 'Supabase کے ساتھ ہم آہنگ' : 'Synced with Supabase';
+  String get notSignedIn => _isUrdu ? 'سائن اِن نہیں کیا گیا' : 'Not signed in';
+  String get signedInAccount => _isUrdu ? 'سائن اِن اکاؤنٹ' : 'Signed-in account';
+  String get signInToSync => _isUrdu ? 'ڈیوائسز کے درمیان ڈیٹا ہم آہنگ کرنے کے لیے سائن اِن کریں' : 'Sign in to sync your data across devices';
+  String get signOut => _isUrdu ? 'سائن آؤٹ' : 'Sign Out';
+  String get signIn => _isUrdu ? 'سائن اِن' : 'Sign In';
+  String get allDataDeletedMessage => _isUrdu ? 'تمام ڈیٹا حذف ہو گیا' : 'All data deleted';
+  String get days => _isUrdu ? 'دن' : 'days';
+  String get ready => _isUrdu ? 'تیار' : 'Ready';
+  String get notDownloadedStatus => _isUrdu ? 'ڈاؤن لوڈ نہیں کیا گیا' : 'Not downloaded';
+  String get removeDownload => _isUrdu ? 'ڈاؤن لوڈ ہٹائیں' : 'Remove download';
+  String get offlineModelsInfo => _isUrdu ? 'آف لائن ماڈلز انٹرنیٹ کے بغیر رازداری اور دستیابی بہتر بناتے ہیں۔ جہاں دستیاب ہو، آن لائن اسپیچ ریکگنیشن بھی استعمال کی جا سکتی ہے۔' : 'Offline models improve privacy and availability when you do not have internet access. You can also use online speech recognition when available.';
+  String get englishModelTitle => _isUrdu ? 'انگریزی تقریر کی پہچان' : 'English speech recognition';
+  String get englishModelDesc => _isUrdu ? 'انٹرنیٹ کنکشن کے بغیر ریئل ٹائم انگریزی کیپشنز کے لیے اختیاری آف لائن ماڈل۔' : 'Optional offline model for real-time English captions without an internet connection.';
+  String get urduModelTitle => _isUrdu ? 'اردو تقریر کی پہچان' : 'Urdu speech recognition';
+  String get urduModelDesc => _isUrdu ? 'اردو تقریر کی پہچان اور اردو-اسکرپٹ کیپشنز کے لیے اختیاری آف لائن ماڈل۔' : 'Optional offline model for Urdu speech recognition and Urdu-script captions.';
 
   // ── Listening ──
   String get listeningDots => _isUrdu ? 'سن رہا ہے...\nکیپشنز یہاں ظاہر ہوں گے۔' : 'Listening...\nCaptions will appear here.';
@@ -234,7 +253,7 @@ class AppStrings {
   String get speakerLabel => _isUrdu ? 'بولنے والا' : 'Speaker 1';
 
   // ── AI Disclaimer ──
-  String get aiDisclaimer => _isUrdu ? 'AI سے چلایا گیا — خامیاں ہو سکتی ہیں' : 'AI-generated — may contain errors';
+  String get aiDisclaimer => _isUrdu ? 'AI سے تیار کردہ — غلطیاں ممکن ہیں' : 'AI-generated — may contain errors';
 
   // ── Retention ──
   String get daysLeft => _isUrdu ? 'دن باقی' : 'days left';
@@ -244,8 +263,8 @@ class AppStrings {
   String get retention30Days => _isUrdu ? '30 دن (زیادہ سے زیادہ)' : '30 days (maximum)';
 
   // ── App Language Selection ──
-  String get languageEnglish => _isUrdu ? 'English' : 'English';
-  String get languageUrdu => _isUrdu ? 'اردو (Urdu)' : 'اردو (Urdu)';
+  String get languageEnglish => 'English';
+  String get languageUrdu => 'اردو';
 
   // ── Quick Replies ──
   static const quickRepliesEn = [

@@ -10,6 +10,7 @@ class SettingsProvider extends ChangeNotifier {
   String _captionLanguage = 'English', _appLanguage = 'en';
   int _defaultRetentionDays = 7;
   bool _isOnboardingComplete = false, _monitoringEnabled = false;
+  bool _isLoaded = false;
   final Map<String, bool> _allowedAlerts = {
     'Fire Alarm': true, 'Smoke Alarm': true, 'Siren': true, 'Doorbell': true,
     'Knock': true, 'Phone': true, 'Alarm Clock': true, 'Baby Cry': true,
@@ -19,6 +20,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get isDarkMode => _isDarkMode;
   bool get isHighContrast => _isHighContrast;
   bool get isLargeText => _isLargeText;
+  bool get isLoaded => _isLoaded;
   double get captionTextSize => _captionTextSize;
   bool get hapticAlerts => _hapticAlerts;
   bool get visualAlerts => _visualAlerts;
@@ -31,7 +33,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get isOnboardingComplete => _isOnboardingComplete;
   bool get monitoringEnabled => _monitoringEnabled;
   Map<String, bool> get allowedAlerts => Map.unmodifiable(_allowedAlerts);
-  ThemeMode get themeMode => _isHighContrast ? ThemeMode.dark : (_isDarkMode ? ThemeMode.dark : ThemeMode.light);
+  ThemeMode get themeMode => _isDarkMode ? ThemeMode.dark : ThemeMode.light;
 
   SettingsProvider() { _loadSettings(); }
 
@@ -58,6 +60,7 @@ class SettingsProvider extends ChangeNotifier {
         for (final entry in decoded.entries) _allowedAlerts[entry.key] = entry.value == true;
       } catch (_) {}
     }
+    _isLoaded = true;
     notifyListeners();
   }
 

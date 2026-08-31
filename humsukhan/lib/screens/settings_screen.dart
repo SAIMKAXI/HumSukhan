@@ -32,11 +32,11 @@ class SettingsScreen extends StatelessWidget {
         ),
         Consumer<AuthProvider>(builder: (_, auth, __) => ListTile(
           leading: Icon(auth.isAuthenticated ? Icons.cloud_done : Icons.cloud_off, color: auth.isAuthenticated ? theme.colorScheme.primary : theme.colorScheme.outline),
-          title: Text(auth.isAuthenticated ? 'Synced with Supabase' : 'Not signed in'),
-          subtitle: Text(auth.isAuthenticated ? (auth.user?.email ?? 'Signed-in account') : 'Sign in to sync your data across devices'),
+          title: Text(auth.isAuthenticated ? s.syncedWithSupabase : s.notSignedIn),
+          subtitle: Text(auth.isAuthenticated ? (auth.user?.email ?? s.signedInAccount) : s.signInToSync),
           trailing: TextButton(
             onPressed: auth.isAuthenticated ? auth.signOut : () => Navigator.pushNamed(context, '/auth'),
-            child: Text(auth.isAuthenticated ? 'Sign Out' : 'Sign In'),
+            child: Text(auth.isAuthenticated ? s.signOut : s.signIn),
           ),
         )),
         _SectionHeader(title: s.appLanguage),
@@ -62,8 +62,8 @@ class SettingsScreen extends StatelessWidget {
         const _SpeechModelsSection(),
         _SectionHeader(title: s.environmentalAlerts),
         ...settings.allowedAlerts.entries.map((entry) => SwitchListTile(title: Text(entry.key), value: entry.value, onChanged: (_) => settings.toggleAllowedAlert(entry.key))),
-        _SectionHeader(title: '${s.privacySection} & Retention'),
-        ListTile(title: Text(s.defaultRetentionPeriod), subtitle: Text('${settings.defaultRetentionDays} days'), trailing: const Icon(Icons.chevron_right), onTap: () => _showRetentionDialog(context, settings, s)),
+        _SectionHeader(title: '${s.privacySection} & ${s.defaultRetention}'),
+        ListTile(title: Text(s.defaultRetentionPeriod), subtitle: Text('${settings.defaultRetentionDays} ${s.days}'), trailing: const Icon(Icons.chevron_right), onTap: () => _showRetentionDialog(context, settings, s)),
         ListTile(title: Text(s.deleteAllData), subtitle: Text(s.deleteAllDataDesc), leading: Icon(Icons.delete_forever, color: theme.colorScheme.error), onTap: () => _confirmDeleteAllData(context, s)),
         _SectionHeader(title: s.privacySection),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: PrivacyNotice(text: s.privacyNoticeText)),
@@ -119,8 +119,8 @@ class SettingsScreen extends StatelessWidget {
 
   void _showAppLanguageDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
     showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(s.appLanguage), content: Column(mainAxisSize: MainAxisSize.min, children: [
-      RadioListTile<String>(title: const Text('English'), value: 'en', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
-      RadioListTile<String>(title: const Text('اردو (Urdu)'), value: 'ur', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
+      RadioListTile<String>(title: Text(s.languageEnglish), value: 'en', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
+      RadioListTile<String>(title: Text(s.languageUrdu), value: 'ur', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
     ])));
   }
 
@@ -129,7 +129,7 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showRetentionDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
-    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(s.defaultRetention), content: Column(mainAxisSize: MainAxisSize.min, children: [1, 7, 15].map((days) => RadioListTile<int>(title: Text('$days days'), value: days, groupValue: settings.defaultRetentionDays, onChanged: (v) { if (v != null) settings.setDefaultRetentionDays(v); Navigator.pop(ctx); })).toList())));
+    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(s.defaultRetention), content: Column(mainAxisSize: MainAxisSize.min, children: [1, 7, 15].map((days) => RadioListTile<int>(title: Text(days == 1 ? s.retention1Day : days == 7 ? s.retention7Days : s.retention15Days), value: days, groupValue: settings.defaultRetentionDays, onChanged: (v) { if (v != null) settings.setDefaultRetentionDays(v); Navigator.pop(ctx); })).toList())));
   }
 
   void _confirmDeleteAllData(BuildContext context, AppStrings s) {
@@ -140,7 +140,7 @@ class SettingsScreen extends StatelessWidget {
         if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.deleteAllUserData();
         final prefs = await SharedPreferences.getInstance();
         await prefs.clear();
-        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('All data deleted')));
+        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.allDataDeletedMessage)));
       }, child: Text(s.deleteEverything, style: TextStyle(color: Theme.of(ctx).colorScheme.error))),
     ]));
   }
@@ -150,7 +150,7 @@ class _SectionHeader extends StatelessWidget {
   final String title;
   const _SectionHeader({required this.title});
   @override
-  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.fromLTRB(16, 24, 16, 8), child: Text(title.toUpperCase(), style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.primary, letterSpacing: 1.1, fontWeight: FontWeight.w700)));
+  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.fromLTRB(16, 24, 16, 8), child: Text(title, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.primary, letterSpacing: 1.1, fontWeight: FontWeight.w700));
 }
 
 class _Avatar extends StatelessWidget {
@@ -176,9 +176,9 @@ class _SpeechModelsSection extends StatelessWidget {
     return Column(children: [
       ListTile(leading: Icon(speech.isOfflineMode ? Icons.wifi_off : Icons.wifi, color: Theme.of(context).colorScheme.primary), title: Text(s.currentMode), subtitle: Text(speech.sttModeLabel), trailing: Text(speech.currentLanguage, style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600))),
       const Divider(height: 1),
-      _ModelTile(title: 'English speech recognition', description: 'Optional offline model for real-time English captions without an internet connection.', language: s.englishLabel, sizeMB: 80, isReady: speech.isModelReady('English'), onDownload: () => speech.downloadOfflineModel('English'), onDelete: () => speech.deleteModel('English'), s: s),
-      _ModelTile(title: 'Urdu speech recognition', description: 'Optional offline model for Urdu speech recognition and Urdu-script captions.', language: s.urduLabel, sizeMB: 239, isReady: speech.isModelReady('Urdu'), onDownload: () => speech.downloadOfflineModel('Urdu'), onDelete: () => speech.deleteModel('Urdu'), s: s),
-      Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: Text('Offline models improve privacy and availability when you do not have internet access. You can also use online speech recognition when available.', style: Theme.of(context).textTheme.bodySmall)),
+      _ModelTile(title: s.englishModelTitle, description: s.englishModelDesc, language: s.englishLabel, sizeMB: 80, isReady: speech.isModelReady('English'), onDownload: () => speech.downloadOfflineModel('English'), onDelete: () => speech.deleteModel('English'), s: s),
+      _ModelTile(title: s.urduModelTitle, description: s.urduModelDesc, language: s.urduLabel, sizeMB: 239, isReady: speech.isModelReady('Urdu'), onDownload: () => speech.downloadOfflineModel('Urdu'), onDelete: () => speech.deleteModel('Urdu'), s: s),
+      Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: Text(s.offlineModelsInfo, style: Theme.of(context).textTheme.bodySmall)),
     ]);
   }
 }
@@ -197,9 +197,9 @@ class _ModelTile extends StatelessWidget {
   Widget build(BuildContext context) => ListTile(
     leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest, child: Icon(isReady ? Icons.check_circle : Icons.download_outlined, color: Theme.of(context).colorScheme.primary, size: 20)),
     title: Text(title),
-    subtitle: Text('$description\n${isReady ? 'Ready' : 'Not downloaded'} · $sizeMB MB'),
+    subtitle: Text('${description}\n${isReady ? s.ready : s.notDownloadedStatus} · $sizeMB MB'),
     isThreeLine: true,
-    trailing: isReady ? IconButton(tooltip: 'Remove download', icon: const Icon(Icons.delete_outline), onPressed: onDelete) : TextButton(onPressed: onDownload, child: Text(s.downloadLabel)),
+    trailing: isReady ? IconButton(tooltip: s.removeDownload, icon: const Icon(Icons.delete_outline), onPressed: onDelete) : TextButton(onPressed: onDownload, child: Text(s.downloadLabel)),
   );
 }
 
@@ -208,14 +208,13 @@ class _AboutSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isUrdu = Localizations.localeOf(context).languageCode == 'ur';
     return Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [Image.asset('assets/logo.png', width: 56, height: 56), const SizedBox(width: 14), Expanded(child: Text('HumSukhan', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)))]),
       const SizedBox(height: 16),
-      Text('Accessible communication, live captions, speech assistance, and professional listening in one place.', style: theme.textTheme.bodyLarge),
+      Text(isUrdu ? 'قابلِ رسائی مواصلات، لائیو کیپشنز، تقریر کی مدد اور پیشہ ورانہ سننا ایک ہی جگہ۔' : 'Accessible communication, live captions, speech assistance, and professional listening in one place.', style: theme.textTheme.bodyLarge),
       const SizedBox(height: 12),
-      Text('HumSukhan is designed to make everyday conversations, classrooms, meetings, and environmental awareness more accessible. It supports speech recognition, captions, text-to-speech, and accessibility-focused controls.', style: theme.textTheme.bodyMedium),
-      const SizedBox(height: 12),
-      Text('Your conversations and profile data are intended to stay under your control, with cloud synchronization available when you sign in.', style: theme.textTheme.bodyMedium),
+      Text(isUrdu ? 'HumSukhan روزمرہ گفتگو، کلاس رومز، میٹنگز اور ماحول سے آگاہی کو زیادہ قابلِ رسائی بنانے کے لیے تیار کیا گیا ہے۔' : 'HumSukhan is designed to make everyday conversations, classrooms, meetings, and environmental awareness more accessible.', style: theme.textTheme.bodyMedium),
     ]))));
   }
 }
