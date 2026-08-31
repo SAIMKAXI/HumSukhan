@@ -24,22 +24,16 @@ class AuthProvider extends ChangeNotifier {
   void _init() {
     _user = _auth.currentUser;
     _authSubscription = _auth.onAuthStateChange.listen((state) {
-      final event = state.event;
-      final session = state.session;
-      switch (event) {
+      switch (state.event) {
         case AuthChangeEvent.signedIn:
         case AuthChangeEvent.tokenRefreshed:
-          _user = session?.user;
+          _user = state.session?.user;
           break;
         case AuthChangeEvent.signedOut:
           _user = null;
           break;
-        case AuthChangeEvent.passwordRecovery:
-        case AuthChangeEvent.initialSession:
-        case AuthChangeEvent.userUpdated:
-        case AuthChangeEvent.userDeleted:
-        case AuthChangeEvent.mfaChallengeVerified:
-          if (session != null) _user = session.user;
+        default:
+          if (state.session != null) _user = state.session!.user;
           break;
       }
       notifyListeners();
