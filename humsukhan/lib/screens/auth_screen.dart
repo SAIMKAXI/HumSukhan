@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../services/auth_service.dart';
-import '../theme/app_theme.dart';
 import '../widgets/reusable_widgets.dart';
 
 class AuthScreen extends StatefulWidget {
