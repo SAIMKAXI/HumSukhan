@@ -8,9 +8,7 @@ import '../services/sound_detection_service.dart';
 import 'settings_provider.dart';
 
 class EnvironmentalProvider extends ChangeNotifier {
-  EnvironmentalProvider() {
-    unawaited(_initializeNativeBridge());
-  }
+  EnvironmentalProvider() { unawaited(_initializeNativeBridge()); }
 
   final EnvironmentalMonitoringBridge _bridge = EnvironmentalMonitoringBridge.instance;
   final SoundDetectionService _soundService = SoundDetectionService.instance;
@@ -59,8 +57,6 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (_bridgeInitialized) return;
     _bridgeInitialized = true;
     await _bridge.initialize(onChange: (state, event) {
-      // Keep native state visible for the Android quick-settings surface, but
-      // foreground alert detection is owned by SoundDetectionService below.
       if (!_soundService.isMonitoring) {
         _monitoringState = state;
         notifyListeners();
@@ -81,7 +77,8 @@ class EnvironmentalProvider extends ChangeNotifier {
       _monitoringState = 'STOPPING';
       notifyListeners();
       _soundService.stopMonitoring();
-      await _bridge.stop();
+      // Only stop the native service when it is independently active.
+      if (_bridge.isActive) await _bridge.stop();
       _monitoringState = 'OFF';
       notifyListeners();
       return;
@@ -99,12 +96,9 @@ class EnvironmentalProvider extends ChangeNotifier {
     _soundService.onSoundDetected = processSoundEvent;
     final started = await _soundService.startMonitoring(permissionAlreadyGranted: true);
     _monitoringState = started ? 'ACTIVE' : 'ERROR';
-
-    // The native service remains available for Android Quick Settings, but it
-    // is not allowed to create a second recorder while foreground monitoring is active.
-    if (started) {
-      await _bridge.start();
-    }
+    // Do not start the native Android recorder here: foreground monitoring
+    // already owns the microphone. Quick Settings remains backed by the
+    // native bridge when used independently.
     notifyListeners();
   }
 
@@ -112,19 +106,12 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (!monitoringEnabled || event.confidence < _minConfidence) return false;
     final settings = _settingsProvider;
     if (settings != null && settings.allowedAlerts[event.type] == false) return false;
-
-    if (_lastAlertType == event.type && _lastAlertTime != null &&
-        DateTime.now().difference(_lastAlertTime!) < SoundDetectionService.cooldownDuration) {
-      return false;
-    }
-
+    if (_lastAlertType == event.type && _lastAlertTime != null && DateTime.now().difference(_lastAlertTime!) < SoundDetectionService.cooldownDuration) return false;
     _alertHistory.add(event);
     _currentAlert = event;
     _lastAlertType = event.type;
     _lastAlertTime = DateTime.now();
-    if (settings != null) {
-      AlertService.instance.triggerAlert(settings, severity: event.severity);
-    }
+    if (settings != null) AlertService.instance.triggerAlert(settings, severity: event.severity);
     notifyListeners();
     return true;
   }
@@ -138,10 +125,7 @@ class EnvironmentalProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearHistory() {
-    _alertHistory.clear();
-    notifyListeners();
-  }
+  void clearHistory() { _alertHistory.clear(); notifyListeners(); }
 
   @override
   void dispose() {
