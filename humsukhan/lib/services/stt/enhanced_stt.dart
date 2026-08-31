@@ -108,9 +108,6 @@ class EnhancedSpeechProvider {
         await _platformSTT.listen(
           onResult: _onPlatformResult,
           listenOptions: SpeechListenOptions(
-            // Keep a long requested window. Some Android speech engines impose
-            // their own shorter limit; _onPlatformStatus/_onError seamlessly
-            // reopen the recognizer while preserving the same app session.
             listenFor: const Duration(minutes: 30),
             pauseFor: const Duration(seconds: 30),
             localeId: _platformLocale,
@@ -300,6 +297,12 @@ class EnhancedSpeechProvider {
     switch (language.toLowerCase()) {
       case 'urdu':
       case 'roman urdu':
+        return 'ur-PK';
+      case 'auto':
+        // Conversational Mode can be used regardless of the app UI language.
+        // Urdu is the preferred recognition locale for the bilingual speaker
+        // flow; recognized script is surfaced as Urdu and Roman Urdu when the
+        // provider returns Latin-script Urdu.
         return 'ur-PK';
       default:
         return 'en-US';
