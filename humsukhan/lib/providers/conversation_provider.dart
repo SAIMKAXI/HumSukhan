@@ -10,6 +10,7 @@ class ConversationProvider extends ChangeNotifier {
   ConversationState _state = ConversationState.idle;
   final List<Caption> _captions = [];
   Caption? _currentPartial;
+  Caption? _activeSpeakerDraft;
   Timer? _partialCommitTimer;
   DateTime? _partialStartedAt;
   String _isolateFingerprint = '';
@@ -24,6 +25,7 @@ class ConversationProvider extends ChangeNotifier {
   List<Caption> get captions => List.unmodifiable(_captions);
   Caption? get currentPartial => _currentPartial;
   bool get isListening => _isListening;
+  bool get isSpeakerTurnActive => _activeSpeakerDraft != null || _isListening;
   String get currentLanguage => _currentLanguage;
   String get listeningStatus => _listeningStatus;
   DateTime? get conversationStartedAt => _conversationStartedAt;
@@ -38,18 +40,20 @@ class ConversationProvider extends ChangeNotifier {
     _partialCommitTimer?.cancel();
     _captions.clear();
     _currentPartial = null;
+    _activeSpeakerDraft = null;
     _partialStartedAt = null;
     _isolateFingerprint = '';
     _lastCommittedAt = null;
     _state = ConversationState.active;
-    _isListening = true;
+    _isListening = false;
     _conversationStartedAt = DateTime.now();
-    _listeningStatus = 'Listening';
+    _listeningStatus = 'Hold the microphone while the speaker talks';
     _currentSessionId = 'everyday_${DateTime.now().millisecondsSinceEpoch}';
     notifyListeners();
   }
 
   void stopConversation() {
+    commitSpeakerTurn(notify: false);
     _commitCurrentPartial();
     _state = ConversationState.stopping;
     _isListening = false;
@@ -113,6 +117,7 @@ class ConversationProvider extends ChangeNotifier {
     _conversationStartedAt = null;
     _captions.clear();
     _currentPartial = null;
+    _activeSpeakerDraft = null;
     _partialStartedAt = null;
     _isolateFingerprint = '';
     _lastCommittedAt = null;
@@ -122,9 +127,60 @@ class ConversationProvider extends ChangeNotifier {
 
   void cancelStop() {
     _state = ConversationState.active;
-    _isListening = true;
-    _listeningStatus = 'Listening';
+    _isListening = false;
+    _listeningStatus = 'Hold the microphone while the speaker talks';
     notifyListeners();
+  }
+
+  void beginSpeakerTurn({String language = 'English'}) {
+    if (_state != ConversationState.active || _activeSpeakerDraft != null) return;
+    _partialCommitTimer?.cancel();
+    _currentLanguage = language;
+    _isListening = true;
+    _listeningStatus = 'Speaker is talking… release when finished';
+    final now = DateTime.now();
+    _activeSpeakerDraft = Caption(
+      text: '',
+      speaker: 'Speaker 1',
+      language: language,
+      timestamp: now,
+      isPartial: true,
+    );
+    _currentPartial = _activeSpeakerDraft;
+    notifyListeners();
+  }
+
+  void updateSpeakerTurn(String text, {String language = 'English'}) {
+    final value = text.trim();
+    if (value.isEmpty || _activeSpeakerDraft == null || _state != ConversationState.active) return;
+    _currentLanguage = language;
+    _activeSpeakerDraft = _activeSpeakerDraft!.copyWith(
+      text: value,
+      speaker: 'Speaker 1',
+      language: language,
+      isPartial: true,
+    );
+    _currentPartial = _activeSpeakerDraft;
+    notifyListeners();
+  }
+
+  void commitSpeakerTurn({bool notify = true}) {
+    final draft = _activeSpeakerDraft;
+    _partialCommitTimer?.cancel();
+    _partialCommitTimer = null;
+    _activeSpeakerDraft = null;
+    _currentPartial = null;
+    _partialStartedAt = null;
+    _isListening = false;
+    if (draft != null && draft.text.trim().isNotEmpty) {
+      final committed = draft.copyWith(text: draft.text.trim(), isPartial: false);
+      _captions.add(committed);
+      _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
+      _lastCommittedAt = committed.timestamp;
+      _sortCaptionsInPlace();
+    }
+    _listeningStatus = 'Your turn — respond below';
+    if (notify) notifyListeners();
   }
 
   void addPartialCaption(
@@ -134,12 +190,10 @@ class ConversationProvider extends ChangeNotifier {
   }) {
     final value = text.trim();
     if (value.isEmpty || _state != ConversationState.active) return;
-
     if (_currentPartial == null) {
       _beginPartial(value, speaker, language);
       return;
     }
-
     if (_currentPartial!.speaker != speaker) {
       _commitCurrentPartial();
       _beginPartial(value, speaker, language);
@@ -150,7 +204,6 @@ class ConversationProvider extends ChangeNotifier {
       _commitCurrentPartial();
       _beginPartial(value, speaker, language);
     }
-
     _currentLanguage = language;
     notifyListeners();
   }
@@ -162,15 +215,15 @@ class ConversationProvider extends ChangeNotifier {
   }) {
     final value = text.trim();
     if (value.isEmpty || _state != ConversationState.active) return;
-
     _partialCommitTimer?.cancel();
     _partialCommitTimer = null;
-
+    if (_activeSpeakerDraft != null && _activeSpeakerDraft!.speaker == speaker) {
+      updateSpeakerTurn(value, language: language);
+      commitSpeakerTurn();
+      return;
+    }
     if (_currentPartial != null && _currentPartial!.speaker == speaker) {
-      final committed = _currentPartial!.copyWith(
-        text: value,
-        isPartial: false,
-      );
+      final committed = _currentPartial!.copyWith(text: value, isPartial: false);
       _captions.add(committed);
       _currentPartial = null;
       _partialStartedAt = null;
@@ -180,7 +233,6 @@ class ConversationProvider extends ChangeNotifier {
       _commitCurrentPartial();
       _appendFinalCaption(value, speaker, language);
     }
-
     _currentLanguage = language;
     _sortCaptionsInPlace();
     notifyListeners();
@@ -189,9 +241,7 @@ class ConversationProvider extends ChangeNotifier {
   void addOwnCaption(String text) {
     final value = text.trim();
     if (value.isEmpty || _state != ConversationState.active) return;
-
-    // A user response ends the currently displayed incoming utterance. Commit
-    // it before adding the user's message so the chat timeline stays ordered.
+    commitSpeakerTurn(notify: false);
     _commitCurrentPartial();
     final caption = Caption(
       text: value,
@@ -201,6 +251,7 @@ class ConversationProvider extends ChangeNotifier {
     );
     _captions.add(caption);
     _sortCaptionsInPlace();
+    _listeningStatus = 'Hold the microphone when the speaker talks again';
     notifyListeners();
   }
 
@@ -209,6 +260,7 @@ class ConversationProvider extends ChangeNotifier {
     _partialCommitTimer = null;
     _captions.clear();
     _currentPartial = null;
+    _activeSpeakerDraft = null;
     _partialStartedAt = null;
     _isolateFingerprint = '';
     _lastCommittedAt = null;
@@ -247,7 +299,6 @@ class ConversationProvider extends ChangeNotifier {
       _partialStartedAt = null;
       return;
     }
-
     final value = partial.text.trim();
     final fingerprint = _fingerprint(value, partial.speaker);
     if (_isolateFingerprint == fingerprint &&
@@ -257,7 +308,6 @@ class ConversationProvider extends ChangeNotifier {
       _partialStartedAt = null;
       return;
     }
-
     final committed = partial.copyWith(text: value, isPartial: false);
     _captions.add(committed);
     _isolateFingerprint = fingerprint;
@@ -291,7 +341,6 @@ class ConversationProvider extends ChangeNotifier {
     final next = newText.toLowerCase().trim();
     if (old.isEmpty || next.isEmpty) return true;
     if (next.startsWith(old) || old.startsWith(next)) return true;
-
     final oldTokens = _tokens(old);
     final newTokens = _tokens(next);
     if (oldTokens.isEmpty || newTokens.isEmpty) return true;
