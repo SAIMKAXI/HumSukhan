@@ -1,10 +1,10 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 2.1.2+5
+version: 2.1.3+6
 
 environment:
-  sdk: ^3.13.1
+  sdk: '>=3.8.0 <4.0.0'
 
 dependencies:
   flutter:
