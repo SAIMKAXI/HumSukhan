@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
-import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
 import '../navigation/app_router.dart';
@@ -9,289 +8,243 @@ import '../l10n/app_strings.dart';
 
 class ProfessionalScreen extends StatefulWidget {
   const ProfessionalScreen({super.key});
-
   @override
   State<ProfessionalScreen> createState() => _ProfessionalScreenState();
 }
 
 class _ProfessionalScreenState extends State<ProfessionalScreen> {
   @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final pro = context.watch<ProfessionalProvider>();
     final s = AppStrings.of(context);
-
     return DefaultTabController(
       length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: Text(s.professionalTitle),
           bottom: TabBar(
-            tabs: [
-              Tab(text: s.sessionsTab, icon: const Icon(Icons.event_note)),
-              Tab(text: s.foldersTab, icon: const Icon(Icons.folder)),
-              Tab(text: s.classesTab, icon: const Icon(Icons.school)),
-              Tab(text: s.meetingsTab, icon: const Icon(Icons.meeting_room)),
+            isScrollable: true,
+            tabs: const [
+              Tab(text: 'Folders', icon: Icon(Icons.folder_outlined)),
+              Tab(text: 'Classes', icon: Icon(Icons.school_outlined)),
+              Tab(text: 'Meetings', icon: Icon(Icons.meeting_room_outlined)),
+              Tab(text: 'Lectures', icon: Icon(Icons.menu_book_outlined)),
             ],
           ),
         ),
-        body: TabBarView(
-          children: [
-            _buildSessionsTab(context, pro, s),
-            _buildFoldersTab(context, pro, s),
-            _buildClassesTab(context, pro, s),
-            _buildMeetingsTab(context, pro, s),
-          ],
-        ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _showCreateSessionDialog(context, s),
-          icon: const Icon(Icons.add),
-          label: Text(s.newSession),
+        body: TabBarView(children: [
+          _buildFoldersTab(context, pro, s),
+          _buildTypeTab(context, pro, SessionType.class_, 'Classes', Icons.school_outlined),
+          _buildTypeTab(context, pro, SessionType.meeting, 'Meetings', Icons.meeting_room_outlined),
+          _buildTypeTab(context, pro, SessionType.lecture, 'Lectures', Icons.menu_book_outlined),
+        ]),
+        floatingActionButton: Builder(
+          builder: (context) => FloatingActionButton.extended(
+            onPressed: () => _showCreateSessionDialog(context, s),
+            icon: const Icon(Icons.add),
+            label: Text(s.newSession),
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildSessionsTab(BuildContext context, ProfessionalProvider pro, AppStrings s) {
-    if (pro.sessions.isEmpty) {
-      return EmptyState(
-        icon: Icons.event_note,
-        title: s.noSavedSessions,
-        subtitle: s.noSavedSessionsDesc,
-        buttonText: s.startSession,
-        onButtonPressed: () => _showCreateSessionDialog(context, s),
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.only(top: 8, bottom: 80),
-      children: [
-        if (pro.recentSessions.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              s.recentLabel,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).textTheme.bodySmall?.color,
-                letterSpacing: 1.2,
-              ),
-            ),
-          ),
-          ...pro.recentSessions.map((session) =>
-            SessionCard(
-              session: session,
-              insight: pro.getInsightForSession(session.id),
-              onTap: () => Navigator.pushNamed(
-                context,
-                AppRouter.sessionDetail,
-                arguments: session.id,
-              ),
-              onDelete: () => _confirmDelete(context, session, s),
-            ),
-          ),
-        ],
-        if (pro.sessions.where((s) => s.status == SessionStatus.completed && !pro.recentSessions.contains(s)).isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              s.allSessionsLabel,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).textTheme.bodySmall?.color,
-                letterSpacing: 1.2,
-              ),
-            ),
-          ),
-          ...pro.sessions
-              .where((s) => s.status == SessionStatus.completed)
-              .where((s) => !pro.recentSessions.contains(s))
-              .map((session) =>
-                SessionCard(
-                  session: session,
-                  insight: pro.getInsightForSession(session.id),
-                  onTap: () => Navigator.pushNamed(
-                    context,
-                    AppRouter.sessionDetail,
-                    arguments: session.id,
-                  ),
-                  onDelete: () => _confirmDelete(context, session, s),
-                ),
-              ),
-        ],
-      ],
     );
   }
 
   Widget _buildFoldersTab(BuildContext context, ProfessionalProvider pro, AppStrings s) {
-    return Column(
+    final generalSessions = pro.getSessionsForFolder(null)
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return ListView(
+      padding: const EdgeInsets.only(top: 8, bottom: 96),
       children: [
         ListTile(
-          leading: Icon(Icons.folder, color: AppTheme.primaryLight),
+          leading: const Icon(Icons.folder, size: 32),
           title: Text(s.generalFolder),
-          subtitle: Text('${pro.getSessionsForFolder(null).length} ${s.sessionsCount}'),
+          subtitle: Text('${generalSessions.length} ${s.sessionsCount}'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {},
+          onTap: () => _showFolderSessions(context, s.generalFolder, generalSessions),
         ),
         const Divider(),
-
-        Expanded(
-          child: pro.folders.isEmpty
-              ? EmptyState(
-                  icon: Icons.folder_open,
-                  title: s.noFoldersYet,
-                  subtitle: s.noFoldersDesc,
-                  buttonText: s.createFolder,
-                  onButtonPressed: () => _showCreateFolderDialog(context, s),
-                )
-              : ListView.builder(
-                  itemCount: pro.folders.length,
-                  itemBuilder: (context, index) {
-                    final folder = pro.folders[index];
-                    final sessionCount = pro.getSessionsForFolder(folder.id).length;
-                    return ListTile(
-                      leading: Icon(Icons.folder, color: AppTheme.primaryLight),
-                      title: Text(folder.name),
-                      subtitle: Text('$sessionCount ${s.sessionsCount}'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, size: 20),
-                            onPressed: () => _confirmDeleteFolder(context, pro, folder, s),
-                          ),
-                          const Icon(Icons.chevron_right),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-        ),
+        if (pro.folders.isEmpty)
+          EmptyState(
+            icon: Icons.folder_open,
+            title: s.noFoldersYet,
+            subtitle: s.noFoldersDesc,
+            buttonText: s.createFolder,
+            onButtonPressed: () => _showCreateFolderDialog(context, s),
+          )
+        else
+          ...pro.folders.map((folder) {
+            final sessions = pro.getSessionsForFolder(folder.id)
+              ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            return ListTile(
+              leading: const Icon(Icons.folder_outlined, size: 30),
+              title: Text(folder.name),
+              subtitle: Text('${sessions.length} ${s.sessionsCount}'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _showFolderSessions(context, folder.name, sessions),
+            );
+          }),
       ],
     );
   }
 
-  Widget _buildClassesTab(BuildContext context, ProfessionalProvider pro, AppStrings s) {
-    final classSessions = pro.sessions.where((s) => s.type == SessionType.class_).toList();
-    if (classSessions.isEmpty) {
-      return EmptyState(
-        icon: Icons.school,
-        title: s.noClassSessions,
-        subtitle: s.noClassSessionsDesc,
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 8, bottom: 80),
-      itemCount: classSessions.length,
-      itemBuilder: (context, index) {
-        final session = classSessions[index];
-        return SessionCard(
-          session: session,
-          insight: pro.getInsightForSession(session.id),
-          onTap: () => Navigator.pushNamed(context, AppRouter.sessionDetail, arguments: session.id),
-        );
-      },
+  Widget _buildTypeTab(BuildContext context, ProfessionalProvider pro, SessionType type, String title, IconData icon) {
+    final sessions = pro.sessions.where((s) => s.type == type).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final strings = AppStrings.of(context);
+    return ListView(
+      padding: const EdgeInsets.only(top: 8, bottom: 96),
+      children: [
+        if (sessions.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: EmptyState(
+              icon: icon,
+              title: 'No $title yet',
+              subtitle: 'Start a new $title session and your transcript will appear here.',
+              buttonText: strings.startSession,
+              onButtonPressed: () => _showCreateSessionDialog(context, strings, presetType: type),
+            ),
+          )
+        else
+          ...sessions.map((session) => SessionCard(
+                session: session,
+                insight: pro.getInsightForSession(session.id),
+                onTap: () => Navigator.pushNamed(context, AppRouter.sessionDetail, arguments: session.id),
+                onDelete: () => _confirmDelete(context, session, strings),
+              )),
+      ],
     );
   }
 
-  Widget _buildMeetingsTab(BuildContext context, ProfessionalProvider pro, AppStrings s) {
-    final meetingSessions = pro.sessions.where((s) => s.type == SessionType.meeting).toList();
-    if (meetingSessions.isEmpty) {
-      return EmptyState(
-        icon: Icons.meeting_room,
-        title: s.noMeetingSessions,
-        subtitle: s.noMeetingSessionsDesc,
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 8, bottom: 80),
-      itemCount: meetingSessions.length,
-      itemBuilder: (context, index) {
-        final session = meetingSessions[index];
-        return SessionCard(
-          session: session,
-          insight: pro.getInsightForSession(session.id),
-          onTap: () => Navigator.pushNamed(context, AppRouter.sessionDetail, arguments: session.id),
-        );
-      },
+  void _showFolderSessions(BuildContext context, String name, List<ProfessionalSession> sessions) {
+    final pro = context.read<ProfessionalProvider>();
+    final s = AppStrings.of(context);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.of(ctx).size.height * .75,
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
+            child: Row(children: [
+              const Icon(Icons.folder, size: 24),
+              const SizedBox(width: 8),
+              Expanded(child: Text(name, style: Theme.of(ctx).textTheme.titleLarge)),
+            ]),
+          ),
+          Expanded(
+            child: sessions.isEmpty
+                ? EmptyState(icon: Icons.inbox_outlined, title: s.noSavedSessions, subtitle: s.noSavedSessionsDesc)
+                : ListView.builder(
+                    itemCount: sessions.length,
+                    itemBuilder: (_, i) => SessionCard(
+                      session: sessions[i],
+                      insight: pro.getInsightForSession(sessions[i].id),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.pushNamed(context, AppRouter.sessionDetail, arguments: sessions[i].id);
+                      },
+                    ),
+                  ),
+          ),
+        ]),
+      ),
     );
   }
 
-  void _showCreateSessionDialog(BuildContext context, AppStrings s) {
+  void _showCreateSessionDialog(BuildContext context, AppStrings s, {SessionType? presetType}) {
     final titleController = TextEditingController();
-    SessionType selectedType = SessionType.meeting;
-    int retentionDays = 7;
+    final settings = context.read<SettingsProvider>();
+    final pro = context.read<ProfessionalProvider>();
+    SessionType selectedType = presetType ?? SessionType.meeting;
+    int retentionDays = settings.defaultRetentionDays;
+    String? selectedFolderId;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      showDragHandle: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(s.newSession, style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 24),
-              TextField(
-                controller: titleController,
-                decoration: InputDecoration(
-                  labelText: s.sessionTitle,
-                  hintText: s.sessionTitleHint,
+        builder: (ctx, setState) {
+          return Padding(
+            padding: EdgeInsets.fromLTRB(24, 12, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(presetType == null ? s.newSession : 'New ${_typeLabel(presetType!)}', style: Theme.of(ctx).textTheme.headlineSmall),
+                const SizedBox(height: 20),
+                TextField(controller: titleController, decoration: InputDecoration(labelText: s.sessionTitle, hintText: s.sessionTitleHint), autofocus: true),
+                const SizedBox(height: 16),
+                if (presetType == null)
+                  DropdownButtonFormField<SessionType>(
+                    initialValue: selectedType,
+                    decoration: InputDecoration(labelText: s.sessionType),
+                    items: const [
+                      DropdownMenuItem(value: SessionType.meeting, child: Text('Meeting')),
+                      DropdownMenuItem(value: SessionType.lecture, child: Text('Lecture')),
+                      DropdownMenuItem(value: SessionType.class_, child: Text('Class')),
+                    ],
+                    onChanged: (v) => setState(() => selectedType = v ?? selectedType),
+                  )
+                else
+                  InputDecorator(
+                    decoration: InputDecoration(labelText: s.sessionType),
+                    child: Text(_typeLabel(selectedType)),
+                  ),
+                const SizedBox(height: 16),
+                if (pro.folders.isNotEmpty)
+                  DropdownButtonFormField<String?>(
+                    initialValue: selectedFolderId,
+                    decoration: const InputDecoration(labelText: 'Folder'),
+                    items: [
+                      const DropdownMenuItem<String?>(value: null, child: Text('General')),
+                      ...pro.folders.map((folder) => DropdownMenuItem<String?>(value: folder.id, child: Text(folder.name))),
+                    ],
+                    onChanged: (v) => setState(() => selectedFolderId = v),
+                  ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  initialValue: retentionDays,
+                  decoration: InputDecoration(labelText: s.retentionPeriod),
+                  items: [
+                    DropdownMenuItem(value: 1, child: Text(s.retention1Day)),
+                    DropdownMenuItem(value: 7, child: Text(s.retention7Days)),
+                    DropdownMenuItem(value: 15, child: Text(s.retention15Days)),
+                  ],
+                  onChanged: (v) => setState(() => retentionDays = v ?? retentionDays),
                 ),
-                autofocus: true,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<SessionType>(
-                initialValue: selectedType,
-                decoration: InputDecoration(labelText: s.sessionType),
-                items: [
-                  DropdownMenuItem(value: SessionType.meeting, child: Text(s.meetingType)),
-                  DropdownMenuItem(value: SessionType.lecture, child: Text(s.lectureType)),
-                  DropdownMenuItem(value: SessionType.class_, child: Text(s.classType)),
-                ],
-                onChanged: (v) => setModalState(() => selectedType = v ?? selectedType),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<int>(
-                initialValue: retentionDays,
-                decoration: InputDecoration(labelText: s.retentionPeriod),
-                items: [
-                  DropdownMenuItem(value: 1, child: Text(s.retention1Day)),
-                  DropdownMenuItem(value: 7, child: Text(s.retention7Days)),
-                  DropdownMenuItem(value: 15, child: Text(s.retention15Days)),
-                ],
-                onChanged: (v) => setModalState(() => retentionDays = v ?? retentionDays),
-              ),
-              const SizedBox(height: 24),
-              PrimaryActionButton(
-                label: s.startSession,
-                icon: Icons.play_arrow,
-                onPressed: () async {
-                  if (titleController.text.trim().isEmpty) return;
-                  final pro = context.read<ProfessionalProvider>();
-                  final session = await pro.createSession(
-                    title: titleController.text.trim(),
-                    type: selectedType,
-                    retentionDays: retentionDays,
-                  );
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  if (context.mounted) {
-                    Navigator.pushNamed(context, AppRouter.sessionLive, arguments: session.id);
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
+                const SizedBox(height: 24),
+                PrimaryActionButton(
+                  label: s.startSession,
+                  icon: Icons.play_arrow,
+                  onPressed: () async {
+                    final title = titleController.text.trim();
+                    if (title.isEmpty) return;
+                    final session = await pro.createSession(
+                      title: title,
+                      type: selectedType,
+                      folderId: selectedFolderId,
+                      retentionDays: retentionDays,
+                    );
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    if (context.mounted) Navigator.pushNamed(context, AppRouter.sessionLive, arguments: session.id);
+                  },
+                ),
+              ]),
+            ),
+          );
+        },
       ),
     );
+  }
+
+  String _typeLabel(SessionType type) {
+    switch (type) {
+      case SessionType.class_: return 'Class';
+      case SessionType.meeting: return 'Meeting';
+      case SessionType.lecture: return 'Lecture';
+    }
   }
 
   void _showCreateFolderDialog(BuildContext context, AppStrings s) {
@@ -300,22 +253,15 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(s.createFolder),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(hintText: s.folderName),
-          autofocus: true,
-        ),
+        content: TextField(controller: controller, decoration: InputDecoration(hintText: s.folderName), autofocus: true),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
-          TextButton(
-            onPressed: () async {
-              if (controller.text.trim().isNotEmpty) {
-                await context.read<ProfessionalProvider>().createFolder(controller.text.trim());
-                if (ctx.mounted) Navigator.pop(ctx);
-              }
-            },
-            child: Text(s.create),
-          ),
+          TextButton(onPressed: () async {
+            final name = controller.text.trim();
+            if (name.isEmpty) return;
+            await context.read<ProfessionalProvider>().createFolder(name);
+            if (ctx.mounted) Navigator.pop(ctx);
+          }, child: Text(s.create)),
         ],
       ),
     );
@@ -329,33 +275,7 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
         content: Text(s.deleteSessionDesc),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
-          TextButton(
-            onPressed: () {
-              context.read<ProfessionalProvider>().deleteSession(session.id);
-              Navigator.pop(ctx);
-            },
-            child: Text(s.delete, style: const TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmDeleteFolder(BuildContext context, ProfessionalProvider pro, Folder folder, AppStrings s) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(s.deleteFolderConfirm),
-        content: Text(s.deleteFolderDesc),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
-          TextButton(
-            onPressed: () {
-              pro.deleteFolder(folder.id);
-              Navigator.pop(ctx);
-            },
-            child: Text(s.delete, style: const TextStyle(color: Colors.red)),
-          ),
+          TextButton(onPressed: () { context.read<ProfessionalProvider>().deleteSession(session.id); Navigator.pop(ctx); }, child: Text(s.delete, style: TextStyle(color: Theme.of(ctx).colorScheme.error))),
         ],
       ),
     );
