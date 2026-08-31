@@ -1,1 +1,0 @@
-Deployed from the corresponding Supabase Edge Function. The application calls the authenticated `deepgram-transcribe-bilingual` function for Conversational Mode Auto STT.
