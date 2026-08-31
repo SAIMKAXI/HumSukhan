@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
-import '../theme/app_theme.dart';
 import '../l10n/app_strings.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -24,123 +23,80 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [AppTokens.warmIvory, AppTokens.softCream],
+            colors: [theme.scaffoldBackgroundColor, colors.surfaceContainerHighest],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
-              // Skip
               Align(
                 alignment: Alignment.topRight,
                 child: TextButton(
                   onPressed: _completeOnboarding,
-                  child: Text(s.skip, style: const TextStyle(color: AppTokens.textSecondary)),
+                  child: Text(s.skip),
                 ),
               ),
-
-              // Pages
               Expanded(
                 child: PageView(
                   controller: _pageController,
                   onPageChanged: (idx) => setState(() => _currentPage = idx),
                   children: [
-                    _buildPage(
-                      context,
-                      'assets/logo.png',
-                      s.onboardingWelcome,
-                      s.onboardingWelcomeDesc,
-                      isLogo: true,
-                    ),
-                    _buildPage(
-                      context,
-                      null,
-                      s.onboardingEveryday,
-                      s.onboardingEverydayDesc,
-                      icon: Icons.chat_bubble_outline,
-                    ),
-                    _buildPage(
-                      context,
-                      null,
-                      s.onboardingProfessional,
-                      s.onboardingProfessionalDesc,
-                      icon: Icons.work_outline,
-                    ),
-                    _buildPage(
-                      context,
-                      null,
-                      s.onboardingEnvironmental,
-                      s.onboardingEnvironmentalDesc,
-                      icon: Icons.volume_up,
-                    ),
-                    _buildPage(
-                      context,
-                      null,
-                      s.onboardingPrivacy,
-                      s.onboardingPrivacyDesc,
-                      icon: Icons.shield,
-                    ),
+                    _buildPage(context, 'assets/logo.png', s.onboardingWelcome, s.onboardingWelcomeDesc, isLogo: true),
+                    _buildPage(context, null, s.onboardingEveryday, s.onboardingEverydayDesc, icon: Icons.chat_bubble_outline),
+                    _buildPage(context, null, s.onboardingProfessional, s.onboardingProfessionalDesc, icon: Icons.work_outline),
+                    _buildPage(context, null, s.onboardingEnvironmental, s.onboardingEnvironmentalDesc, icon: Icons.volume_up),
+                    _buildPage(context, null, s.onboardingPrivacy, s.onboardingPrivacyDesc, icon: Icons.shield),
                   ],
                 ),
               ),
-
-              // Dots
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(5, (idx) =>
-                    AnimatedContainer(
+                  children: List.generate(
+                    5,
+                    (idx) => AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
                       margin: const EdgeInsets.symmetric(horizontal: 4),
                       width: _currentPage == idx ? 24 : 8,
                       height: 8,
                       decoration: BoxDecoration(
                         color: _currentPage == idx
-                            ? AppTokens.deepSage
-                            : AppTokens.deepSage.withValues(alpha: 0.2),
+                            ? colors.primary
+                            : colors.primary.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
                   ),
                 ),
               ),
-
-              // Button
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: _currentPage == 4
-                    ? ElevatedButton(
-                        onPressed: _completeOnboarding,
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 52),
-                          backgroundColor: AppTokens.deepSage,
-                          foregroundColor: AppTokens.warmIvory,
-                        ),
-                        child: Text(s.getStarted, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      )
-                    : ElevatedButton(
-                        onPressed: () {
-                          _pageController.nextPage(
+                child: ElevatedButton(
+                  onPressed: _currentPage == 4
+                      ? _completeOnboarding
+                      : () => _pageController.nextPage(
                             duration: const Duration(milliseconds: 300),
                             curve: Curves.easeInOut,
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 52),
-                          backgroundColor: AppTokens.deepSage,
-                          foregroundColor: AppTokens.warmIvory,
-                        ),
-                        child: Text(s.next, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      ),
+                          ),
+                  style: const ButtonStyle(
+                    minimumSize: WidgetStatePropertyAll(Size(double.infinity, 52)),
+                  ),
+                  child: Text(
+                    _currentPage == 4 ? s.getStarted : s.next,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
               ),
-
               const SizedBox(height: 16),
             ],
           ),
@@ -149,10 +105,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildPage(BuildContext context, String? imagePath, String title, String subtitle, {
+  Widget _buildPage(
+    BuildContext context,
+    String? imagePath,
+    String title,
+    String subtitle, {
     IconData? icon,
     bool isLogo = false,
   }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: Column(
@@ -160,20 +123,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         children: [
           if (isLogo && imagePath != null)
             Container(
-              width: 140,
-              height: 140,
+              width: 180,
+              height: 180,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(36),
                 boxShadow: [
                   BoxShadow(
-                    color: AppTokens.deepSage.withValues(alpha: 0.15),
+                    color: colors.primary.withValues(alpha: 0.15),
                     blurRadius: 20,
                     offset: const Offset(0, 8),
                   ),
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(36),
                 child: Image.asset(imagePath, fit: BoxFit.cover),
               ),
             )
@@ -182,27 +145,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               width: 120,
               height: 120,
               decoration: BoxDecoration(
-                color: AppTokens.deepSage.withValues(alpha: 0.1),
+                color: colors.primaryContainer,
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 56, color: AppTokens.deepSage),
+              child: Icon(icon, size: 56, color: colors.primary),
             ),
           const SizedBox(height: 40),
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
-              color: AppTokens.textDeepForest,
-            ),
+            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
           Text(
             subtitle,
-            style: const TextStyle(
-              fontSize: 15,
-              color: AppTokens.textSecondary,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: colors.onSurfaceVariant,
               height: 1.5,
             ),
             textAlign: TextAlign.center,
@@ -212,8 +170,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  void _completeOnboarding() {
+  Future<void> _completeOnboarding() async {
     context.read<SettingsProvider>().completeOnboarding();
+    if (!mounted) return;
     Navigator.of(context).pushReplacementNamed('/auth');
   }
 }
