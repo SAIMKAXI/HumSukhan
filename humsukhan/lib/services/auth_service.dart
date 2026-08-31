@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/models.dart';
 import 'database_service.dart';
 import 'supabase_service.dart';
 
@@ -54,9 +55,6 @@ class AuthService {
         return AuthResult.failure('Account creation failed: no user returned.');
       }
 
-      // If email confirmation is disabled, persist the profile immediately.
-      // When confirmation is enabled, the profile is created on the first
-      // authenticated sign-in, after RLS permits the insert.
       if (response.session != null) {
         await ensureProfile(user, name: normalizedName);
       }
