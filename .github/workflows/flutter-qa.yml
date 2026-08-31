@@ -1,0 +1,35 @@
+name: HumSukhan Flutter QA
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'humsukhan/**'
+      - '.github/workflows/flutter-qa.yml'
+  push:
+    branches: [main, 'fix/**']
+    paths:
+      - 'humsukhan/**'
+      - '.github/workflows/flutter-qa.yml'
+
+jobs:
+  flutter-qa:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: humsukhan
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.1'
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Static analysis
+        run: flutter analyze --no-fatal-infos
+      - name: Tests
+        run: flutter test
