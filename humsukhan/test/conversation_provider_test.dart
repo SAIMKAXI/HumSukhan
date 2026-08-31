@@ -22,16 +22,16 @@ void main() {
       final conversation = ConversationProvider();
       conversation.startConversation();
 
-      conversation.addPartialCaption('The first speaker message');
-      conversation.addPartialCaption('The second speaker message');
+      conversation.addPartialCaption('Good morning today');
+      conversation.addPartialCaption('Let us discuss the meeting agenda');
       conversation.addOwnCaption('My reply');
 
       expect(conversation.captions, hasLength(3));
       expect(
         conversation.captions.map((caption) => caption.text).toList(),
         <String>[
-          'The first speaker message',
-          'The second speaker message',
+          'Good morning today',
+          'Let us discuss the meeting agenda',
           'My reply',
         ],
       );
