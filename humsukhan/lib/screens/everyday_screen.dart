@@ -46,8 +46,6 @@ class _EverydayScreenState extends State<EverydayScreen> {
     final conv = context.read<ConversationProvider>();
     final speech = context.read<SpeechProvider>();
     conv.startConversation();
-    // Caption language is an explicit preference when set; otherwise English is
-    // the platform-neutral starting locale and the result language is surfaced.
     final language = context.read<SettingsProvider>().captionLanguage;
     await speech.startListening(language: language == 'Roman Urdu' ? 'Urdu' : language);
     if (!speech.isLiveStt && mounted) {
@@ -241,9 +239,20 @@ class _EverydayScreenState extends State<EverydayScreen> {
                 itemCount: captions.length + (conv.currentPartial != null ? 1 : 0),
                 itemBuilder: (context, index) {
                   if (index == captions.length && conv.currentPartial != null) {
-                    return SpeakableCaptionBubble(caption: conv.currentPartial!, textSize: settings.captionTextSize, isHighContrast: settings.isHighContrast);
+                    return SpeakableCaptionBubble(
+                      key: ValueKey('partial-${conv.currentPartial!.id}'),
+                      caption: conv.currentPartial!,
+                      textSize: settings.captionTextSize,
+                      isHighContrast: settings.isHighContrast,
+                    );
                   }
-                  return SpeakableCaptionBubble(caption: captions[index], textSize: settings.captionTextSize, isHighContrast: settings.isHighContrast);
+                  final caption = captions[index];
+                  return SpeakableCaptionBubble(
+                    key: ValueKey(caption.id),
+                    caption: caption,
+                    textSize: settings.captionTextSize,
+                    isHighContrast: settings.isHighContrast,
+                  );
                 },
               ),
       ),
