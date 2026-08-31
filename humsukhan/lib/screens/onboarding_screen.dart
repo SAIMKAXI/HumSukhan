@@ -172,7 +172,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ],
               ),
               clipBehavior: Clip.antiAlias,
-              child: Image.asset(imagePath!, fit: BoxFit.cover),
+              child: Image.asset(imagePath, fit: BoxFit.cover),
             )
           else if (icon != null)
             Container(
