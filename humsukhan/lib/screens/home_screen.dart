@@ -131,13 +131,6 @@ class HomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: AppTokens.sm),
                 _ActionCard(
-                  title: 'PSL Recognition',
-                  subtitle: 'Pakistani Sign Language → Text → Speech',
-                  icon: Icons.pan_tool,
-                  onTap: () => Navigator.pushNamed(context, '/psl'),
-                ),
-                const SizedBox(height: AppTokens.sm),
-                _ActionCard(
                   title: s.environmentalAlerts,
                   subtitle: environmental.monitoringEnabled ? s.monitoringActive : s.monitoringOff,
                   icon: Icons.volume_up,
