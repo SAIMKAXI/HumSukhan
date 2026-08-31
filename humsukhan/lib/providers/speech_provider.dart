@@ -40,6 +40,8 @@ class RealTtsProvider implements TtsProvider {
       case 'urdu':
         return 'ur-PK';
       case 'roman urdu':
+        // Roman Urdu is Latin-script text, so an English voice is more reliable
+        // than an Urdu-script locale for the synthesized output.
         return 'en-US';
       default:
         return 'en-US';
@@ -84,7 +86,7 @@ class RealTtsProvider implements TtsProvider {
 /// Architecture:
 /// - English: Streaming Zipformer (real-time captions, offline)
 /// - Urdu/Hindi: Dolphin CTC (batch mode, offline)
-/// - Fallback: Platform STT (requires internet)
+/// - Fallback: Platform STT (requires internet) → Demo mode
 class SpeechProvider extends ChangeNotifier {
   late final EnhancedSpeechProvider _sttProvider;
   late final TtsProvider _ttsProvider;
@@ -122,7 +124,7 @@ class SpeechProvider extends ChangeNotifier {
   bool get isBatchMode => _currentMode == STTMode.sherpaBatch;
   bool get isOnlineMode => _currentMode == STTMode.platform;
   bool get isDemoMode => _currentMode == STTMode.demo;
-  bool get isLiveStt => _currentMode != STTMode.none && _currentMode != STTMode.demo && _sttProvider.isListening;
+  bool get isLiveStt => _currentMode != STTMode.none && _currentMode != STTMode.demo;
 
   bool get isDownloading => _isDownloading;
   Map<String, ModelDownloadProgress> get downloadProgress => Map.unmodifiable(_downloadProgress);
@@ -179,12 +181,8 @@ class SpeechProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Start listening and verify that the recorder really became active.
-  /// If the selected offline recognizer cannot start, fall back to the
-  /// platform recognizer when available instead of leaving a false "listening"
-  /// state on the session screen.
   Future<void> startListening({String language = 'English'}) async {
-    await _sttSubscription?.cancel();
+    _sttSubscription?.cancel();
     _sttSubscription = _sttProvider.onResult.listen((result) {
       _currentMode = result.mode;
       notifyListeners();
@@ -193,19 +191,6 @@ class SpeechProvider extends ChangeNotifier {
     await _sttProvider.startListening(language: language);
     _currentMode = _sttProvider.currentMode;
     _currentLanguage = language;
-
-    if (!_sttProvider.isListening &&
-        _sttProvider.isPlatformAvailable &&
-        _sttProvider.currentMode != STTMode.platform) {
-      try {
-        await _sttProvider.switchMode(STTMode.platform, language: language);
-        await _sttProvider.startListening(language: language);
-        _currentMode = _sttProvider.currentMode;
-      } catch (e) {
-        debugPrint('Platform STT fallback failed: $e');
-      }
-    }
-
     notifyListeners();
   }
 
@@ -248,6 +233,7 @@ class SpeechProvider extends ChangeNotifier {
   List<String> get readyLanguages => _modelManager.readyLanguages;
 
   bool isModelReady(String language) => _modelManager.isModelReady(language);
+
   ModelStatus? getModelStatus(String language) => _modelManager.statuses[language];
 
   Future<bool> downloadOfflineModel(String language) async {
@@ -272,6 +258,9 @@ class SpeechProvider extends ChangeNotifier {
 
   Stream<SpeechResultEvent> get onResult => _sttProvider.onResult;
 
+  /// Speak a caption or user reply without allowing the STT microphone to hear
+  /// the synthesized audio. The previous listening state is restored when TTS
+  /// finishes so conversational mode keeps running.
   Future<void> speak(String text, {String language = 'English'}) async {
     final value = text.trim();
     if (value.isEmpty) return;
@@ -293,10 +282,9 @@ class SpeechProvider extends ChangeNotifier {
     } finally {
       _isSpeaking = false;
       notifyListeners();
-    }
-
-    if (wasListening) {
-      await startListening(language: resumeLanguage);
+      if (wasListening) {
+        await startListening(language: resumeLanguage);
+      }
     }
   }
 
