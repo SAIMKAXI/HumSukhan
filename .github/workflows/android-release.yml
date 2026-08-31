@@ -3,7 +3,8 @@ name: HumSukhan Android Release
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - 'humsukhan/pubspec.yaml'
       - 'humsukhan/lib/**'
@@ -47,7 +48,10 @@ jobs:
       - name: Read app version
         id: version
         shell: bash
-        run: echo "version=$(sed -n 's/^version: *//p' pubspec.yaml | head -1 | cut -d+ -f1)" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(sed -n 's/^version: *//p' pubspec.yaml | head -1 | cut -d+ -f1)
+          test -n "$VERSION" || { echo 'ERROR: Could not read app version.'; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Check Supabase build configuration
         env:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
