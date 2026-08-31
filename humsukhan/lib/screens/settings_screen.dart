@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
+import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
 import '../l10n/app_strings.dart';
 import '../services/database_service.dart';
@@ -63,7 +64,7 @@ class SettingsScreen extends StatelessWidget {
         _SectionHeader(title: s.environmentalAlerts),
         ...settings.allowedAlerts.entries.map((entry) => SwitchListTile(title: Text(entry.key), value: entry.value, onChanged: (_) => settings.toggleAllowedAlert(entry.key))),
         _SectionHeader(title: '${s.privacySection} & Retention'),
-        ListTile(title: Text(s.defaultRetentionPeriod), subtitle: Text('${settings.defaultRetentionDays} ${s.sessionsCount}'), trailing: const Icon(Icons.chevron_right), onTap: () => _showRetentionDialog(context, settings, s)),
+        ListTile(title: Text(s.defaultRetentionPeriod), subtitle: Text('${settings.defaultRetentionDays} days'), trailing: const Icon(Icons.chevron_right), onTap: () => _showRetentionDialog(context, settings, s)),
         ListTile(title: Text(s.deleteAllData), subtitle: Text(s.deleteAllDataDesc), leading: Icon(Icons.delete_forever, color: theme.colorScheme.error), onTap: () => _confirmDeleteAllData(context, s)),
         _SectionHeader(title: s.privacySection),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: PrivacyNotice(text: s.privacyNoticeText)),
