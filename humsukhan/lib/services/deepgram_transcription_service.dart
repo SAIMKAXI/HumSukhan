@@ -11,13 +11,9 @@ class DeepgramTranscriptResult {
   final String transcript;
   final String language;
   final double confidence;
-
   const DeepgramTranscriptResult({required this.transcript, required this.language, this.confidence = 0.0});
 }
 
-/// Hold-to-talk transcription path for Conversational Mode.
-/// Audio is recorded locally as WAV and sent to the authenticated Supabase
-/// Edge Function; the Deepgram API key never reaches the client.
 class DeepgramTranscriptionService {
   static DeepgramTranscriptionService? _instance;
   static DeepgramTranscriptionService get instance => _instance ??= DeepgramTranscriptionService._();
@@ -26,7 +22,6 @@ class DeepgramTranscriptionService {
   final AudioRecorder _recorder = AudioRecorder();
   bool _recording = false;
   String? _path;
-
   bool get isRecording => _recording;
 
   Future<bool> start() async {
@@ -56,30 +51,25 @@ class DeepgramTranscriptionService {
     if (!await file.exists()) return null;
     final bytes = await file.readAsBytes();
     if (bytes.length <= 44) {
-      await file.delete().catchError((_) {});
+      await file.delete().catchError((_) => file);
       return null;
     }
     try {
       final response = await SupabaseService.instance.client!.functions.invoke(
         'deepgram-transcribe-bilingual',
-        body: {
-          'audioBase64': base64Encode(bytes),
-          'mimeType': 'audio/wav',
-          'language': language,
-          'sampleRate': 16000,
-          'channels': 1,
-        },
+        body: {'audioBase64': base64Encode(bytes), 'mimeType': 'audio/wav', 'language': language, 'sampleRate': 16000, 'channels': 1},
       );
       final data = Map<String, dynamic>.from(response.data as Map);
-      final transcript = data['transcript']?.toString().trim() ?? '';
-      final detected = data['detectedLanguage']?.toString() ?? data['language']?.toString() ?? 'en';
-      final confidence = (data['confidence'] as num?)?.toDouble() ?? 0.0;
-      return DeepgramTranscriptResult(transcript: transcript, language: detected, confidence: confidence);
+      return DeepgramTranscriptResult(
+        transcript: data['transcript']?.toString().trim() ?? '',
+        language: data['detectedLanguage']?.toString() ?? data['language']?.toString() ?? 'en',
+        confidence: (data['confidence'] as num?)?.toDouble() ?? 0.0,
+      );
     } catch (e) {
       debugPrint('Deepgram transcription failed: $e');
       return null;
     } finally {
-      await file.delete().catchError((_) {});
+      await file.delete().catchError((_) => file);
     }
   }
 
