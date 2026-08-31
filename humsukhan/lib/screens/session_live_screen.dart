@@ -27,7 +27,8 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   String _lastFinalText = '';
   DateTime? _lastFinalAt;
   bool _sessionStarting = true;
-  String _speechStatus = 'Starting microphone…';
+  bool _isListening = false;
+  String _speechStatus = 'Microphone off';
   String? _startupError;
 
   @override
@@ -61,9 +62,51 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     await _speechSubscription?.cancel();
     _speechSubscription = speech.onResult.listen(_handleSpeechResult);
 
+    if (!mounted) return;
     setState(() {
-      _speechStatus = 'Listening for speech…';
+      _sessionStarting = false;
+      _isListening = speech.isListening;
+      _speechStatus = _isListening ? 'Listening for speech…' : 'Microphone off — tap to listen';
       _startupError = null;
+    });
+  }
+
+  Future<void> _toggleListening() async {
+    if (_sessionStarting || !mounted) return;
+    final pro = context.read<ProfessionalProvider>();
+    final existing = pro.sessions.where((s) => s.id == widget.sessionId);
+    if (existing.isEmpty) return;
+    final session = existing.first;
+    final speech = context.read<SpeechProvider>();
+
+    if (_isListening || speech.isListening) {
+      setState(() {
+        _speechStatus = 'Finishing this listening segment…';
+      });
+      await speech.stopListening();
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
+
+      if (_livePartial != null && _livePartial!.text.trim().isNotEmpty) {
+        final partial = _livePartial!;
+        _livePartial = null;
+        await pro.addCaptionToSession(
+          widget.sessionId,
+          partial.copyWith(isPartial: false),
+        );
+      }
+
+      setState(() {
+        _isListening = false;
+        _speechStatus = 'Microphone off — session still active';
+      });
+      _scrollToBottom();
+      return;
+    }
+
+    setState(() {
+      _startupError = null;
+      _speechStatus = 'Starting microphone…';
     });
 
     await speech.startListening(
@@ -75,19 +118,19 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     if (!mounted) return;
     final listening = speech.isListening;
     setState(() {
-      _sessionStarting = false;
+      _isListening = listening;
       _speechStatus = listening
-          ? 'Listening for speech…'
+          ? 'Listening for speech… tap mic again to pause'
           : 'Microphone could not be started';
       if (!listening) {
         _startupError =
-            'Speech recognition could not start. Check microphone permission or download the required speech model.';
+            'Speech recognition could not start. Check microphone permission or the selected speech model.';
       }
     });
   }
 
   void _handleSpeechResult(SpeechResultEvent result) {
-    if (!mounted) return;
+    if (!mounted || !_isListening) return;
     final text = result.text.trim();
     if (text.isEmpty) return;
 
@@ -201,27 +244,49 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
             color: theme.colorScheme.primary.withValues(alpha: .08),
-            child: Row(
+            child: Column(
               children: [
-                Icon(
-                  _sessionStarting || _livePartial != null
-                      ? Icons.mic
-                      : Icons.mic_none,
-                  color: theme.colorScheme.primary,
-                  size: 18,
+                Row(
+                  children: [
+                    Icon(
+                      _isListening ? Icons.mic : Icons.mic_none,
+                      color: _isListening
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outline,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${_speechStatus} · ${session.captionLanguage} · ${session.type.name}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${_speechStatus} · ${session.captionLanguage} · ${session.type.name}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.primary,
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _toggleListening,
+                    icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
+                    label: Text(_isListening ? 'Listening — tap to pause' : 'Tap to listen'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Microphone control pauses/resumes listening. It does not end the session.',
+                  style: theme.textTheme.bodySmall,
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -253,8 +318,9 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
             child: captionsWithPartial.isEmpty
                 ? Center(
                     child: Text(
-                      _sessionStarting ? 'Starting session…' : s.listeningDots,
+                      _sessionStarting ? 'Starting session…' : 'Tap the microphone to begin listening.',
                       style: theme.textTheme.bodyLarge,
+                      textAlign: TextAlign.center,
                     ),
                   )
                 : ListView.builder(
@@ -274,58 +340,70 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                     },
                   ),
           ),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: theme.scaffoldBackgroundColor,
-              border: Border(
-                top: BorderSide(color: theme.dividerColor.withValues(alpha: .3)),
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              decoration: BoxDecoration(
+                color: theme.scaffoldBackgroundColor,
+                border: Border(
+                  top: BorderSide(color: theme.dividerColor.withValues(alpha: .3)),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 120),
+                      child: TextField(
+                        controller: _captionController,
+                        minLines: 1,
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText: s.addCaptionManually,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(AppTokens.radiusFull),
+                            borderSide: BorderSide.none,
+                          ),
+                          filled: true,
+                          fillColor: theme.cardColor,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                        onSubmitted: _addManualCaption,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    tooltip: 'Speak reply',
+                    icon: const Icon(Icons.volume_up),
+                    onPressed: _captionController.text.trim().isEmpty
+                        ? null
+                        : () => context.read<SpeechProvider>().speak(
+                              _captionController.text.trim(),
+                              language: session.captionLanguage,
+                            ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton.filled(
+                    tooltip: 'Add caption',
+                    icon: const Icon(Icons.add),
+                    onPressed: () => _addManualCaption(_captionController.text),
+                  ),
+                ],
               ),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _captionController,
-                    decoration: InputDecoration(
-                      hintText: s.addCaptionManually,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppTokens.radiusFull),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: theme.cardColor,
-                    ),
-                    onChanged: (_) => setState(() {}),
-                    onSubmitted: _addManualCaption,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  tooltip: 'Speak reply',
-                  icon: const Icon(Icons.volume_up),
-                  onPressed: _captionController.text.trim().isEmpty
-                      ? null
-                      : () => context.read<SpeechProvider>().speak(
-                            _captionController.text.trim(),
-                            language: session.captionLanguage,
-                          ),
-                ),
-                const SizedBox(width: 4),
-                IconButton.filled(
-                  tooltip: 'Add caption',
-                  icon: const Icon(Icons.add),
-                  onPressed: () => _addManualCaption(_captionController.text),
-                ),
-              ],
-            ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: PrimaryActionButton(
-              label: s.stopSession,
-              icon: Icons.stop,
-              onPressed: _stopSession,
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
+              child: PrimaryActionButton(
+                label: s.stopSession,
+                icon: Icons.stop,
+                onPressed: _stopSession,
+              ),
             ),
           ),
         ],
@@ -359,6 +437,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     await context.read<SpeechProvider>().stopListening();
     await _speechSubscription?.cancel();
     _speechSubscription = null;
+    _isListening = false;
     if (_livePartial != null) {
       final partial = _livePartial!;
       _livePartial = null;
