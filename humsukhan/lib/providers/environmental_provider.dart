@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-
 import '../models/models.dart';
 import '../services/alert_service.dart';
 import '../services/environmental_monitoring_bridge.dart';
@@ -11,10 +9,7 @@ import '../services/sound_detection_service.dart';
 import 'settings_provider.dart';
 
 class EnvironmentalProvider extends ChangeNotifier {
-  EnvironmentalProvider() {
-    unawaited(_initializeNativeBridge());
-  }
-
+  EnvironmentalProvider() { unawaited(_initializeNativeBridge()); }
   final EnvironmentalMonitoringBridge _bridge = EnvironmentalMonitoringBridge.instance;
   final SoundDetectionService _soundService = SoundDetectionService.instance;
   final List<SoundEvent> _alertHistory = [];
@@ -25,7 +20,6 @@ class EnvironmentalProvider extends ChangeNotifier {
   SettingsProvider? _settingsProvider;
   bool _bridgeInitialized = false;
 
-  static const _cooldownDuration = Duration(seconds: 30);
   static const _minConfidence = 0.6;
 
   void setSettingsProvider(SettingsProvider settings) => _settingsProvider = settings;
@@ -41,8 +35,7 @@ class EnvironmentalProvider extends ChangeNotifier {
   SoundEvent? get currentAlert => _currentAlert;
 
   List<SoundEvent> get recentAlerts {
-    final sorted = List<SoundEvent>.from(_alertHistory);
-    sorted.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final sorted = List<SoundEvent>.from(_alertHistory)..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return sorted.take(20).toList();
   }
 
@@ -73,9 +66,9 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (event != null) {
       final type = event['type']?.toString();
       final confidence = (event['confidence'] as num?)?.toDouble();
-      final severity = event['severity']?.toString();
+      final severity = event['severity']?.toString() ?? 'warning';
       if (type != null && confidence != null) {
-        processSoundEvent(SoundEvent(type: type, confidence: confidence, severity: severity ?? 'warning'));
+        processSoundEvent(SoundEvent(type: type, confidence: confidence, severity: severity));
       }
     }
     notifyListeners();
@@ -91,39 +84,35 @@ class EnvironmentalProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
-
     final permission = await Permission.microphone.request();
     if (!permission.isGranted) {
       _monitoringState = 'ERROR';
       notifyListeners();
       return;
     }
-
     _monitoringState = 'STARTING';
     notifyListeners();
-
     if (Platform.isIOS) {
-      // Native iOS configures the AVAudioSession; Flutter owns the local
-      // sherpa-ONNX stream. iOS may suspend/terminate the app under OS rules.
       if (!await _bridge.start()) {
         _monitoringState = 'ERROR';
-        notifyListeners();
-        return;
+      } else {
+        _soundService.onSoundDetected = processSoundEvent;
+        _monitoringState = await _soundService.startMonitoring(permissionAlreadyGranted: true) ? 'ACTIVE' : 'ERROR';
       }
-      _soundService.onSoundDetected = processSoundEvent;
-      final started = await _soundService.startMonitoring();
-      _monitoringState = started ? 'ACTIVE' : 'ERROR';
     } else {
-      final started = await _bridge.start();
-      if (!started) _monitoringState = 'ERROR';
+      _monitoringState = await _bridge.start() ? 'ACTIVE' : 'ERROR';
     }
     notifyListeners();
   }
 
   bool processSoundEvent(SoundEvent event) {
-    if (event.confidence < _minConfidence) return false;
+    if (!monitoringEnabled || event.confidence < _minConfidence) return false;
+    final settings = _settingsProvider;
+    if (settings != null && settings.allowedAlerts[event.type] == false) return false;
+
+    // Cooldown is owned here so native/background and Flutter paths behave identically.
     if (_lastAlertType == event.type && _lastAlertTime != null &&
-        DateTime.now().difference(_lastAlertTime!) < _cooldownDuration) {
+        DateTime.now().difference(_lastAlertTime!) < SoundDetectionService.cooldownDuration) {
       return false;
     }
 
@@ -131,12 +120,8 @@ class EnvironmentalProvider extends ChangeNotifier {
     _currentAlert = event;
     _lastAlertType = event.type;
     _lastAlertTime = DateTime.now();
+    if (settings != null) AlertService.instance.triggerAlert(settings, severity: event.severity);
     notifyListeners();
-
-    final settings = _settingsProvider;
-    if (settings != null) {
-      AlertService.instance.triggerAlert(settings, severity: event.severity);
-    }
     return true;
   }
 
@@ -149,14 +134,10 @@ class EnvironmentalProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearHistory() {
-    _alertHistory.clear();
-    notifyListeners();
-  }
+  void clearHistory() { _alertHistory.clear(); notifyListeners(); }
 
   @override
   void dispose() {
-    // Android service owns its own lifecycle; never stop it from Activity disposal.
     unawaited(_bridge.dispose());
     super.dispose();
   }
