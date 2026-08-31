@@ -87,11 +87,6 @@ class SettingsProvider extends ChangeNotifier {
   void toggleMonitoring() { _monitoringEnabled = !_monitoringEnabled; notifyListeners(); _save('monitoringEnabled', _monitoringEnabled); }
   void toggleAllowedAlert(String alertType) { _allowedAlerts[alertType] = !(_allowedAlerts[alertType] ?? true); notifyListeners(); _save('allowedAlerts', jsonEncode(_allowedAlerts)); }
 
-  bool isOnboardingCompleteForUser(String userId) {
-    if (userId.isEmpty) return false;
-    return _isOnboardingComplete || SharedPreferences.getInstance().then((_) => false) as bool;
-  }
-
   Future<bool> hasCompletedOnboardingForUser(String userId) async {
     if (userId.isEmpty) return false;
     final prefs = await SharedPreferences.getInstance();
