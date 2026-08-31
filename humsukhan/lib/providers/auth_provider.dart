@@ -43,18 +43,15 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     final result = await _auth.signUp(email: email, password: password, name: name);
     _isLoading = false;
-    if (!result.success) {
-      _user = null;
-      _error = result.errorMessage;
-    } else if (!result.hasActiveSession) {
-      _user = null;
-      _error = 'Account created. Please verify your email, then sign in to continue.';
-    } else {
+    if (result.success && result.user != null) {
       _user = result.user;
       _error = null;
+    } else {
+      _user = null;
+      _error = result.errorMessage ?? 'Account creation failed. Please try again.';
     }
     notifyListeners();
-    return result.success && result.hasActiveSession;
+    return result.success && result.user != null;
   }
 
   Future<bool> signIn({required String email, required String password}) async {
