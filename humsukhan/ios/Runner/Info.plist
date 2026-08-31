@@ -30,8 +30,6 @@
 	<string>HumSukhan needs microphone access to provide real-time speech captions and explicit environmental sound alerts.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>HumSukhan uses speech recognition to convert speech to text for live captions.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>HumSukhan may use the camera for future accessibility features.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
