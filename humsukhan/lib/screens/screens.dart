@@ -7,4 +7,3 @@ export 'environmental_screen.dart';
 export 'settings_screen.dart';
 export 'onboarding_screen.dart';
 export 'auth_screen.dart';
-export 'psl_screen.dart';
