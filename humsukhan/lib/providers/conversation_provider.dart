@@ -175,14 +175,16 @@ class ConversationProvider extends ChangeNotifier {
     _partialCommitTimer?.cancel();
     _partialCommitTimer = null;
     _activeSpeakerDraft = null;
-    _currentPartial = null;
     _isListening = false;
-    if (draft != null && draft.text.trim().isNotEmpty) {
-      final committed = draft.copyWith(text: draft.text.trim(), isPartial: false);
-      _captions.add(committed);
-      _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
-      _lastCommittedAt = committed.timestamp;
-      _sortCaptionsInPlace();
+    if (draft != null) {
+      _currentPartial = null;
+      if (draft.text.trim().isNotEmpty) {
+        final committed = draft.copyWith(text: draft.text.trim(), isPartial: false);
+        _captions.add(committed);
+        _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
+        _lastCommittedAt = committed.timestamp;
+        _sortCaptionsInPlace();
+      }
     }
     _listeningStatus = 'Your turn — respond below';
     if (notify) notifyListeners();
