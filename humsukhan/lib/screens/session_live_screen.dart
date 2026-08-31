@@ -174,8 +174,8 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
 
     final theme = Theme.of(context);
     final settings = context.watch<SettingsProvider>();
-    final captionsWithPartial = <Caption>[...
-      session.captions,
+    final captionsWithPartial = <Caption>[
+      ...session.captions,
       if (_livePartial != null) _livePartial!,
     ];
 
@@ -233,7 +233,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: theme.colorScheme.errorContainer,
-                borderRadius: BorderRadius.circular(AppTokens.radiusMedium),
+                borderRadius: BorderRadius.circular(AppTokens.radiusMd),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -357,8 +357,6 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
 
   Future<void> _stopSession() async {
     await context.read<SpeechProvider>().stopListening();
-    // Give any final STT event a chance to reach the session before the
-    // completed-session write is issued.
     await _speechSubscription?.cancel();
     _speechSubscription = null;
     if (_livePartial != null) {
