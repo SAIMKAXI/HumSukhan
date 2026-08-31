@@ -42,24 +42,36 @@ class AuthService {
     final passwordError = validatePassword(password);
     if (passwordError != null) return AuthResult.failure(passwordError);
 
+    final normalizedEmail = email.trim().toLowerCase();
     final normalizedName = name?.trim();
 
     try {
-      final response = await _supabase.auth!.signUp(
-        email: email.trim(),
+      // Create the account through the trusted Edge Function with email_confirm=true.
+      // This intentionally bypasses email verification for the current prototype.
+      await _supabase.client!.functions.invoke(
+        'create-account',
+        body: {
+          'email': normalizedEmail,
+          'password': password,
+          if (normalizedName?.isNotEmpty == true) 'name': normalizedName,
+        },
+      );
+
+      // The function creates/confirms the account; sign in immediately so the app
+      // always receives a real authenticated session before navigating to Home.
+      final response = await _supabase.auth!.signInWithPassword(
+        email: normalizedEmail,
         password: password,
-        data: normalizedName?.isNotEmpty == true ? {'name': normalizedName} : null,
       );
       final user = response.user;
-      if (user == null) {
-        return AuthResult.failure('Account creation failed: no user returned.');
+      if (user == null || response.session == null) {
+        return AuthResult.failure(
+          'Account was created, but sign in could not be completed. Please try again.',
+        );
       }
 
-      if (response.session != null) {
-        await ensureProfile(user, name: normalizedName);
-      }
-
-      return AuthResult.success(user, hasActiveSession: response.session != null);
+      await ensureProfile(user, name: normalizedName);
+      return AuthResult.success(user, hasActiveSession: true);
     } on AuthException catch (e) {
       return AuthResult.failure(e.message);
     } catch (e) {
@@ -127,7 +139,10 @@ class AuthService {
     try {
       final response = await _supabase.auth!.signInAnonymously();
       if (response.user != null) {
-        return AuthResult.success(response.user!, hasActiveSession: response.session != null);
+        return AuthResult.success(
+          response.user!,
+          hasActiveSession: response.session != null,
+        );
       }
       return AuthResult.failure('Anonymous sign in failed.');
     } on AuthException catch (e) {
