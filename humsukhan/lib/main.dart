@@ -13,7 +13,7 @@ import 'services/sound_detection_service.dart';
 @pragma('vm:entry-point')
 Future<void> environmentalMonitoringBackgroundMain() async {
   WidgetsFlutterBinding.ensureInitialized();
-  const channel = MethodChannel('com.humsukhan/environment_monitor');
+  const channel = MethodChannel('com.humsukhan/environmental_monitor');
   final detector = SoundDetectionService.instance;
 
   channel.setMethodCallHandler((call) async {
@@ -35,30 +35,21 @@ Future<void> environmentalMonitoringBackgroundMain() async {
   };
 
   final started = await detector.startMonitoring(permissionAlreadyGranted: true);
-  await channel.invokeMethod('pipelineState', {
-    'state': started ? 'ACTIVE' : 'ERROR',
-  });
+  await channel.invokeMethod('pipelineState', {'state': started ? 'ACTIVE' : 'ERROR'});
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark,
-  ));
-
   try {
     await SupabaseService.instance.initialize();
   } catch (e) {
     debugPrint('Supabase init failed: $e');
   }
-
   runApp(const HumSukhanApp());
 }
 
 class HumSukhanApp extends StatefulWidget {
   const HumSukhanApp({super.key});
-
   @override
   State<HumSukhanApp> createState() => _HumSukhanAppState();
 }
@@ -68,105 +59,33 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
   String _lastLanguage = 'en';
   bool _settingsWired = false;
 
-  ThemeData _highContrastTheme() {
+  ThemeData _highContrastTheme({String? fontFamily}) {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      fontFamily: 'NotoSans',
+      fontFamily: fontFamily ?? 'NotoSans',
       scaffoldBackgroundColor: Colors.white,
-      colorScheme: const ColorScheme.light(
-        primary: Colors.black,
-        onPrimary: Colors.white,
-        primaryContainer: Colors.white,
-        onPrimaryContainer: Colors.black,
-        secondary: Colors.black,
-        onSecondary: Colors.white,
-        surface: Colors.white,
-        onSurface: Colors.black,
-        surfaceContainer: Colors.white,
-        error: Color(0xFF8B0000),
-        onError: Colors.white,
-        outline: Colors.black,
-      ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-      ),
-      cardTheme: CardThemeData(
-        color: Colors.white,
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
-          side: BorderSide(color: Colors.black, width: 1.5),
-        ),
-      ),
+      colorScheme: const ColorScheme.light(primary: Colors.black, onPrimary: Colors.white, primaryContainer: Colors.white, onPrimaryContainer: Colors.black, secondary: Colors.black, onSecondary: Colors.white, surface: Colors.white, onSurface: Colors.black, surfaceContainer: Colors.white, error: Color(0xFF8B0000), onError: Colors.white, outline: Colors.black),
+      appBarTheme: const AppBarTheme(backgroundColor: Colors.white, foregroundColor: Colors.black, elevation: 0),
+      cardTheme: const CardThemeData(color: Colors.white, elevation: 2, shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12)), side: BorderSide(color: Colors.black, width: 1.5))),
       dividerTheme: const DividerThemeData(color: Colors.black, thickness: 1),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.black,
-          side: const BorderSide(color: Colors.black, width: 1.5),
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: Colors.black),
-      ),
-      inputDecorationTheme: const InputDecorationTheme(
-        filled: true,
-        fillColor: Colors.white,
-        enabledBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.black, width: 1.5),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.black, width: 2.5),
-        ),
-      ),
-      chipTheme: const ChipThemeData(
-        backgroundColor: Colors.white,
-        side: BorderSide(color: Colors.black, width: 1.25),
-        labelStyle: TextStyle(color: Colors.black),
-      ),
-      switchTheme: SwitchThemeData(
-        thumbColor: const WidgetStatePropertyAll(Colors.black),
-        trackColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
-              ? Colors.black
-              : Colors.white,
-        ),
-      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white)),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(foregroundColor: Colors.black, side: const BorderSide(color: Colors.black, width: 1.5))),
+      textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: Colors.black)),
+      inputDecorationTheme: const InputDecorationTheme(filled: true, fillColor: Colors.white, enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black, width: 1.5)), focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black, width: 2.5))),
+      chipTheme: const ChipThemeData(backgroundColor: Colors.white, side: BorderSide(color: Colors.black, width: 1.25), labelStyle: TextStyle(color: Colors.black)),
+      switchTheme: SwitchThemeData(thumbColor: const WidgetStatePropertyAll(Colors.black), trackColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? Colors.black : Colors.white)),
     );
   }
 
-  Widget _applyAccessibilityScale(
-    BuildContext context,
-    Widget? child,
-    SettingsProvider settings,
-  ) {
+  Widget _applyAccessibilityScale(BuildContext context, Widget? child, SettingsProvider settings) {
     if (child == null) return const SizedBox.shrink();
     final baseScale = MediaQuery.textScalerOf(context).scale(1.0);
     final scale = baseScale * (settings.isLargeText ? 1.2 : 1.0);
     final brightness = Theme.of(context).brightness;
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness:
-            brightness == Brightness.dark ? Brightness.light : Brightness.dark,
-        statusBarBrightness:
-            brightness == Brightness.dark ? Brightness.dark : Brightness.light,
-      ),
-      child: MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          textScaler: TextScaler.linear(scale),
-        ),
-        child: child,
-      ),
+      value: SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: brightness == Brightness.dark ? Brightness.light : Brightness.dark, statusBarBrightness: brightness == Brightness.dark ? Brightness.dark : Brightness.light),
+      child: MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)), child: child),
     );
   }
 
@@ -189,75 +108,33 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
           if (settings.appLanguage != _lastLanguage) {
             _lastLanguage = settings.appLanguage;
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                context.read<QuickReplyProvider>().switchLanguage(settings.appLanguage);
-              }
+              if (mounted) context.read<QuickReplyProvider>().switchLanguage(settings.appLanguage);
             });
           }
-
           if (!_settingsWired) {
             _settingsWired = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                context.read<EnvironmentalProvider>().setSettingsProvider(settings);
-              }
+              if (mounted) context.read<EnvironmentalProvider>().setSettingsProvider(settings);
             });
           }
 
           final appLocale = Locale(settings.appLanguage);
-          const localizationDelegates = [
-            AppStrings.delegate,
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ];
-          const supportedLocales = [Locale('en'), Locale('ur')];
+          const delegates = [AppStrings.delegate, GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate];
+          const locales = [Locale('en'), Locale('ur')];
           final isUrdu = settings.appLanguage == 'ur';
           final urduFont = isUrdu ? 'NotoNastaliqUrdu' : 'NotoSans';
-          final textDirection = isUrdu ? TextDirection.rtl : TextDirection.ltr;
+          final direction = isUrdu ? TextDirection.rtl : TextDirection.ltr;
           final highContrast = settings.isHighContrast;
-          final regularLightTheme = AppTheme.lightTheme(fontFamily: urduFont);
-          final regularDarkTheme = AppTheme.darkTheme(fontFamily: urduFont);
-          final highContrastBase = _highContrastTheme();
-          final highContrastTheme = highContrastBase.copyWith(
-            textTheme: highContrastBase.textTheme.apply(fontFamily: urduFont),
-          );
+          final lightTheme = highContrast ? _highContrastTheme(fontFamily: urduFont) : AppTheme.lightTheme(fontFamily: urduFont);
+          final darkTheme = highContrast ? _highContrastTheme(fontFamily: urduFont) : AppTheme.darkTheme(fontFamily: urduFont);
 
           if (_showSplash) {
-            return MaterialApp(
-              debugShowCheckedModeBanner: false,
-              theme: highContrast ? highContrastTheme : regularLightTheme,
-              darkTheme: highContrast ? highContrastTheme : regularDarkTheme,
-              themeMode: highContrast ? ThemeMode.light : settings.themeMode,
-              locale: appLocale,
-              supportedLocales: supportedLocales,
-              localizationsDelegates: localizationDelegates,
-              builder: (context, child) =>
-                  _applyAccessibilityScale(context, child, settings),
-              home: SplashScreen(
-                onComplete: () => setState(() => _showSplash = false),
-              ),
-            );
+            return MaterialApp(debugShowCheckedModeBanner: false, theme: lightTheme, darkTheme: darkTheme, themeMode: highContrast ? ThemeMode.light : settings.themeMode, locale: appLocale, supportedLocales: locales, localizationsDelegates: delegates, builder: (context, child) => _applyAccessibilityScale(context, child, settings), home: SplashScreen(onComplete: () => setState(() => _showSplash = false)));
           }
 
           return Directionality(
-            textDirection: textDirection,
-            child: MaterialApp(
-              title: 'HumSukhan',
-              debugShowCheckedModeBanner: false,
-              theme: highContrast ? highContrastTheme : regularLightTheme,
-              darkTheme: highContrast ? highContrastTheme : regularDarkTheme,
-              themeMode: highContrast ? ThemeMode.light : settings.themeMode,
-              initialRoute: settings.isOnboardingComplete
-                  ? AppRouter.home
-                  : AppRouter.onboarding,
-              onGenerateRoute: AppRouter.generateRoute,
-              locale: appLocale,
-              supportedLocales: supportedLocales,
-              localizationsDelegates: localizationDelegates,
-              builder: (context, child) =>
-                  _applyAccessibilityScale(context, child, settings),
-            ),
+            textDirection: direction,
+            child: MaterialApp(title: 'HumSukhan', debugShowCheckedModeBanner: false, theme: lightTheme, darkTheme: darkTheme, themeMode: highContrast ? ThemeMode.light : settings.themeMode, initialRoute: settings.isOnboardingComplete ? AppRouter.home : AppRouter.onboarding, onGenerateRoute: AppRouter.generateRoute, locale: appLocale, supportedLocales: locales, localizationsDelegates: delegates, builder: (context, child) => _applyAccessibilityScale(context, child, settings)),
           );
         },
       ),
