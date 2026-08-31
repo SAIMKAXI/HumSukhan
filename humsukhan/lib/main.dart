@@ -59,22 +59,83 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
   String _lastLanguage = 'en';
   bool _settingsWired = false;
 
-  ThemeData _highContrastTheme({String? fontFamily}) {
+  ThemeData _highContrastTheme({String? fontFamily, required bool dark}) {
+    final foreground = dark ? Colors.white : Colors.black;
+    final background = dark ? const Color(0xFF050A07) : Colors.white;
+    final surface = dark ? const Color(0xFF101812) : Colors.white;
+    final primary = dark ? const Color(0xFFB8FFD0) : Colors.black;
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.light,
+      brightness: dark ? Brightness.dark : Brightness.light,
       fontFamily: fontFamily ?? 'NotoSans',
-      scaffoldBackgroundColor: Colors.white,
-      colorScheme: const ColorScheme.light(primary: Colors.black, onPrimary: Colors.white, primaryContainer: Colors.white, onPrimaryContainer: Colors.black, secondary: Colors.black, onSecondary: Colors.white, surface: Colors.white, onSurface: Colors.black, surfaceContainer: Colors.white, error: Color(0xFF8B0000), onError: Colors.white, outline: Colors.black),
-      appBarTheme: const AppBarTheme(backgroundColor: Colors.white, foregroundColor: Colors.black, elevation: 0),
-      cardTheme: const CardThemeData(color: Colors.white, elevation: 2, shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12)), side: BorderSide(color: Colors.black, width: 1.5))),
-      dividerTheme: const DividerThemeData(color: Colors.black, thickness: 1),
-      elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white)),
-      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(foregroundColor: Colors.black, side: const BorderSide(color: Colors.black, width: 1.5))),
-      textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: Colors.black)),
-      inputDecorationTheme: const InputDecorationTheme(filled: true, fillColor: Colors.white, enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black, width: 1.5)), focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black, width: 2.5))),
-      chipTheme: const ChipThemeData(backgroundColor: Colors.white, side: BorderSide(color: Colors.black, width: 1.25), labelStyle: TextStyle(color: Colors.black)),
-      switchTheme: SwitchThemeData(thumbColor: const WidgetStatePropertyAll(Colors.black), trackColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? Colors.black : Colors.white)),
+      scaffoldBackgroundColor: background,
+      colorScheme: ColorScheme(
+        brightness: dark ? Brightness.dark : Brightness.light,
+        primary: primary,
+        onPrimary: dark ? Colors.black : Colors.white,
+        primaryContainer: dark ? const Color(0xFF1A2A20) : Colors.white,
+        onPrimaryContainer: foreground,
+        secondary: primary,
+        onSecondary: dark ? Colors.black : Colors.white,
+        secondaryContainer: surface,
+        onSecondaryContainer: foreground,
+        tertiary: primary,
+        onTertiary: dark ? Colors.black : Colors.white,
+        tertiaryContainer: surface,
+        onTertiaryContainer: foreground,
+        error: dark ? const Color(0xFFFF8A80) : const Color(0xFF8B0000),
+        onError: Colors.white,
+        surface: surface,
+        onSurface: foreground,
+        surfaceContainerHighest: surface,
+        onSurfaceVariant: dark ? const Color(0xFFE8F2EC) : Colors.black,
+        outline: foreground,
+        outlineVariant: foreground,
+        shadow: Colors.black,
+        scrim: Colors.black,
+        inverseSurface: foreground,
+        onInverseSurface: background,
+        inversePrimary: dark ? Colors.black : Colors.white,
+      ),
+      appBarTheme: AppBarTheme(backgroundColor: background, foregroundColor: foreground, elevation: 0),
+      cardTheme: CardThemeData(color: surface, elevation: 2, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: foreground, width: 1.5))),
+      dividerTheme: DividerThemeData(color: foreground, thickness: 1),
+      elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(backgroundColor: primary, foregroundColor: dark ? Colors.black : Colors.white)),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(foregroundColor: primary, side: BorderSide(color: primary, width: 1.5))),
+      textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: primary)),
+      inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: surface, enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: foreground, width: 1.5)), focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: primary, width: 2.5))),
+      chipTheme: ChipThemeData(backgroundColor: surface, side: BorderSide(color: foreground, width: 1.25), labelStyle: TextStyle(color: foreground)),
+      switchTheme: SwitchThemeData(thumbColor: WidgetStatePropertyAll(primary), trackColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? primary.withValues(alpha: .85) : surface)),
+      textTheme: ThemeData(brightness: dark ? Brightness.dark : Brightness.light, fontFamily: fontFamily ?? 'NotoSans').textTheme.apply(bodyColor: foreground, displayColor: foreground),
+    );
+  }
+
+  ThemeData _withUrduMetrics(ThemeData theme, bool isUrdu) {
+    if (!isUrdu) return theme;
+    final t = theme.textTheme;
+    TextStyle? tune(TextStyle? style, {double? size, FontWeight? weight}) => style?.copyWith(
+          fontSize: size ?? style.fontSize,
+          fontWeight: weight ?? style.fontWeight,
+          height: 1.65,
+        );
+    return theme.copyWith(
+      textTheme: t.copyWith(
+        displayLarge: tune(t.displayLarge),
+        displayMedium: tune(t.displayMedium),
+        displaySmall: tune(t.displaySmall),
+        headlineLarge: tune(t.headlineLarge),
+        headlineMedium: tune(t.headlineMedium),
+        headlineSmall: tune(t.headlineSmall),
+        titleLarge: tune(t.titleLarge),
+        titleMedium: tune(t.titleMedium),
+        titleSmall: tune(t.titleSmall),
+        bodyLarge: tune(t.bodyLarge),
+        bodyMedium: tune(t.bodyMedium),
+        bodySmall: tune(t.bodySmall),
+        labelLarge: tune(t.labelLarge),
+        labelMedium: tune(t.labelMedium),
+        labelSmall: tune(t.labelSmall),
+      ),
     );
   }
 
@@ -83,9 +144,21 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
     final baseScale = MediaQuery.textScalerOf(context).scale(1.0);
     final scale = baseScale * (settings.isLargeText ? 1.2 : 1.0);
     final brightness = Theme.of(context).brightness;
+    final isUrdu = settings.appLanguage == 'ur';
+    final currentTheme = _withUrduMetrics(Theme.of(context), isUrdu);
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: brightness == Brightness.dark ? Brightness.light : Brightness.dark, statusBarBrightness: brightness == Brightness.dark ? Brightness.dark : Brightness.light),
-      child: MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)), child: child),
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: brightness == Brightness.dark ? Brightness.dark : Brightness.light,
+      ),
+      child: Theme(
+        data: currentTheme,
+        child: MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
+          child: child,
+        ),
+      ),
     );
   }
 
@@ -118,6 +191,14 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
             });
           }
 
+          if (!settings.isLoaded) {
+            return MaterialApp(
+              debugShowCheckedModeBanner: false,
+              theme: AppTheme.lightTheme(fontFamily: 'NotoSans'),
+              home: const Scaffold(body: Center(child: CircularProgressIndicator())),
+            );
+          }
+
           final appLocale = Locale(settings.appLanguage);
           const delegates = [AppStrings.delegate, GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate];
           const locales = [Locale('en'), Locale('ur')];
@@ -125,16 +206,42 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
           final urduFont = isUrdu ? 'NotoNastaliqUrdu' : 'NotoSans';
           final direction = isUrdu ? TextDirection.rtl : TextDirection.ltr;
           final highContrast = settings.isHighContrast;
-          final lightTheme = highContrast ? _highContrastTheme(fontFamily: urduFont) : AppTheme.lightTheme(fontFamily: urduFont);
-          final darkTheme = highContrast ? _highContrastTheme(fontFamily: urduFont) : AppTheme.darkTheme(fontFamily: urduFont);
+          final lightBase = highContrast ? _highContrastTheme(fontFamily: urduFont, dark: false) : AppTheme.lightTheme(fontFamily: urduFont);
+          final darkBase = highContrast ? _highContrastTheme(fontFamily: urduFont, dark: true) : AppTheme.darkTheme(fontFamily: urduFont);
+          final lightTheme = _withUrduMetrics(lightBase, isUrdu);
+          final darkTheme = _withUrduMetrics(darkBase, isUrdu);
+
+          final themeMode = settings.isDarkMode ? ThemeMode.dark : ThemeMode.light;
 
           if (_showSplash) {
-            return MaterialApp(debugShowCheckedModeBanner: false, theme: lightTheme, darkTheme: darkTheme, themeMode: highContrast ? ThemeMode.light : settings.themeMode, locale: appLocale, supportedLocales: locales, localizationsDelegates: delegates, builder: (context, child) => _applyAccessibilityScale(context, child, settings), home: SplashScreen(onComplete: () => setState(() => _showSplash = false)));
+            return MaterialApp(
+              debugShowCheckedModeBanner: false,
+              theme: lightTheme,
+              darkTheme: darkTheme,
+              themeMode: themeMode,
+              locale: appLocale,
+              supportedLocales: locales,
+              localizationsDelegates: delegates,
+              builder: (context, child) => _applyAccessibilityScale(context, child, settings),
+              home: SplashScreen(onComplete: () => setState(() => _showSplash = false)),
+            );
           }
 
           return Directionality(
             textDirection: direction,
-            child: MaterialApp(title: 'HumSukhan', debugShowCheckedModeBanner: false, theme: lightTheme, darkTheme: darkTheme, themeMode: highContrast ? ThemeMode.light : settings.themeMode, initialRoute: settings.isOnboardingComplete ? AppRouter.home : AppRouter.onboarding, onGenerateRoute: AppRouter.generateRoute, locale: appLocale, supportedLocales: locales, localizationsDelegates: delegates, builder: (context, child) => _applyAccessibilityScale(context, child, settings)),
+            child: MaterialApp(
+              title: 'HumSukhan',
+              debugShowCheckedModeBanner: false,
+              theme: lightTheme,
+              darkTheme: darkTheme,
+              themeMode: themeMode,
+              initialRoute: settings.isOnboardingComplete ? AppRouter.home : AppRouter.onboarding,
+              onGenerateRoute: AppRouter.generateRoute,
+              locale: appLocale,
+              supportedLocales: locales,
+              localizationsDelegates: delegates,
+              builder: (context, child) => _applyAccessibilityScale(context, child, settings),
+            ),
           );
         },
       ),
