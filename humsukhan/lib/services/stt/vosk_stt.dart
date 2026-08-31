@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -29,6 +30,13 @@ class SherpaSTTProvider {
   final int _sampleRate = 16000;
   String _lastFinalText = '';
   final List<int> _batchAudioBuffer = <int>[];
+
+  // Lightweight voice-activity gate used by the streaming path. It learns a
+  // quiet ambient-noise floor and prevents very low-energy background noise
+  // from dominating recognition while still passing short speech bursts.
+  double _noiseFloorRms = 0.0;
+  bool _speechActive = false;
+  DateTime? _lastVoiceAt;
 
   Stream<SherpaSTTResult> get onResult => _controller.stream;
   bool get isListening => _listening;
@@ -153,11 +161,12 @@ class SherpaSTTProvider {
         numChannels: 1,
       );
 
-      // Mark the provider active before subscribing so the first audio
-      // callback cannot be discarded by the _listening guard.
       _listening = true;
       _lastFinalText = '';
       _batchAudioBuffer.clear();
+      _noiseFloorRms = 0.0;
+      _speechActive = false;
+      _lastVoiceAt = null;
 
       if (_currentMode == STTMode.sherpaStreaming) {
         if (_onlineRecognizer == null || _onlineStream == null) {
@@ -199,11 +208,55 @@ class SherpaSTTProvider {
     }
   }
 
+  double _rms(Float32List samples) {
+    if (samples.isEmpty) return 0.0;
+    double energy = 0.0;
+    for (final sample in samples) {
+      energy += sample * sample;
+    }
+    return math.sqrt(energy / samples.length);
+  }
+
+  Float32List _silenceLike(Float32List samples) {
+    return Float32List(samples.length);
+  }
+
   void _handleStreamingAudio(List<int> data) {
     if (!_listening || _onlineRecognizer == null || _onlineStream == null) return;
     try {
       final samples = _convertBytesToFloat32(Uint8List.fromList(data));
-      _onlineStream!.acceptWaveform(samples: samples, sampleRate: _sampleRate);
+      final now = DateTime.now();
+      final rms = _rms(samples);
+
+      // Learn the ambient floor only from relatively quiet frames. This keeps
+      // the gate adaptive without allowing speech to permanently raise it.
+      if (!_speechActive && rms < 0.05) {
+        _noiseFloorRms = _noiseFloorRms == 0.0
+            ? rms
+            : (_noiseFloorRms * 0.94) + (rms * 0.06);
+      }
+
+      final threshold = math.max(0.006, _noiseFloorRms * 1.8);
+      final hasVoiceEnergy = rms >= threshold && rms >= 0.006;
+      if (hasVoiceEnergy) {
+        _speechActive = true;
+        _lastVoiceAt = now;
+      } else if (_speechActive &&
+          _lastVoiceAt != null &&
+          now.difference(_lastVoiceAt!).inMilliseconds >= 1200) {
+        _speechActive = false;
+      }
+
+      // Continue feeding the recognizer with silence during quiet periods so
+      // endpoint detection can close the previous utterance cleanly.
+      final gatedSamples = hasVoiceEnergy || _speechActive
+          ? samples
+          : _silenceLike(samples);
+
+      _onlineStream!.acceptWaveform(
+        samples: gatedSamples,
+        sampleRate: _sampleRate,
+      );
       while (_onlineRecognizer!.isReady(_onlineStream!)) {
         _onlineRecognizer!.decode(_onlineStream!);
       }
@@ -213,6 +266,7 @@ class SherpaSTTProvider {
       if (_onlineRecognizer!.isEndpoint(_onlineStream!)) {
         _onlineRecognizer!.reset(_onlineStream!);
         _lastFinalText = text;
+        _speechActive = false;
         _controller.add(SherpaSTTResult(
           text: text,
           isFinal: true,
@@ -255,8 +309,6 @@ class SherpaSTTProvider {
   }
 
   Future<void> stopListening() async {
-    // Flush the final partial batch before marking the provider inactive.
-    // Previously the final <3 second chunk was discarded on every stop.
     if (_currentMode == STTMode.sherpaBatch && _batchAudioBuffer.isNotEmpty) {
       final finalChunk = Uint8List.fromList(_batchAudioBuffer);
       _batchAudioBuffer.clear();
@@ -272,6 +324,8 @@ class SherpaSTTProvider {
       _onlineStream?.free();
       _onlineStream = _onlineRecognizer!.createStream();
     }
+    _speechActive = false;
+    _lastVoiceAt = null;
   }
 
   Future<void> _safeStopRecorder() async {

@@ -16,6 +16,7 @@ class EnvironmentalScreen extends StatelessWidget {
     final colors = theme.colorScheme;
     final s = AppStrings.of(context);
     final isActive = env.monitoringEnabled;
+    final errorText = env.errorMessage ?? 'Unable to start environmental monitoring.';
 
     return Scaffold(
       appBar: AppBar(title: Text(s.environmentalTitle)),
@@ -28,10 +29,10 @@ class EnvironmentalScreen extends StatelessWidget {
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(env.isProcessing ? Icons.mic : (env.hasError ? Icons.mic_off : Icons.volume_off), color: env.hasError ? colors.error : (isActive ? colors.primary : colors.onSurfaceVariant), size: 32),
               const SizedBox(width: 12),
-              Text(env.hasError ? 'Microphone unavailable' : (env.isStarting ? 'Starting monitoring…' : (isActive ? 'Monitoring active' : s.monitoringOffTitle)), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: env.hasError ? colors.error : (isActive ? colors.primary : colors.onSurfaceVariant))),
+              Flexible(child: Text(env.hasError ? errorText : (env.isStarting ? 'Starting monitoring…' : (isActive ? 'Monitoring active' : s.monitoringOffTitle)), textAlign: TextAlign.center, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: env.hasError ? colors.error : (isActive ? colors.primary : colors.onSurfaceVariant)))),
             ]),
             const SizedBox(height: 8),
-            Text(env.hasError ? 'Allow microphone access and try again.' : (env.isProcessing ? 'HumSukhan is listening for supported environmental sounds.' : 'Environmental monitoring is off.'), textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+            Text(env.hasError ? 'Check the message above and try again.' : (env.isProcessing ? 'HumSukhan is listening for supported environmental sounds.' : 'Environmental monitoring is off.'), textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
             const SizedBox(height: 12),
             SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: env.isStarting || env.isStopping ? null : env.toggleMonitoring, icon: Icon(isActive ? Icons.stop : Icons.play_arrow), label: Text(isActive ? s.stopMonitoring : s.startMonitoring))),
           ]),

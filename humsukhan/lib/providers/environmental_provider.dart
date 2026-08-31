@@ -19,6 +19,7 @@ class EnvironmentalProvider extends ChangeNotifier {
   DateTime? _lastAlertTime;
   SettingsProvider? _settingsProvider;
   bool _bridgeInitialized = false;
+  String? _errorMessage;
 
   static const _minConfidence = 0.6;
 
@@ -29,6 +30,9 @@ class EnvironmentalProvider extends ChangeNotifier {
   bool get isStopping => _monitoringState == 'STOPPING';
   bool get hasError => _monitoringState == 'ERROR';
   bool get isProcessing => _soundService.isMonitoring;
+  bool get isMicrophoneReady => _soundService.isMicrophoneReady;
+  bool get isModelReady => _soundService.isModelReady;
+  String? get errorMessage => _errorMessage;
   bool get isLocal => true;
   String get environmentalStatus => monitoringEnabled ? 'Monitoring locally' : 'Off';
   List<SoundEvent> get alertHistory => List.unmodifiable(_alertHistory);
@@ -65,9 +69,7 @@ class EnvironmentalProvider extends ChangeNotifier {
         final type = event['type']?.toString();
         final confidence = (event['confidence'] as num?)?.toDouble();
         final severity = event['severity']?.toString() ?? 'warning';
-        if (type != null && confidence != null) {
-          processSoundEvent(SoundEvent(type: type, confidence: confidence, severity: severity));
-        }
+        if (type != null && confidence != null) processSoundEvent(SoundEvent(type: type, confidence: confidence, severity: severity));
       }
     });
   }
@@ -75,30 +77,45 @@ class EnvironmentalProvider extends ChangeNotifier {
   Future<void> toggleMonitoring() async {
     if (monitoringEnabled) {
       _monitoringState = 'STOPPING';
+      _errorMessage = null;
       notifyListeners();
       _soundService.stopMonitoring();
-      // Only stop the native service when it is independently active.
       if (_bridge.isActive) await _bridge.stop();
       _monitoringState = 'OFF';
       notifyListeners();
       return;
     }
 
+    _errorMessage = null;
     final permission = await Permission.microphone.request();
     if (!permission.isGranted) {
       _monitoringState = 'ERROR';
+      _errorMessage = 'Microphone permission was denied.';
       notifyListeners();
       return;
     }
 
     _monitoringState = 'STARTING';
     notifyListeners();
+    final initialized = await _soundService.initialize(requestPermission: false);
+    if (!initialized || !_soundService.isMicrophoneReady) {
+      _monitoringState = 'ERROR';
+      _errorMessage = 'Microphone is not available to the recorder.';
+      notifyListeners();
+      return;
+    }
+
     _soundService.onSoundDetected = processSoundEvent;
     final started = await _soundService.startMonitoring(permissionAlreadyGranted: true);
-    _monitoringState = started ? 'ACTIVE' : 'ERROR';
-    // Do not start the native Android recorder here: foreground monitoring
-    // already owns the microphone. Quick Settings remains backed by the
-    // native bridge when used independently.
+    if (started) {
+      _monitoringState = 'ACTIVE';
+    } else if (!_soundService.isModelReady) {
+      _monitoringState = 'ERROR';
+      _errorMessage = 'The environmental sound model is unavailable. Download/restore the monitoring model and try again.';
+    } else {
+      _monitoringState = 'ERROR';
+      _errorMessage = 'The microphone recorder could not start.';
+    }
     notifyListeners();
   }
 

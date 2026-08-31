@@ -15,6 +15,8 @@ class SoundDetectionService {
 
   bool _initialized = false;
   bool _monitoring = false;
+  bool _microphoneReady = false;
+  bool _modelReady = false;
   AudioRecorder? _audioRecorder;
   StreamSubscription<Uint8List>? _audioSubscription;
   Function(SoundEvent)? onSoundDetected;
@@ -34,12 +36,14 @@ class SoundDetectionService {
   static const Map<String, List<String>> _labelMapping = {
     'Fire Alarm': ['smoke detector, smoke alarm', 'fire alarm'],
     'Siren': ['siren', 'police car (siren)', 'ambulance (siren)', 'fire engine, fire truck (siren)', 'civil defense siren', 'emergency vehicle'],
-    'Doorbell': ['doorbell', 'chime'], 'Knock': ['knock', 'tap'],
+    'Doorbell': ['doorbell', 'chime'],
+    'Knock': ['knock', 'tap'],
     'Phone': ['telephone', 'telephone bell ringing', 'ringtone', 'car alarm'],
     'Baby Cry': ['baby cry, infant cry', 'crying, sobbing', 'whimper'],
     'Alarm Clock': ['alarm clock', 'alarm', 'buzzer'],
     'Vehicle Horn': ['vehicle horn, car horn, honking', 'air horn, truck horn', 'honk'],
-    'Glass Break': ['glass', 'shatter'], 'Dog Bark': ['bark'],
+    'Glass Break': ['glass', 'shatter'],
+    'Dog Bark': ['bark'],
   };
   static const Set<String> _criticalEvents = {'Fire Alarm', 'Siren'};
   static const double _criticalThreshold = 0.70;
@@ -47,23 +51,36 @@ class SoundDetectionService {
 
   bool get isInitialized => _initialized;
   bool get isMonitoring => _monitoring;
-  bool get isModelReady => _tagger.isInitialized;
+  bool get isMicrophoneReady => _microphoneReady;
+  bool get isModelReady => _modelReady;
   int get labelCount => _tagger.labels.length;
   List<String> get modelLabels => _tagger.labels;
   static List<String> get supportedEvents => _labelMapping.keys.toList();
 
   Future<bool> initialize({bool requestPermission = true}) async {
-    if (_initialized) return _audioRecorder != null && await _hasPermission();
+    if (_initialized) return _microphoneReady;
     try {
       if (requestPermission) {
         final status = await Permission.microphone.request();
-        if (!status.isGranted) { _initialized = true; return false; }
-      } else if (!await _hasPermission()) { _initialized = true; return false; }
-      if (!await AudioModelManager.instance.initialize()) { _initialized = true; return false; }
+        if (!status.isGranted) {
+          _initialized = true;
+          return false;
+        }
+      } else if (!await _hasPermission()) {
+        _initialized = true;
+        return false;
+      }
+
       _audioRecorder ??= AudioRecorder();
+      _microphoneReady = await _audioRecorder!.hasPermission();
       _initialized = true;
-      return true;
-    } catch (e) { debugPrint('SoundDetection init error: $e'); _initialized = true; return false; }
+      return _microphoneReady;
+    } catch (e) {
+      debugPrint('SoundDetection microphone init error: $e');
+      _initialized = true;
+      _microphoneReady = false;
+      return false;
+    }
   }
 
   Future<bool> _hasPermission() async => (await Permission.microphone.status).isGranted;
@@ -71,47 +88,91 @@ class SoundDetectionService {
   Future<bool> startMonitoring({bool permissionAlreadyGranted = false}) async {
     if (_monitoring) return true;
     if (!_initialized && !await initialize(requestPermission: !permissionAlreadyGranted)) return false;
-    if (_audioRecorder == null) return false;
+    if (!_microphoneReady || _audioRecorder == null) return false;
+
     try {
-      if (!permissionAlreadyGranted && !await _audioRecorder!.hasPermission()) return false;
-      if (!await AudioModelManager.instance.initialize() || !await _tagger.initialize()) return false;
-      const config = RecordConfig(encoder: AudioEncoder.pcm16bits, sampleRate: _sampleRate, numChannels: 1);
+      // Model loading is intentionally separate from microphone initialization.
+      // A missing/failed model must not be reported to the user as a microphone error.
+      _modelReady = await AudioModelManager.instance.initialize() && await _tagger.initialize();
+      if (!_modelReady) {
+        debugPrint('SoundDetection model is unavailable');
+        return false;
+      }
+
+      const config = RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: _sampleRate,
+        numChannels: 1,
+      );
       final stream = await _audioRecorder!.startStream(config);
-      _pcmWritePos = 0; _totalSamplesCollected = 0; _clearTemporalBuffer();
-      _audioSubscription = stream.listen(_onAudioData, onError: (e) => debugPrint('SoundDetection stream error: $e'));
+      _pcmWritePos = 0;
+      _totalSamplesCollected = 0;
+      _clearTemporalBuffer();
+      _audioSubscription = stream.listen(
+        _onAudioData,
+        onError: (e) => debugPrint('SoundDetection stream error: $e'),
+      );
       _monitoring = true;
       return true;
-    } catch (e) { debugPrint('SoundDetection start error: $e'); _monitoring = false; _tagger.release(); return false; }
+    } catch (e) {
+      debugPrint('SoundDetection start error: $e');
+      _monitoring = false;
+      return false;
+    }
   }
 
   void stopMonitoring() {
     _monitoring = false;
-    _audioSubscription?.cancel(); _audioSubscription = null;
-    try { _audioRecorder?.stop(); _audioRecorder?.dispose(); } catch (_) {}
-    _audioRecorder = null; _tagger.release(); _pcmWritePos = 0; _totalSamplesCollected = 0;
+    _audioSubscription?.cancel();
+    _audioSubscription = null;
+    try {
+      _audioRecorder?.stop();
+      _audioRecorder?.dispose();
+    } catch (_) {}
+    _audioRecorder = null;
+    _microphoneReady = false;
+    _modelReady = false;
+    _tagger.release();
+    _pcmWritePos = 0;
+    _totalSamplesCollected = 0;
   }
 
   void _onAudioData(Uint8List data) {
     if (!_monitoring || data.lengthInBytes < 2) return;
     final length = data.lengthInBytes - (data.lengthInBytes % 2);
     final samples = Int16List.view(data.buffer, data.offsetInBytes, length ~/ 2);
-    for (final sample in samples) { _pcmBuffer[_pcmWritePos] = sample; _pcmWritePos = (_pcmWritePos + 1) % _windowSamples; _totalSamplesCollected++; }
-    if (_totalSamplesCollected >= _windowSamples && (_totalSamplesCollected - _windowSamples) % _hopSamples == 0) _processWindow();
+    for (final sample in samples) {
+      _pcmBuffer[_pcmWritePos] = sample;
+      _pcmWritePos = (_pcmWritePos + 1) % _windowSamples;
+      _totalSamplesCollected++;
+    }
+    if (_totalSamplesCollected >= _windowSamples &&
+        (_totalSamplesCollected - _windowSamples) % _hopSamples == 0) {
+      _processWindow();
+    }
   }
 
   void _processWindow() {
     if (!_tagger.isInitialized) return;
     var sumSq = 0.0;
     final start = _pcmWritePos;
-    for (var i = 0; i < _windowSamples; i++) { final s = _pcmBuffer[(start + i) % _windowSamples].toDouble(); sumSq += s * s; }
+    for (var i = 0; i < _windowSamples; i++) {
+      final s = _pcmBuffer[(start + i) % _windowSamples].toDouble();
+      sumSq += s * s;
+    }
     if (sumSq / _windowSamples < _rmsGateThreshold * _rmsGateThreshold) return;
-    for (var i = 0; i < _windowSamples; i++) _windowFloat[i] = _pcmBuffer[(start + i) % _windowSamples] / 32768.0;
-    for (final result in _tagger.classify(samples: _windowFloat, topK: 10)) _processDetection(result.label, result.probability);
+    for (var i = 0; i < _windowSamples; i++) {
+      _windowFloat[i] = _pcmBuffer[(start + i) % _windowSamples] / 32768.0;
+    }
+    for (final result in _tagger.classify(samples: _windowFloat, topK: 10)) {
+      _processDetection(result.label, result.probability);
+    }
   }
 
   void _processDetection(String label, double confidence) {
     if (!_monitoring) return;
-    final eventType = _mapLabelToEvent(label); if (eventType == null) return;
+    final eventType = _mapLabelToEvent(label);
+    if (eventType == null) return;
     final threshold = _criticalEvents.contains(eventType) ? _criticalThreshold : _nonCriticalThreshold;
     if (confidence < threshold) return;
     final now = DateTime.now();
@@ -123,12 +184,56 @@ class SoundDetectionService {
 
   bool _passesTemporalConfirmation(String eventType, DateTime now) {
     final events = _temporalBuffer.putIfAbsent(eventType, () => <DateTime>[]);
-    events.removeWhere((t) => now.difference(t) > _temporalWindow); events.add(now); return events.length >= 2;
+    events.removeWhere((t) => now.difference(t) > _temporalWindow);
+    events.add(now);
+    return events.length >= 2;
   }
-  void _clearTemporalBuffer() { for (final list in _temporalBuffer.values) list.clear(); }
-  void _emitEvent(String eventType, double confidence) { final event = SoundEvent(type: eventType, confidence: confidence, severity: _getSeverity(eventType)); _lastDetectionTime[eventType] = DateTime.now(); onSoundDetected?.call(event); }
-  String? _mapLabelToEvent(String label) { final lower = label.toLowerCase(); for (final e in _labelMapping.entries) for (final p in e.value) if (lower.contains(p.toLowerCase())) return e.key; return null; }
-  String _getSeverity(String eventType) { if (eventType == 'Fire Alarm' || eventType == 'Siren' || eventType == 'Glass Break') return 'critical'; if (eventType == 'Doorbell' || eventType == 'Knock' || eventType == 'Phone' || eventType == 'Baby Cry') return 'warning'; return 'info'; }
-  bool processClassification(String label, double confidence) { if (!_monitoring) return false; final eventType = _mapLabelToEvent(label); if (eventType == null) return false; final threshold = _criticalEvents.contains(eventType) ? _criticalThreshold : _nonCriticalThreshold; if (confidence < threshold) return false; final now = DateTime.now(); final last = _lastDetectionTime[eventType]; if (last != null && now.difference(last) < cooldownDuration) return false; if (!_criticalEvents.contains(eventType) && !_passesTemporalConfirmation(eventType, now)) return false; _emitEvent(eventType, confidence); return true; }
-  void dispose() { stopMonitoring(); _lastDetectionTime.clear(); _clearTemporalBuffer(); }
+
+  void _clearTemporalBuffer() {
+    for (final list in _temporalBuffer.values) {
+      list.clear();
+    }
+  }
+
+  void _emitEvent(String eventType, double confidence) {
+    final event = SoundEvent(type: eventType, confidence: confidence, severity: _getSeverity(eventType));
+    _lastDetectionTime[eventType] = DateTime.now();
+    onSoundDetected?.call(event);
+  }
+
+  String? _mapLabelToEvent(String label) {
+    final lower = label.toLowerCase();
+    for (final entry in _labelMapping.entries) {
+      for (final pattern in entry.value) {
+        if (lower.contains(pattern.toLowerCase())) return entry.key;
+      }
+    }
+    return null;
+  }
+
+  String _getSeverity(String eventType) {
+    if (eventType == 'Fire Alarm' || eventType == 'Siren' || eventType == 'Glass Break') return 'critical';
+    if (eventType == 'Doorbell' || eventType == 'Knock' || eventType == 'Phone' || eventType == 'Baby Cry') return 'warning';
+    return 'info';
+  }
+
+  bool processClassification(String label, double confidence) {
+    if (!_monitoring) return false;
+    final eventType = _mapLabelToEvent(label);
+    if (eventType == null) return false;
+    final threshold = _criticalEvents.contains(eventType) ? _criticalThreshold : _nonCriticalThreshold;
+    if (confidence < threshold) return false;
+    final now = DateTime.now();
+    final last = _lastDetectionTime[eventType];
+    if (last != null && now.difference(last) < cooldownDuration) return false;
+    if (!_criticalEvents.contains(eventType) && !_passesTemporalConfirmation(eventType, now)) return false;
+    _emitEvent(eventType, confidence);
+    return true;
+  }
+
+  void dispose() {
+    stopMonitoring();
+    _lastDetectionTime.clear();
+    _clearTemporalBuffer();
+  }
 }
