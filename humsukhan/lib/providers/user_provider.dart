@@ -65,7 +65,21 @@ class UserProvider extends ChangeNotifier {
     _profile = persisted;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('userProfile', jsonEncode(persisted.toJson()));
-    if (syncCloud && supabase.isAuthenticated) await DatabaseService.instance.upsertProfile(persisted);
+    if (syncCloud && supabase.isAuthenticated && supabase.client != null) {
+      try {
+        await supabase.client!.from('profiles').upsert({
+          'id': supabase.userId,
+          'name': persisted.name,
+          'avatar_emoji': persisted.avatarEmoji,
+          'avatar_data': persisted.avatarData,
+          'preferred_language': persisted.preferredLanguage,
+          'tutor_name': persisted.tutorName,
+          'created_at': persisted.createdAt.toIso8601String(),
+        });
+      } catch (e) {
+        debugPrint('Profile photo/cloud sync error: $e');
+      }
+    }
     notifyListeners();
   }
 
