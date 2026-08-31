@@ -171,7 +171,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _completeOnboarding() async {
-    context.read<SettingsProvider>().completeOnboarding();
+    await context.read<SettingsProvider>().completeOnboarding();
     if (!mounted) return;
     Navigator.of(context).pushReplacementNamed('/auth');
   }
