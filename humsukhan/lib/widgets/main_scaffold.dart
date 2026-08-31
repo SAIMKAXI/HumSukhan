@@ -49,16 +49,6 @@ class _MainScaffoldState extends State<MainScaffold> {
     ];
 
     return Scaffold(
-      appBar: AppBar(
-        leading: Builder(
-          builder: (context) => IconButton(
-            tooltip: isUrdu ? 'مینو کھولیں' : 'Open menu',
-            icon: const Icon(Icons.menu),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
-        ),
-        title: Text(destinations[_currentIndex].$1),
-      ),
       drawer: Drawer(
         child: SafeArea(
           child: Column(
@@ -93,9 +83,31 @@ class _MainScaffoldState extends State<MainScaffold> {
           ),
         ),
       ),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: _screens,
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.paddingOf(context) + 4,
+            left: 4,
+            child: Builder(
+              builder: (context) => Material(
+                color: Theme.of(context).appBarTheme.backgroundColor ?? Theme.of(context).colorScheme.surface,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: IconButton(
+                  tooltip: isUrdu ? 'مینو کھولیں' : 'Open menu',
+                  icon: const Icon(Icons.menu),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
