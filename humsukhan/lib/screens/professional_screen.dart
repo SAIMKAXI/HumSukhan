@@ -13,10 +13,6 @@ class ProfessionalScreen extends StatefulWidget {
 }
 
 class _ProfessionalScreenState extends State<ProfessionalScreen> {
-  final _tabController = TabController(length: 4, vsync: const _NoTickerProvider());
-  @override
-  void dispose() { _tabController.dispose(); super.dispose(); }
-
   @override
   Widget build(BuildContext context) {
     final pro = context.watch<ProfessionalProvider>();
@@ -140,10 +136,4 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
   void _confirmDelete(BuildContext context, ProfessionalSession session, AppStrings s) {
     showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(s.deleteSessionConfirm), content: Text(s.deleteSessionDesc), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)), TextButton(onPressed: () { context.read<ProfessionalProvider>().deleteSession(session.id); Navigator.pop(ctx); }, child: Text(s.delete, style: TextStyle(color: Theme.of(ctx).colorScheme.error)))]));
   }
-}
-
-class _NoTickerProvider implements TickerProvider {
-  const _NoTickerProvider();
-  @override
-  Ticker createTicker(TickerCallback onTick) => throw UnsupportedError('Unused controller');
 }
