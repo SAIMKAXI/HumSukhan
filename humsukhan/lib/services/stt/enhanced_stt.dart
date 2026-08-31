@@ -197,16 +197,7 @@ class EnhancedSpeechProvider {
 
   Future<void> _startPlatformListening(String language) async {
     _platformLocale = _getLocaleId(language);
-    await _platformSTT.listen(
-      onResult: _onPlatformResult,
-      listenOptions: SpeechListenOptions(
-        listenFor: const Duration(minutes: 30),
-        pauseFor: const Duration(seconds: 30),
-        localeId: _platformLocale,
-        cancelOnError: false,
-        partialResults: true,
-      ),
-    );
+    await _platformSTT.listen(onResult: _onPlatformResult, listenOptions: SpeechListenOptions(listenFor: const Duration(minutes: 30), pauseFor: const Duration(seconds: 30), localeId: _platformLocale, cancelOnError: false, partialResults: true));
   }
 
   void _onPlatformResult(SpeechRecognitionResult result) {
@@ -229,7 +220,7 @@ class EnhancedSpeechProvider {
     _sherpaSubscription = null;
     _deepgramAutoMode = false;
     if (useDeepgram) {
-      final result = await _deepgram.stopAndTranscribe(language: 'multi');
+      final result = await _deepgram.stopAndTranscribe(language: 'auto');
       if (result != null && result.transcript.isNotEmpty) {
         _controller.add(SpeechResultEvent(text: result.transcript, isFinal: true, confidence: result.confidence, language: _normalizeDetectedLanguage(result.language, result.transcript), isLive: true, mode: STTMode.platform));
       }
