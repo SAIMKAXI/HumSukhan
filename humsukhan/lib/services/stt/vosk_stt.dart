@@ -28,6 +28,7 @@ class SherpaSTTProvider {
   StreamSubscription<List<int>>? _audioSubscription;
   final int _sampleRate = 16000;
   String _lastFinalText = '';
+  final List<int> _batchAudioBuffer = <int>[];
 
   Stream<SherpaSTTResult> get onResult => _controller.stream;
   bool get isListening => _listening;
@@ -151,36 +152,50 @@ class SherpaSTTProvider {
         sampleRate: 16000,
         numChannels: 1,
       );
-      if (_currentMode == STTMode.sherpaStreaming) {
-        if (_onlineRecognizer == null || _onlineStream == null) return;
-        final stream = await _audioRecorder.startStream(config);
-        _audioSubscription = stream.listen(_handleStreamingAudio,
-            onError: (e) => debugPrint('STT audio error: $e'));
-      } else if (_currentMode == STTMode.sherpaBatch) {
-        if (_offlineRecognizer == null) return;
-        final stream = await _audioRecorder.startStream(config);
-        final audioBuffer = <int>[];
-        _audioSubscription = stream.listen((data) {
-          if (!_listening) return;
-          audioBuffer.addAll(data);
-          if (audioBuffer.length >= _sampleRate * 3 * 2) {
-            _processBatchChunk(Uint8List.fromList(audioBuffer));
-            audioBuffer.clear();
-          }
-        }, onDone: () {
-          if (audioBuffer.isNotEmpty) {
-            _processBatchChunk(Uint8List.fromList(audioBuffer));
-          }
-        });
-      } else {
-        return;
-      }
+
+      // Mark the provider active before subscribing so the first audio
+      // callback cannot be discarded by the _listening guard.
       _listening = true;
       _lastFinalText = '';
+      _batchAudioBuffer.clear();
+
+      if (_currentMode == STTMode.sherpaStreaming) {
+        if (_onlineRecognizer == null || _onlineStream == null) {
+          _listening = false;
+          return;
+        }
+        final stream = await _audioRecorder.startStream(config);
+        _audioSubscription = stream.listen(
+          _handleStreamingAudio,
+          onError: (e) => debugPrint('STT audio error: $e'),
+        );
+      } else if (_currentMode == STTMode.sherpaBatch) {
+        if (_offlineRecognizer == null) {
+          _listening = false;
+          return;
+        }
+        final stream = await _audioRecorder.startStream(config);
+        _audioSubscription = stream.listen(
+          (data) {
+            if (!_listening) return;
+            _batchAudioBuffer.addAll(data);
+            if (_batchAudioBuffer.length >= _sampleRate * 3 * 2) {
+              final chunk = Uint8List.fromList(_batchAudioBuffer);
+              _batchAudioBuffer.clear();
+              _processBatchChunk(chunk);
+            }
+          },
+          onError: (e) => debugPrint('STT batch audio error: $e'),
+        );
+      } else {
+        _listening = false;
+        return;
+      }
     } catch (e) {
       debugPrint('Failed to start listening: $e');
       _listening = false;
       await _safeStopRecorder();
+      _batchAudioBuffer.clear();
     }
   }
 
@@ -198,9 +213,18 @@ class SherpaSTTProvider {
       if (_onlineRecognizer!.isEndpoint(_onlineStream!)) {
         _onlineRecognizer!.reset(_onlineStream!);
         _lastFinalText = text;
-        _controller.add(SherpaSTTResult(text: text, isFinal: true, confidence: 0.9, isStreaming: true));
+        _controller.add(SherpaSTTResult(
+          text: text,
+          isFinal: true,
+          confidence: 0.9,
+          isStreaming: true,
+        ));
       } else {
-        _controller.add(SherpaSTTResult(text: text, confidence: 0.7, isStreaming: true));
+        _controller.add(SherpaSTTResult(
+          text: text,
+          confidence: 0.7,
+          isStreaming: true,
+        ));
       }
     } catch (e) {
       debugPrint('Streaming decode error: $e');
@@ -208,15 +232,22 @@ class SherpaSTTProvider {
   }
 
   void _processBatchChunk(Uint8List audioData) {
-    if (!_listening || _offlineRecognizer == null) return;
+    if (!_listening || _offlineRecognizer == null || audioData.isEmpty) return;
     try {
       final stream = _offlineRecognizer!.createStream();
-      stream.acceptWaveform(samples: _convertBytesToFloat32(audioData), sampleRate: _sampleRate);
+      stream.acceptWaveform(
+        samples: _convertBytesToFloat32(audioData),
+        sampleRate: _sampleRate,
+      );
       _offlineRecognizer!.decode(stream);
       final result = _offlineRecognizer!.getResult(stream);
       stream.free();
       if (result.text.isNotEmpty) {
-        _controller.add(SherpaSTTResult(text: result.text, isFinal: true, confidence: 0.85));
+        _controller.add(SherpaSTTResult(
+          text: result.text,
+          isFinal: true,
+          confidence: 0.85,
+        ));
       }
     } catch (e) {
       debugPrint('Batch processing error: $e');
@@ -224,10 +255,19 @@ class SherpaSTTProvider {
   }
 
   Future<void> stopListening() async {
+    // Flush the final partial batch before marking the provider inactive.
+    // Previously the final <3 second chunk was discarded on every stop.
+    if (_currentMode == STTMode.sherpaBatch && _batchAudioBuffer.isNotEmpty) {
+      final finalChunk = Uint8List.fromList(_batchAudioBuffer);
+      _batchAudioBuffer.clear();
+      _processBatchChunk(finalChunk);
+    }
+
     _listening = false;
     await _audioSubscription?.cancel();
     _audioSubscription = null;
     await _safeStopRecorder();
+
     if (_onlineRecognizer != null) {
       _onlineStream?.free();
       _onlineStream = _onlineRecognizer!.createStream();
@@ -279,6 +319,7 @@ class SherpaSTTProvider {
     _audioSubscription?.cancel();
     _audioSubscription = null;
     _safeStopRecorder();
+    _batchAudioBuffer.clear();
     _releaseRecognizers();
     _controller.close();
   }
@@ -289,7 +330,13 @@ class SherpaSTTResult {
   final bool isFinal;
   final double confidence;
   final bool isStreaming;
-  const SherpaSTTResult({required this.text, this.isFinal = false, this.confidence = 0.0, this.isStreaming = false});
+
+  const SherpaSTTResult({
+    required this.text,
+    this.isFinal = false,
+    this.confidence = 0.0,
+    this.isStreaming = false,
+  });
 }
 
 enum STTMode { none, sherpaStreaming, sherpaBatch, platform, demo }
