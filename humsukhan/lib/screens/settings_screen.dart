@@ -129,7 +129,7 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showRetentionDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
-    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(s.defaultRetention), content: Column(mainAxisSize: MainAxisSize.min, children: [1, 7, 15].map((days) => RadioListTile<int>(title: Text('${days == 1 ? s.retention1Day : days == 7 ? s.retention7Days : s.retention15Days}'), value: days, groupValue: settings.defaultRetentionDays, onChanged: (v) { if (v != null) settings.setDefaultRetentionDays(v); Navigator.pop(ctx); })).toList())));
+    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(s.defaultRetention), content: Column(mainAxisSize: MainAxisSize.min, children: [1, 7, 15].map((days) => RadioListTile<int>(title: Text(days == 1 ? s.retention1Day : days == 7 ? s.retention7Days : s.retention15Days), value: days, groupValue: settings.defaultRetentionDays, onChanged: (v) { if (v != null) settings.setDefaultRetentionDays(v); Navigator.pop(ctx); })).toList())));
   }
 
   void _confirmDeleteAllData(BuildContext context, AppStrings s) {
@@ -208,13 +208,13 @@ class _AboutSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final s = AppStrings.of(context);
+    final isUrdu = Localizations.localeOf(context).languageCode == 'ur';
     return Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [Image.asset('assets/logo.png', width: 56, height: 56), const SizedBox(width: 14), Expanded(child: Text('HumSukhan', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)))]),
       const SizedBox(height: 16),
-      Text(s._isUrdu ? 'قابلِ رسائی مواصلات، لائیو کیپشنز، تقریر کی مدد اور پیشہ ورانہ سننا ایک ہی جگہ۔' : 'Accessible communication, live captions, speech assistance, and professional listening in one place.', style: theme.textTheme.bodyLarge),
+      Text(isUrdu ? 'قابلِ رسائی مواصلات، لائیو کیپشنز، تقریر کی مدد اور پیشہ ورانہ سننا ایک ہی جگہ۔' : 'Accessible communication, live captions, speech assistance, and professional listening in one place.', style: theme.textTheme.bodyLarge),
       const SizedBox(height: 12),
-      Text(s._isUrdu ? 'HumSukhan روزمرہ گفتگو، کلاس رومز، میٹنگز اور ماحول سے آگاہی کو زیادہ قابلِ رسائی بنانے کے لیے تیار کیا گیا ہے۔' : 'HumSukhan is designed to make everyday conversations, classrooms, meetings, and environmental awareness more accessible.', style: theme.textTheme.bodyMedium),
+      Text(isUrdu ? 'HumSukhan روزمرہ گفتگو، کلاس رومز، میٹنگز اور ماحول سے آگاہی کو زیادہ قابلِ رسائی بنانے کے لیے تیار کیا گیا ہے۔' : 'HumSukhan is designed to make everyday conversations, classrooms, meetings, and environmental awareness more accessible.', style: theme.textTheme.bodyMedium),
     ]))));
   }
 }
