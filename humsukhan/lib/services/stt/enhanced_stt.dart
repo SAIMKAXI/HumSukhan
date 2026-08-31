@@ -18,6 +18,7 @@ class EnhancedSpeechProvider {
   bool _listening = false;
   bool _platformAvailable = false;
   bool _sherpaAvailable = false;
+  bool _platformRestartInFlight = false;
   STTMode _currentMode = STTMode.none;
   String _currentLanguage = 'English';
   String _platformLocale = 'en-US';
@@ -57,9 +58,8 @@ class EnhancedSpeechProvider {
         onStatus: _onPlatformStatus,
         onError: (error) {
           debugPrint('Platform STT error: ${error.errorMsg}');
-          if (_listening &&
-              (error.errorMsg == 'no_match' || error.errorMsg == 'speech_timeout')) {
-            _schedulePlatformRestart();
+          if (_listening && _currentMode == STTMode.platform) {
+            _schedulePlatformRestart(delay: const Duration(milliseconds: 500));
           }
         },
       );
@@ -87,21 +87,32 @@ class EnhancedSpeechProvider {
   }
 
   void _onPlatformStatus(String status) {
-    if (status == 'notListening' && _listening && _currentMode == STTMode.platform) {
-      _schedulePlatformRestart();
+    if (!_listening || _currentMode != STTMode.platform) return;
+    // Android's platform recognizer can terminate a recognition window even
+    // while the app is still in an active conversation/session. Keep the app's
+    // listening state alive and restart the recognizer without touching the
+    // accumulated transcript.
+    if (status == 'notListening' || status == 'done') {
+      _schedulePlatformRestart(delay: const Duration(milliseconds: 350));
     }
   }
 
-  void _schedulePlatformRestart() {
-    _platformRestartTimer?.cancel();
-    _platformRestartTimer = Timer(const Duration(milliseconds: 300), () async {
-      if (!_listening || _currentMode != STTMode.platform) return;
+  void _schedulePlatformRestart({Duration delay = const Duration(milliseconds: 350)}) {
+    if (!_listening || _currentMode != STTMode.platform) return;
+    if (_platformRestartTimer?.isActive == true || _platformRestartInFlight) return;
+
+    _platformRestartTimer = Timer(delay, () async {
+      if (!_listening || _currentMode != STTMode.platform || _platformRestartInFlight) return;
+      _platformRestartInFlight = true;
       try {
         await _platformSTT.listen(
           onResult: _onPlatformResult,
           listenOptions: SpeechListenOptions(
+            // Keep a long requested window. Some Android speech engines impose
+            // their own shorter limit; _onPlatformStatus/_onError seamlessly
+            // reopen the recognizer while preserving the same app session.
             listenFor: const Duration(minutes: 30),
-            pauseFor: const Duration(seconds: 8),
+            pauseFor: const Duration(seconds: 30),
             localeId: _platformLocale,
             cancelOnError: false,
             partialResults: true,
@@ -109,6 +120,15 @@ class EnhancedSpeechProvider {
         );
       } catch (e) {
         debugPrint('Platform STT restart failed: $e');
+        if (_listening && _currentMode == STTMode.platform) {
+          _platformRestartTimer = Timer(const Duration(seconds: 1), () {
+            _platformRestartTimer = null;
+            _schedulePlatformRestart(delay: Duration.zero);
+          });
+          return;
+        }
+      } finally {
+        _platformRestartInFlight = false;
       }
     });
   }
@@ -184,7 +204,7 @@ class EnhancedSpeechProvider {
       onResult: _onPlatformResult,
       listenOptions: SpeechListenOptions(
         listenFor: const Duration(minutes: 30),
-        pauseFor: const Duration(seconds: 8),
+        pauseFor: const Duration(seconds: 30),
         localeId: _platformLocale,
         cancelOnError: false,
         partialResults: true,
@@ -207,6 +227,8 @@ class EnhancedSpeechProvider {
   Future<void> stopListening() async {
     _listening = false;
     _platformRestartTimer?.cancel();
+    _platformRestartTimer = null;
+    _platformRestartInFlight = false;
     _sherpaSubscription?.cancel();
     _sherpaSubscription = null;
 
