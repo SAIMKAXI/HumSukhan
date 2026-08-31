@@ -71,7 +71,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: theme.colorScheme.errorContainer, borderRadius: BorderRadius.circular(8)), child: Text(auth.error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
                 ],
                 const SizedBox(height: 24),
-                PrimaryActionButton(label: auth.isLoading ? waitLabel : (_isSignUp ? createTitle : (isUrdu ? 'سائن اِن' : 'Sign In')), icon: _isSignUp ? Icons.person_add : Icons.login, onPressed: auth.isLoading ? null : () => _handleSubmit()),
+                PrimaryActionButton(label: auth.isLoading ? waitLabel : (_isSignUp ? createTitle : (isUrdu ? 'سائن اِن' : 'Sign In')), icon: _isSignUp ? Icons.person_add : Icons.login, onPressed: () { if (!auth.isLoading) _handleSubmit(); }),
                 const SizedBox(height: 12),
                 TextButton(onPressed: auth.isLoading ? null : () { context.read<AuthProvider>().clearError(); setState(() => _isSignUp = !_isSignUp); }, child: Text(_isSignUp ? haveAccount : needAccount)),
                 const SizedBox(height: 24),
