@@ -13,7 +13,6 @@ class ProfessionalProvider extends ChangeNotifier {
   ProfessionalSession? _activeSession;
   bool _isLoading = false;
 
-  // Getters
   List<ProfessionalSession> get sessions => List.unmodifiable(_sessions);
   List<Folder> get folders => List.unmodifiable(_folders);
   List<ProfessionalInsight> get insights => List.unmodifiable(_insights);
@@ -21,452 +20,185 @@ class ProfessionalProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
 
   List<ProfessionalSession> get recentSessions {
-    final completed = _sessions.where((s) => s.status == SessionStatus.completed).toList();
-    completed.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final completed = _sessions.where((s) => s.status == SessionStatus.completed).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return completed.take(5).toList();
   }
 
-  List<ProfessionalSession> getSessionsForFolder(String? folderId) {
-    return _sessions.where((s) => s.folderId == folderId).toList();
-  }
+  List<ProfessionalSession> getSessionsForFolder(String? folderId) => _sessions.where((s) => s.folderId == folderId).toList();
 
   ProfessionalInsight? getInsightForSession(String sessionId) {
-    try {
-      return _insights.firstWhere((i) => i.sessionId == sessionId);
-    } catch (_) {
-      return null;
-    }
+    for (final insight in _insights) { if (insight.sessionId == sessionId) return insight; }
+    return null;
   }
 
-  ProfessionalProvider() {
-    _loadData();
-  }
+  ProfessionalProvider() { _loadData(); }
 
   Future<void> _loadData() async {
-    _isLoading = true;
-    notifyListeners();
-
+    _isLoading = true; notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
-
-      // Load from local first
-      final sessionsJson = prefs.getString('professionalSessions') ?? '[]';
-      _sessions = (jsonDecode(sessionsJson) as List)
-          .map((s) => ProfessionalSession.fromJson(s))
-          .toList();
-
-      final foldersJson = prefs.getString('professionalFolders') ?? '[]';
-      _folders = (jsonDecode(foldersJson) as List)
-          .map((f) => Folder.fromJson(f))
-          .toList();
-
-      final insightsJson = prefs.getString('professionalInsights') ?? '[]';
-      _insights = (jsonDecode(insightsJson) as List)
-          .map((i) => ProfessionalInsight.fromJson(i))
-          .toList();
-
-      // Sync from Supabase if authenticated
-      if (SupabaseService.instance.isAuthenticated) {
-        await _syncFromCloud();
-      }
-
-      // Clean expired sessions
+      _sessions = (jsonDecode(prefs.getString('professionalSessions') ?? '[]') as List).map((s) => ProfessionalSession.fromJson(s)).toList();
+      _folders = (jsonDecode(prefs.getString('professionalFolders') ?? '[]') as List).map((f) => Folder.fromJson(f)).toList();
+      _insights = (jsonDecode(prefs.getString('professionalInsights') ?? '[]') as List).map((i) => ProfessionalInsight.fromJson(i)).toList();
+      if (SupabaseService.instance.isAuthenticated) await _syncFromCloud();
       _cleanExpiredSessions();
-    } catch (e) {
-      debugPrint('Error loading professional data: $e');
-    }
-
-    _isLoading = false;
-    notifyListeners();
+    } catch (e) { debugPrint('Error loading professional data: $e'); }
+    _isLoading = false; notifyListeners();
   }
 
-  /// Sync data from Supabase cloud to local.
   Future<void> _syncFromCloud() async {
     try {
       final cloudSessions = await DatabaseService.instance.fetchSessions();
-      if (cloudSessions.isNotEmpty) {
-        // Merge: keep local sessions that aren't in cloud, add cloud sessions
-        final localIds = _sessions.map((s) => s.id).toSet();
-        for (final cs in cloudSessions) {
-          if (!localIds.contains(cs.id)) {
-            _sessions.add(cs);
-          } else {
-            // Update local with cloud version if cloud is newer
-            final idx = _sessions.indexWhere((s) => s.id == cs.id);
-            if (idx != -1 && cs.status.index > _sessions[idx].status.index) {
-              _sessions[idx] = cs;
-            }
-          }
+      final localIds = _sessions.map((s) => s.id).toSet();
+      for (final cs in cloudSessions) {
+        if (!localIds.contains(cs.id)) _sessions.add(cs);
+        else {
+          final idx = _sessions.indexWhere((s) => s.id == cs.id);
+          if (idx != -1 && cs.createdAt.isAfter(_sessions[idx].createdAt)) _sessions[idx] = cs;
         }
-        await _saveSessions();
       }
-
+      await _saveSessions();
       final cloudFolders = await DatabaseService.instance.fetchFolders();
-      if (cloudFolders.isNotEmpty) {
-        final localFolderIds = _folders.map((f) => f.id).toSet();
-        for (final cf in cloudFolders) {
-          if (!localFolderIds.contains(cf.id)) {
-            _folders.add(cf);
-          }
-        }
-        await _saveFolders();
-      }
-
-      debugPrint('Cloud sync complete: ${_sessions.length} sessions, ${_folders.length} folders');
-    } catch (e) {
-      debugPrint('Cloud sync error: $e');
-    }
+      final localFolderIds = _folders.map((f) => f.id).toSet();
+      for (final cf in cloudFolders) { if (!localFolderIds.contains(cf.id)) _folders.add(cf); }
+      await _saveFolders();
+    } catch (e) { debugPrint('Cloud sync error: $e'); }
   }
 
-  Future<void> _saveSessions() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('professionalSessions', jsonEncode(_sessions.map((s) => s.toJson()).toList()));
-  }
+  Future<void> _saveSessions() async { final prefs = await SharedPreferences.getInstance(); await prefs.setString('professionalSessions', jsonEncode(_sessions.map((s) => s.toJson()).toList())); }
+  Future<void> _saveFolders() async { final prefs = await SharedPreferences.getInstance(); await prefs.setString('professionalFolders', jsonEncode(_folders.map((f) => f.toJson()).toList())); }
+  Future<void> _saveInsights() async { final prefs = await SharedPreferences.getInstance(); await prefs.setString('professionalInsights', jsonEncode(_insights.map((i) => i.toJson()).toList())); }
 
-  Future<void> _saveFolders() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('professionalFolders', jsonEncode(_folders.map((f) => f.toJson()).toList()));
-  }
+  void _cleanExpiredSessions() { final before = _sessions.length; _sessions.removeWhere((s) => s.isExpired); if (_sessions.length != before) _saveSessions(); }
 
-  Future<void> _saveInsights() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('professionalInsights', jsonEncode(_insights.map((i) => i.toJson()).toList()));
-  }
-
-  void _cleanExpiredSessions() {
-    final before = _sessions.length;
-    _sessions.removeWhere((s) => s.isExpired);
-    if (_sessions.length != before) {
-      _saveSessions();
-    }
-  }
-
-  // Session management
-  Future<ProfessionalSession> createSession({
-    required String title,
-    required SessionType type,
-    String? folderId,
-    String captionLanguage = 'English',
-    int retentionDays = 7,
-  }) async {
-    // Enforce hard 15-day maximum retention
-    final enforcedRetentionDays = retentionDays.clamp(1, 15);
-    final session = ProfessionalSession(
-      title: title,
-      type: type,
-      folderId: folderId,
-      captionLanguage: captionLanguage,
-      retentionDays: enforcedRetentionDays,
-    );
-    _sessions.add(session);
-    _activeSession = session;
-    await _saveSessions();
-
-    // Sync to Supabase
-    if (SupabaseService.instance.isAuthenticated) {
-      await DatabaseService.instance.upsertSession(session);
-    }
-
-    notifyListeners();
-    return session;
+  Future<ProfessionalSession> createSession({required String title, required SessionType type, String? folderId, String captionLanguage = 'English', int retentionDays = 7}) async {
+    final session = ProfessionalSession(title: title, type: type, folderId: folderId, captionLanguage: captionLanguage, retentionDays: retentionDays.clamp(1, 15));
+    _sessions.add(session); _activeSession = session; await _saveSessions();
+    if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.upsertSession(session);
+    notifyListeners(); return session;
   }
 
   void startSessionRecording(String sessionId) {
     final idx = _sessions.indexWhere((s) => s.id == sessionId);
-    if (idx != -1) {
-      _activeSession = _sessions[idx].copyWith(status: SessionStatus.inProgress);
-      _sessions[idx] = _activeSession!;
-      _saveSessions();
-      notifyListeners();
-    }
+    if (idx == -1) return;
+    _activeSession = _sessions[idx].copyWith(status: SessionStatus.inProgress);
+    _sessions[idx] = _activeSession!; _saveSessions(); notifyListeners();
   }
 
   Future<void> stopSession(String sessionId) async {
     final idx = _sessions.indexWhere((s) => s.id == sessionId);
-    if (idx != -1) {
-      final session = _sessions[idx];
-      final transcript = session.captions.map((c) => '${c.speaker}: ${c.text}').join('\n');
-      _sessions[idx] = session.copyWith(
-        status: SessionStatus.completed,
-        transcriptText: transcript,
-      );
-      _activeSession = null;
-      await _saveSessions();
-
-      // Sync to Supabase
-      if (SupabaseService.instance.isAuthenticated) {
-        await DatabaseService.instance.upsertSession(_sessions[idx]);
-      }
-
-      notifyListeners();
-    }
+    if (idx == -1) return;
+    final session = _sessions[idx];
+    final sortedCaptions = List<Caption>.from(session.captions)..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    _sessions[idx] = session.copyWith(status: SessionStatus.completed, captions: sortedCaptions, transcriptText: sortedCaptions.map((c) => '${c.speaker}: ${c.text}').join('\n'));
+    _activeSession = null; await _saveSessions();
+    if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.upsertSession(_sessions[idx]);
+    notifyListeners();
   }
 
   void addCaptionToSession(String sessionId, Caption caption) {
     final idx = _sessions.indexWhere((s) => s.id == sessionId);
-    if (idx != -1) {
-      final session = _sessions[idx];
-      final updatedCaptions = List<Caption>.from(session.captions)..add(caption);
-      _sessions[idx] = session.copyWith(captions: updatedCaptions);
-      _saveSessions();
-      notifyListeners();
-    }
+    if (idx == -1) return;
+    final updated = List<Caption>.from(_sessions[idx].captions)..add(caption)..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    _sessions[idx] = _sessions[idx].copyWith(captions: updated);
+    _saveSessions();
+    if (SupabaseService.instance.isAuthenticated) DatabaseService.instance.upsertSession(_sessions[idx]);
+    notifyListeners();
   }
 
   Future<void> deleteSession(String sessionId) async {
-    _sessions.removeWhere((s) => s.id == sessionId);
-    _insights.removeWhere((i) => i.sessionId == sessionId);
-    await _saveSessions();
-    await _saveInsights();
-
-    // Delete from Supabase
-    if (SupabaseService.instance.isAuthenticated) {
-      await DatabaseService.instance.deleteSession(sessionId);
-    }
-
+    _sessions.removeWhere((s) => s.id == sessionId); _insights.removeWhere((i) => i.sessionId == sessionId);
+    await _saveSessions(); await _saveInsights();
+    if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.deleteSession(sessionId);
     notifyListeners();
   }
 
-  // Folder management
   Future<Folder> createFolder(String name) async {
-    final folder = Folder(name: name);
-    _folders.add(folder);
-    await _saveFolders();
-    notifyListeners();
-    return folder;
+    final folder = Folder(name: name.trim());
+    _folders.add(folder); await _saveFolders();
+    if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.upsertFolder(folder);
+    notifyListeners(); return folder;
   }
 
   Future<void> deleteFolder(String folderId) async {
-    // Move sessions to general (no folder)
     for (var i = 0; i < _sessions.length; i++) {
       if (_sessions[i].folderId == folderId) {
         _sessions[i] = _sessions[i].copyWith(folderId: null);
+        if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.upsertSession(_sessions[i]);
       }
     }
-    _folders.removeWhere((f) => f.id == folderId);
-    await _saveFolders();
-    await _saveSessions();
+    _folders.removeWhere((f) => f.id == folderId); await _saveFolders(); await _saveSessions();
+    if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.deleteFolder(folderId);
     notifyListeners();
   }
 
   Future<void> moveSessionToFolder(String sessionId, String? folderId) async {
+    if (folderId != null && !_folders.any((f) => f.id == folderId)) return;
     final idx = _sessions.indexWhere((s) => s.id == sessionId);
-    if (idx != -1) {
-      _sessions[idx] = _sessions[idx].copyWith(folderId: folderId);
-      await _saveSessions();
-      notifyListeners();
-    }
-  }
-
-  // AI Insights — uses real AI (Gemini Flash) when available, local extraction as fallback
-  Future<void> generateInsights(String sessionId) async {
-    final session = _sessions.firstWhere((s) => s.id == sessionId);
-    final existingIdx = _insights.indexWhere((i) => i.sessionId == sessionId);
-
-    final allText = session.captions.map((c) => c.text).join('\n');
-    if (allText.trim().isEmpty) return;
-
-    // Try real AI first
-    ProfessionalInsight? aiInsight;
-    if (AiService.instance.isAvailable) {
-      aiInsight = await AiService.instance.generateInsights(
-        sessionId: sessionId,
-        transcript: allText,
-        sessionTitle: session.title,
-        sessionType: session.type,
-      );
-    }
-
-    // Fall back to local extraction if AI unavailable
-    final insight = aiInsight ?? _generateLocalInsights(session, allText);
-
-    if (existingIdx != -1) {
-      _insights[existingIdx] = insight;
-    } else {
-      _insights.add(insight);
-    }
-    await _saveInsights();
-
-    // Sync to Supabase
-    if (SupabaseService.instance.isAuthenticated) {
-      await DatabaseService.instance.upsertInsight(insight);
-    }
-
+    if (idx == -1) return;
+    _sessions[idx] = _sessions[idx].copyWith(folderId: folderId); await _saveSessions();
+    if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.upsertSession(_sessions[idx]);
     notifyListeners();
   }
 
-  /// Local keyword extraction fallback when AI is unavailable.
+  Future<void> generateInsights(String sessionId) async {
+    final session = _sessions.firstWhere((s) => s.id == sessionId);
+    final existingIdx = _insights.indexWhere((i) => i.sessionId == sessionId);
+    final allText = session.captions.map((c) => c.text).join('\n');
+    if (allText.trim().isEmpty) return;
+    ProfessionalInsight? aiInsight;
+    if (AiService.instance.isAvailable) aiInsight = await AiService.instance.generateInsights(sessionId: sessionId, transcript: allText, sessionTitle: session.title, sessionType: session.type);
+    final insight = aiInsight ?? _generateLocalInsights(session, allText);
+    if (existingIdx != -1) _insights[existingIdx] = insight; else _insights.add(insight);
+    await _saveInsights();
+    if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.upsertInsight(insight);
+    notifyListeners();
+  }
+
   ProfessionalInsight _generateLocalInsights(ProfessionalSession session, String allText) {
-    final allSpeakers = session.captions.map((c) => c.speaker).toSet().toList();
-    return ProfessionalInsight(
-      sessionId: session.id,
-      summary: _buildSummary(session, allText),
-      vocabulary: _extractVocabulary(allText),
-      themes: _extractThemes(allText, session.title),
-      actionItems: _extractActionItems(allText),
-      deadlines: _extractDeadlines(allText),
-      mentionedPeople: allSpeakers.where((s) => s != 'Speaker 1').toList(),
-      isAvailable: session.captions.isNotEmpty,
-    );
+    final speakers = session.captions.map((c) => c.speaker).toSet().where((s) => s != 'Speaker 1').toList();
+    return ProfessionalInsight(sessionId: session.id, summary: _buildSummary(session, allText), vocabulary: _extractVocabulary(allText), themes: _extractThemes(allText, session.title), actionItems: _extractActionItems(allText), deadlines: _extractDeadlines(allText), mentionedPeople: speakers, isAvailable: session.captions.isNotEmpty);
   }
 
   List<String> _extractVocabulary(String text) {
     if (text.isEmpty) return [];
-    final words = text.toLowerCase()
-        .replaceAll(RegExp(r'[^a-zA-Z\s]'), '')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.length >= 4)
-        .toList();
-
-    final freq = <String, int>{};
-    for (final w in words) {
-      freq[w] = (freq[w] ?? 0) + 1;
-    }
-
-    // Filter stop words and get top terms
-    final stopWords = {
-      'this', 'that', 'with', 'from', 'have', 'will', 'been', 'were',
-      'they', 'their', 'them', 'than', 'then', 'also', 'what', 'when',
-      'your', 'just', 'some', 'more', 'very', 'like', 'each', 'much',
-      'about', 'would', 'could', 'should', 'there', 'these', 'those',
-      'into', 'over', 'only', 'other', 'such', 'after', 'well', 'know',
-    };
-
-    final sorted = freq.entries
-        .where((e) => !stopWords.contains(e.key) && e.value >= 1)
-        .toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
+    final words = text.toLowerCase().replaceAll(RegExp(r'[^a-zA-Z\s]'), '').split(RegExp(r'\s+')).where((w) => w.length >= 4).toList();
+    final freq = <String, int>{}; for (final w in words) { freq[w] = (freq[w] ?? 0) + 1; }
+    final stop = {'this','that','with','from','have','will','been','were','they','their','them','than','then','also','what','when','your','just','some','more','very','like','each','much','about','would','could','should','there','these','those','into','over','only','other','such','after','well','know'};
+    final sorted = freq.entries.where((e) => !stop.contains(e.key)).toList()..sort((a,b) => b.value.compareTo(a.value));
     return sorted.take(8).map((e) => e.key).toList();
   }
 
   List<String> _extractThemes(String text, String title) {
     if (text.isEmpty) return [title];
-    final themes = <String>[];
-    themes.add(title);
-
-    final sentences = text.split(RegExp(r'[.!?]+')).where((s) => s.trim().length > 10).toList();
-    final themeKeywords = {
-      'planning': 'Planning & Scheduling',
-      'testing': 'Quality Assurance',
-      'design': 'Design & Architecture',
-      'review': 'Review & Feedback',
-      'deploy': 'Deployment',
-      'launch': 'Product Launch',
-      'meeting': 'Collaboration',
-      'discuss': 'Discussion',
-      'deadline': 'Timeline Management',
-      'team': 'Team Coordination',
-      'feature': 'Feature Development',
-      'bug': 'Issue Resolution',
-      'requirement': 'Requirements',
-      'feedback': 'Feedback',
-    };
-
-    for (final sentence in sentences) {
-      final lower = sentence.toLowerCase();
-      for (final entry in themeKeywords.entries) {
-        if (lower.contains(entry.key) && !themes.contains(entry.value)) {
-          themes.add(entry.value);
-        }
-      }
-    }
-
+    final themes = <String>[title];
+    final keywords = {'planning':'Planning & Scheduling','testing':'Quality Assurance','design':'Design & Architecture','review':'Review & Feedback','deploy':'Deployment','launch':'Product Launch','meeting':'Collaboration','discuss':'Discussion','deadline':'Timeline Management','team':'Team Coordination','feature':'Feature Development','bug':'Issue Resolution','requirement':'Requirements','feedback':'Feedback'};
+    for (final sentence in text.split(RegExp(r'[.!?]+')).where((s) => s.trim().length > 10)) { final lower = sentence.toLowerCase(); for (final e in keywords.entries) { if (lower.contains(e.key) && !themes.contains(e.value)) themes.add(e.value); } }
     return themes.take(5).toList();
   }
 
   List<String> _extractActionItems(String text) {
     if (text.isEmpty) return [];
     final actions = <String>[];
-    final sentences = text.split(RegExp(r'[.!?]+')).where((s) => s.trim().length > 5).toList();
-
-    final actionPatterns = [
-      RegExp(r'\b(need to|must|should|will|going to|plan to|have to)\b', caseSensitive: false),
-      RegExp(r'\b(complete|prepare|review|finish|send|update|create|build|fix|check)\b', caseSensitive: false),
-    ];
-
-    for (final sentence in sentences) {
-      final trimmed = sentence.trim();
-      if (trimmed.isEmpty) continue;
-      for (final pattern in actionPatterns) {
-        if (pattern.hasMatch(trimmed) && actions.length < 5) {
-          final cleaned = trimmed[0].toUpperCase() + trimmed.substring(1);
-          if (!actions.contains(cleaned)) {
-            actions.add(cleaned);
-          }
-          break;
-        }
-      }
-    }
-
+    final patterns = [RegExp(r'\b(need to|must|should|will|going to|plan to|have to)\b', caseSensitive: false), RegExp(r'\b(complete|prepare|review|finish|send|update|create|build|fix|check)\b', caseSensitive: false)];
+    for (final sentence in text.split(RegExp(r'[.!?]+')).where((s) => s.trim().length > 5)) { final trimmed = sentence.trim(); if (patterns.any((p) => p.hasMatch(trimmed)) && actions.length < 5) { final clean = '${trimmed[0].toUpperCase()}${trimmed.substring(1)}'; if (!actions.contains(clean)) actions.add(clean); } }
     return actions;
   }
 
   List<String> _extractDeadlines(String text) {
     if (text.isEmpty) return [];
     final deadlines = <String>[];
-    final sentences = text.split(RegExp(r'[.!?]+')).where((s) => s.trim().length > 5).toList();
-
-    final datePatterns = [
-      RegExp(r'\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}', caseSensitive: false),
-      RegExp(r'\b(\d{1,2}/\d{1,2}/\d{2,4})'),
-      RegExp(r'\b(next week|this week|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', caseSensitive: false),
-      RegExp(r'\b(by\s+\w+\s+\d{1,2})', caseSensitive: false),
-    ];
-
-    for (final sentence in sentences) {
-      final trimmed = sentence.trim();
-      for (final pattern in datePatterns) {
-        final match = pattern.firstMatch(trimmed);
-        if (match != null && deadlines.length < 5) {
-          final cleaned = trimmed[0].toUpperCase() + trimmed.substring(1);
-          if (!deadlines.any((d) => d.toLowerCase() == cleaned.toLowerCase())) {
-            deadlines.add(cleaned);
-          }
-          break;
-        }
-      }
-    }
-
+    final patterns = [RegExp(r'\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}', caseSensitive: false), RegExp(r'\b\d{1,2}/\d{1,2}/\d{2,4}\b'), RegExp(r'\b(next week|this week|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', caseSensitive: false), RegExp(r'\bby\s+\w+\s+\d{1,2}\b', caseSensitive: false)];
+    for (final sentence in text.split(RegExp(r'[.!?]+')).where((s) => s.trim().length > 5)) { final trimmed = sentence.trim(); if (patterns.any((p) => p.hasMatch(trimmed)) && deadlines.length < 5) { final clean = '${trimmed[0].toUpperCase()}${trimmed.substring(1)}'; if (!deadlines.contains(clean)) deadlines.add(clean); } }
     return deadlines;
   }
 
   String _buildSummary(ProfessionalSession session, String allText) {
-    if (allText.isEmpty) {
-      return 'No content was captured in this session.';
-    }
-
-    final captionCount = session.captions.length;
-    final sentences = allText.split(RegExp(r'[.!?]+')).where((s) => s.trim().length > 10).toList();
-    final keySentences = sentences.take(3).join('. ');
-
-    return 'This ${session.type.name} session ("${session.title}") contained '
-        '$captionCount captions. $keySentences.';
+    if (allText.isEmpty) return 'No content was captured in this session.';
+    final sentences = allText.split(RegExp(r'[.!?]+')).where((s) => s.trim().length > 10).take(3).join('. ');
+    return 'This ${session.type.name} session ("${session.title}") contained ${session.captions.length} captions. $sentences.';
   }
 
-  // Retention check
-  void checkRetention() {
-    _cleanExpiredSessions();
-    notifyListeners();
-  }
-
-  // Set a demo session with captions
-  void addDemoSession() {
-    final session = ProfessionalSession(
-      title: 'Product Launch Planning',
-      type: SessionType.meeting,
-      captionLanguage: 'English',
-      retentionDays: 7,
-      status: SessionStatus.completed,
-      captions: [
-        Caption(text: 'Welcome everyone to the product launch planning meeting.', speaker: 'Speaker 1'),
-        Caption(text: 'We need to finalize the testing timeline by next week.', speaker: 'Speaker 2'),
-        Caption(text: 'I will prepare the launch documentation by September 10th.', speaker: 'Speaker 1'),
-        Caption(text: 'Great, let\'s also review the deployment checklist together.', speaker: 'Speaker 2'),
-      ],
-    );
-    _sessions.add(session);
-    _saveSessions();
-    notifyListeners();
-  }
+  void checkRetention() { _cleanExpiredSessions(); notifyListeners(); }
+  void addDemoSession() { /* Demo data is intentionally not injected into production sessions. */ }
 }

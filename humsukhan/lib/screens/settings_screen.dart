@@ -1,4 +1,7 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
@@ -15,541 +18,204 @@ class SettingsScreen extends StatelessWidget {
     final settings = context.watch<SettingsProvider>();
     final user = context.watch<UserProvider>();
     final s = AppStrings.of(context);
-
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: Text(s.settingsTitle)),
-      body: ListView(
-        children: [
-          // Profile Section
-          _SectionHeader(title: s.profile),
-          ListTile(
-            leading: CircleAvatar(
-              child: Text(user.profile?.avatarEmoji ?? '👤'),
-            ),
-            title: Text(user.profile?.name ?? s.setupProfile),
-            subtitle: Text(user.profile?.preferredLanguage ?? s.tapToEdit),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showEditProfileDialog(context, s),
+      body: ListView(children: [
+        _SectionHeader(title: s.profile),
+        ListTile(
+          leading: _Avatar(profile: user.profile, radius: 24),
+          title: Text(user.profile?.name ?? s.setupProfile),
+          subtitle: Text(user.profile?.preferredLanguage ?? s.tapToEdit),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _showEditProfileDialog(context, s),
+        ),
+        Consumer<AuthProvider>(builder: (_, auth, __) => ListTile(
+          leading: Icon(auth.isAuthenticated ? Icons.cloud_done : Icons.cloud_off, color: auth.isAuthenticated ? theme.colorScheme.primary : theme.colorScheme.outline),
+          title: Text(auth.isAuthenticated ? 'Synced with Supabase' : 'Not signed in'),
+          subtitle: Text(auth.isAuthenticated ? (auth.user?.email ?? 'Signed-in account') : 'Sign in to sync your data across devices'),
+          trailing: TextButton(
+            onPressed: auth.isAuthenticated ? auth.signOut : () => Navigator.pushNamed(context, '/auth'),
+            child: Text(auth.isAuthenticated ? 'Sign Out' : 'Sign In'),
           ),
-
-          // Auth Section
-          Consumer<AuthProvider>(
-            builder: (_, auth, child) => Column(
-              children: [
-                ListTile(
-                  leading: Icon(
-                    auth.isAuthenticated ? Icons.cloud_done : Icons.cloud_off,
-                    color: auth.isAuthenticated ? Colors.green : Colors.grey,
-                  ),
-                  title: Text(
-                    auth.isAuthenticated
-                        ? 'Synced with Supabase'
-                        : 'Not signed in',
-                  ),
-                  subtitle: Text(
-                    auth.isAuthenticated
-                        ? (auth.user?.email ?? 'Anonymous user')
-                        : 'Sign in to sync data across devices',
-                  ),
-                  trailing: auth.isAuthenticated
-                      ? TextButton(
-                          onPressed: () async {
-                            await auth.signOut();
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Signed out')),
-                              );
-                            }
-                          },
-                          child: const Text('Sign Out'),
-                        )
-                      : TextButton(
-                          onPressed: () => Navigator.pushNamed(context, '/auth'),
-                          child: const Text('Sign In'),
-                        ),
-                ),
-              ],
-            ),
-          ),
-
-          // App Language
-          _SectionHeader(title: s.appLanguage),
-          ListTile(
-            title: Text(s.appLanguage),
-            subtitle: Text(settings.appLanguage == 'ur' ? s.languageUrdu : s.languageEnglish),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showAppLanguageDialog(context, settings, s),
-          ),
-
-          // Accessibility Section
-          _SectionHeader(title: s.accessibility),
-          SwitchListTile(
-            title: Text(s.darkMode),
-            subtitle: Text(s.darkModeDesc),
-            value: settings.isDarkMode,
-            onChanged: (_) => settings.toggleDarkMode(),
-          ),
-          SwitchListTile(
-            title: Text(s.highContrast),
-            subtitle: Text(s.highContrastDesc),
-            value: settings.isHighContrast,
-            onChanged: (_) => settings.toggleHighContrast(),
-          ),
-          SwitchListTile(
-            title: Text(s.largeText),
-            subtitle: Text(s.largeTextDesc),
-            value: settings.isLargeText,
-            onChanged: (_) => settings.toggleLargeText(),
-          ),
-          SwitchListTile(
-            title: Text(s.simplifiedLanguage),
-            subtitle: Text(s.simplifiedLanguageDesc),
-            value: settings.simplifiedLanguage,
-            onChanged: (_) => settings.toggleSimplifiedLanguage(),
-          ),
-          ListTile(
-            title: Text(s.captionTextSize),
-            subtitle: Text('${settings.captionTextSize.toInt()} sp'),
-            trailing: SizedBox(
-              width: 200,
-              child: Slider(
-                value: settings.captionTextSize,
-                min: 16,
-                max: 48,
-                divisions: 16,
-                label: '${settings.captionTextSize.toInt()}',
-                onChanged: (v) => settings.setCaptionTextSize(v),
-              ),
-            ),
-          ),
-
-          // Alert Preferences
-          _SectionHeader(title: s.alertPreferences),
-          SwitchListTile(
-            title: Text(s.hapticAlerts),
-            subtitle: Text(s.hapticAlertsDesc),
-            value: settings.hapticAlerts,
-            onChanged: (_) => settings.toggleHapticAlerts(),
-          ),
-          SwitchListTile(
-            title: Text(s.visualAlerts),
-            subtitle: Text(s.visualAlertsDesc),
-            value: settings.visualAlerts,
-            onChanged: (_) => settings.toggleVisualAlerts(),
-          ),
-          SwitchListTile(
-            title: Text(s.screenFlashAlerts),
-            subtitle: Text(s.screenFlashAlertsDesc),
-            value: settings.screenFlashAlerts,
-            onChanged: (_) => settings.toggleScreenFlashAlerts(),
-          ),
-          SwitchListTile(
-            title: Text(s.flashlightAlerts),
-            subtitle: Text(s.flashlightAlertsDesc),
-            value: settings.flashAlerts,
-            onChanged: (_) => settings.toggleFlashAlerts(),
-          ),
-
-          // Caption Language
-          _SectionHeader(title: s.languageSection),
-          ListTile(
-            title: Text(s.captionLanguage),
-            subtitle: Text(settings.captionLanguage),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showLanguageDialog(context, settings, s),
-          ),
-
-          // Speech Recognition
-          _SectionHeader(title: s.speechRecognition),
-          const _SpeechModelsSection(),
-
-          // Environmental Alerts
-          _SectionHeader(title: s.environmentalAlerts),
-          ...settings.allowedAlerts.entries.map((entry) =>
-            SwitchListTile(
-              title: Text(entry.key),
-              value: entry.value,
-              onChanged: (_) => settings.toggleAllowedAlert(entry.key),
-            ),
-          ),
-
-          // Privacy & Retention
-          _SectionHeader(title: '${s.privacySection} & Retention'),
-          ListTile(
-            title: Text(s.defaultRetentionPeriod),
-            subtitle: Text('${settings.defaultRetentionDays} ${s.sessionsCount}'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showRetentionDialog(context, settings, s),
-          ),
-          ListTile(
-            title: Text(s.deleteAllData),
-            subtitle: Text(s.deleteAllDataDesc),
-            leading: const Icon(Icons.delete_forever, color: Colors.red),
-            onTap: () => _confirmDeleteAllData(context, s),
-          ),
-
-          // Privacy Info
-          _SectionHeader(title: s.privacySection),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: PrivacyNotice(
-              text: s.privacyNoticeText,
-            ),
-          ),
-
-          // About
-          _SectionHeader(title: s.aboutSection),
-          ListTile(
-            title: const Text('HumSukhan'),
-            subtitle: Text(s.versionLabel),
-          ),
-          ListTile(
-            title: Text(s.fontLabel),
-            subtitle: Text(s.fontDesc),
-          ),
-
-          const SizedBox(height: 32),
-        ],
-      ),
+        )),
+        _SectionHeader(title: s.appLanguage),
+        ListTile(title: Text(s.appLanguage), subtitle: Text(settings.appLanguage == 'ur' ? s.languageUrdu : s.languageEnglish), trailing: const Icon(Icons.chevron_right), onTap: () => _showAppLanguageDialog(context, settings, s)),
+        _SectionHeader(title: s.accessibility),
+        SwitchListTile(title: Text(s.darkMode), subtitle: Text(s.darkModeDesc), value: settings.isDarkMode, onChanged: (_) => settings.toggleDarkMode()),
+        SwitchListTile(title: Text(s.highContrast), subtitle: Text(s.highContrastDesc), value: settings.isHighContrast, onChanged: (_) => settings.toggleHighContrast()),
+        SwitchListTile(title: Text(s.largeText), subtitle: Text(s.largeTextDesc), value: settings.isLargeText, onChanged: (_) => settings.toggleLargeText()),
+        SwitchListTile(title: Text(s.simplifiedLanguage), subtitle: Text(s.simplifiedLanguageDesc), value: settings.simplifiedLanguage, onChanged: (_) => settings.toggleSimplifiedLanguage()),
+        ListTile(
+          title: Text(s.captionTextSize),
+          subtitle: Text('${settings.captionTextSize.toInt()} sp'),
+          trailing: SizedBox(width: 190, child: Slider(value: settings.captionTextSize, min: 16, max: 48, divisions: 16, label: '${settings.captionTextSize.toInt()}', onChanged: settings.setCaptionTextSize)),
+        ),
+        _SectionHeader(title: s.alertPreferences),
+        SwitchListTile(title: Text(s.hapticAlerts), subtitle: Text(s.hapticAlertsDesc), value: settings.hapticAlerts, onChanged: (_) => settings.toggleHapticAlerts()),
+        SwitchListTile(title: Text(s.visualAlerts), subtitle: Text(s.visualAlertsDesc), value: settings.visualAlerts, onChanged: (_) => settings.toggleVisualAlerts()),
+        SwitchListTile(title: Text(s.screenFlashAlerts), subtitle: Text(s.screenFlashAlertsDesc), value: settings.screenFlashAlerts, onChanged: (_) => settings.toggleScreenFlashAlerts()),
+        SwitchListTile(title: Text(s.flashlightAlerts), subtitle: Text(s.flashlightAlertsDesc), value: settings.flashAlerts, onChanged: (_) => settings.toggleFlashAlerts()),
+        _SectionHeader(title: s.languageSection),
+        ListTile(title: Text(s.captionLanguage), subtitle: Text(settings.captionLanguage), trailing: const Icon(Icons.chevron_right), onTap: () => _showLanguageDialog(context, settings, s)),
+        _SectionHeader(title: s.speechRecognition),
+        const _SpeechModelsSection(),
+        _SectionHeader(title: s.environmentalAlerts),
+        ...settings.allowedAlerts.entries.map((entry) => SwitchListTile(title: Text(entry.key), value: entry.value, onChanged: (_) => settings.toggleAllowedAlert(entry.key))),
+        _SectionHeader(title: '${s.privacySection} & Retention'),
+        ListTile(title: Text(s.defaultRetentionPeriod), subtitle: Text('${settings.defaultRetentionDays} ${s.sessionsCount}'), trailing: const Icon(Icons.chevron_right), onTap: () => _showRetentionDialog(context, settings, s)),
+        ListTile(title: Text(s.deleteAllData), subtitle: Text(s.deleteAllDataDesc), leading: Icon(Icons.delete_forever, color: theme.colorScheme.error), onTap: () => _confirmDeleteAllData(context, s)),
+        _SectionHeader(title: s.privacySection),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: PrivacyNotice(text: s.privacyNoticeText)),
+        _SectionHeader(title: s.aboutSection),
+        const _AboutSection(),
+        const SizedBox(height: 32),
+      ]),
     );
   }
 
-  void _showEditProfileDialog(BuildContext context, AppStrings s) {
+  Future<void> _showEditProfileDialog(BuildContext context, AppStrings s) async {
     final user = context.read<UserProvider>();
     final nameController = TextEditingController(text: user.profile?.name ?? '');
+    String? avatarData = user.profile?.avatarData;
+    final picker = ImagePicker();
 
-    showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(s.editProfile, style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 24),
-            TextField(
-              controller: nameController,
-              decoration: InputDecoration(labelText: s.nameLabel),
-            ),
-            const SizedBox(height: 24),
-            PrimaryActionButton(
-              label: s.save,
-              icon: Icons.save,
-              onPressed: () async {
-                if (nameController.text.trim().isNotEmpty) {
-                  if (user.hasProfile) {
-                    await user.saveProfile(user.profile!.copyWith(name: nameController.text.trim()));
-                  } else {
-                    await user.createProfile(name: nameController.text.trim());
-                  }
-                  if (ctx.mounted) Navigator.pop(ctx);
-                }
-              },
-            ),
-          ],
-        ),
-      ),
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setModalState) => Padding(
+        padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(s.editProfile, style: Theme.of(ctx).textTheme.headlineSmall),
+          const SizedBox(height: 20),
+          GestureDetector(
+            onTap: () async {
+              final file = await picker.pickImage(source: ImageSource.gallery, maxWidth: 512, maxHeight: 512, imageQuality: 82);
+              if (file == null) return;
+              final bytes = await file.readAsBytes();
+              setModalState(() => avatarData = base64Encode(bytes));
+            },
+            child: Stack(alignment: Alignment.bottomRight, children: [
+              _Avatar(profile: user.profile?.copyWith(avatarData: avatarData), radius: 46),
+              CircleAvatar(radius: 16, backgroundColor: Theme.of(ctx).colorScheme.primary, child: const Icon(Icons.camera_alt, size: 16)),
+            ]),
+          ),
+          const SizedBox(height: 16),
+          TextField(controller: nameController, decoration: InputDecoration(labelText: s.nameLabel)),
+          const SizedBox(height: 20),
+          PrimaryActionButton(label: s.save, icon: Icons.save, onPressed: () async {
+            final name = nameController.text.trim();
+            if (name.isEmpty) return;
+            final base = user.profile ?? UserProfile(name: name);
+            await user.saveProfile(base.copyWith(name: name, avatarData: avatarData));
+            if (ctx.mounted) Navigator.pop(ctx);
+          }),
+        ]),
+      )),
     );
+    nameController.dispose();
   }
 
   void _showAppLanguageDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
-    String selected = settings.appLanguage;
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          title: Text(s.appLanguage),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              RadioListTile<String>(
-                title: const Text('English'),
-                value: 'en',
-                // ignore: deprecated_member_use
-                groupValue: selected,
-                // ignore: deprecated_member_use
-                onChanged: (v) {
-                  setModalState(() => selected = v ?? 'en');
-                  settings.setAppLanguage('en');
-                  Navigator.pop(ctx);
-                },
-              ),
-              RadioListTile<String>(
-                title: const Text('اردو (Urdu)'),
-                value: 'ur',
-                // ignore: deprecated_member_use
-                groupValue: selected,
-                // ignore: deprecated_member_use
-                onChanged: (v) {
-                  setModalState(() => selected = v ?? 'ur');
-                  settings.setAppLanguage('ur');
-                  Navigator.pop(ctx);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(s.appLanguage), content: Column(mainAxisSize: MainAxisSize.min, children: [
+      RadioListTile<String>(title: const Text('English'), value: 'en', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
+      RadioListTile<String>(title: const Text('اردو (Urdu)'), value: 'ur', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
+    ])));
   }
 
   void _showLanguageDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
-    String selected = settings.captionLanguage;
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          title: Text(s.captionLanguage),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: ['English', 'Roman Urdu', 'Urdu'].map((lang) =>
-              RadioListTile<String>(
-                title: Text(lang),
-                value: lang,
-                // ignore: deprecated_member_use
-                groupValue: selected,
-                // ignore: deprecated_member_use
-                onChanged: (v) {
-                  setModalState(() => selected = v ?? 'English');
-                  settings.setCaptionLanguage(v ?? 'English');
-                  Navigator.pop(ctx);
-                },
-              ),
-            ).toList(),
-          ),
-        ),
-      ),
-    );
+    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(s.captionLanguage), content: Column(mainAxisSize: MainAxisSize.min, children: ['English', 'Roman Urdu', 'Urdu'].map((lang) => RadioListTile<String>(title: Text(lang), value: lang, groupValue: settings.captionLanguage, onChanged: (v) { if (v != null) settings.setCaptionLanguage(v); Navigator.pop(ctx); })).toList())));
   }
 
   void _showRetentionDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
-    int selected = settings.defaultRetentionDays;
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          title: Text(s.defaultRetention),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              RadioListTile<int>(
-                title: Text(s.retention1Day), value: 1,
-                // ignore: deprecated_member_use
-                groupValue: selected,
-                // ignore: deprecated_member_use
-                onChanged: (v) { setModalState(() => selected = v ?? 1); settings.setDefaultRetentionDays(1); Navigator.pop(ctx); }),
-              RadioListTile<int>(
-                title: Text(s.retention7Days), value: 7,
-                // ignore: deprecated_member_use
-                groupValue: selected,
-                // ignore: deprecated_member_use
-                onChanged: (v) { setModalState(() => selected = v ?? 7); settings.setDefaultRetentionDays(7); Navigator.pop(ctx); }),
-              RadioListTile<int>(
-                title: Text(s.retention15Days), value: 15,
-                // ignore: deprecated_member_use
-                groupValue: selected,
-                // ignore: deprecated_member_use
-                onChanged: (v) { setModalState(() => selected = v ?? 15); settings.setDefaultRetentionDays(15); Navigator.pop(ctx); }),
-            ],
-          ),
-        ),
-      ),
-    );
+    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(s.defaultRetention), content: Column(mainAxisSize: MainAxisSize.min, children: [1, 7, 15].map((days) => RadioListTile<int>(title: Text('$days days'), value: days, groupValue: settings.defaultRetentionDays, onChanged: (v) { if (v != null) settings.setDefaultRetentionDays(v); Navigator.pop(ctx); })).toList())));
   }
 
   void _confirmDeleteAllData(BuildContext context, AppStrings s) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(s.deleteAllConfirm),
-        content: Text(s.deleteAllConfirmDesc),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              // Delete from Supabase if authenticated
-              if (SupabaseService.instance.isAuthenticated) {
-                await DatabaseService.instance.deleteAllUserData();
-              }
-              // Delete local data
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.clear();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('All data deleted')),
-                );
-              }
-            },
-            child: Text(s.deleteEverything, style: const TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
+    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(s.deleteAllConfirm), content: Text(s.deleteAllConfirmDesc), actions: [
+      TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
+      TextButton(onPressed: () async {
+        Navigator.pop(ctx);
+        if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.deleteAllUserData();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('All data deleted')));
+      }, child: Text(s.deleteEverything, style: TextStyle(color: Theme.of(ctx).colorScheme.error))),
+    ]));
   }
 }
 
 class _SectionHeader extends StatelessWidget {
   final String title;
   const _SectionHeader({required this.title});
+  @override
+  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.fromLTRB(16, 24, 16, 8), child: Text(title.toUpperCase(), style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.primary, letterSpacing: 1.1, fontWeight: FontWeight.w700)));
+}
 
+class _Avatar extends StatelessWidget {
+  final UserProfile? profile;
+  final double radius;
+  const _Avatar({required this.profile, required this.radius});
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-      child: Text(
-        title.toUpperCase(),
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-          letterSpacing: 1.2,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
+    final data = profile?.avatarData;
+    if (data != null && data.isNotEmpty) {
+      try { return CircleAvatar(radius: radius, backgroundImage: MemoryImage(base64Decode(data))); } catch (_) {}
+    }
+    return CircleAvatar(radius: radius, child: Text(profile?.avatarEmoji ?? '👤', style: TextStyle(fontSize: radius * .72)));
   }
 }
 
 class _SpeechModelsSection extends StatelessWidget {
   const _SpeechModelsSection();
-
   @override
   Widget build(BuildContext context) {
     final speech = context.watch<SpeechProvider>();
     final s = AppStrings.of(context);
-
-    return Column(
-      children: [
-        ListTile(
-          leading: Icon(
-            speech.isOfflineMode ? Icons.wifi_off : Icons.wifi,
-            color: speech.isOfflineMode ? Colors.green : Colors.blue,
-          ),
-          title: Text(s.currentMode),
-          subtitle: Text(speech.sttModeLabel),
-          trailing: Text(
-            speech.currentLanguage,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        const Divider(height: 1),
-
-        _ModelTile(
-          language: s.englishLabel,
-          modelName: 'Zipformer Streaming',
-          sizeMB: 80,
-          isStreaming: true,
-          isReady: speech.isModelReady('English'),
-          onDownload: () => speech.downloadOfflineModel('English'),
-          onDelete: () => speech.deleteModel('English'),
-          s: s,
-        ),
-
-        _ModelTile(
-          language: s.urduLabel,
-          modelName: 'Dolphin CTC',
-          sizeMB: 239,
-          isStreaming: false,
-          isReady: speech.isModelReady('Urdu'),
-          onDownload: () => speech.downloadOfflineModel('Urdu'),
-          onDelete: () => speech.deleteModel('Urdu'),
-          s: s,
-        ),
-
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(
-            s.offlineSttDesc,
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).textTheme.bodySmall?.color,
-            ),
-          ),
-        ),
-      ],
-    );
+    return Column(children: [
+      ListTile(leading: Icon(speech.isOfflineMode ? Icons.wifi_off : Icons.wifi, color: Theme.of(context).colorScheme.primary), title: Text(s.currentMode), subtitle: Text(speech.sttModeLabel), trailing: Text(speech.currentLanguage, style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600))),
+      const Divider(height: 1),
+      _ModelTile(title: 'English speech recognition', description: 'Optional offline model for real-time English captions without an internet connection.', language: s.englishLabel, sizeMB: 80, isReady: speech.isModelReady('English'), onDownload: () => speech.downloadOfflineModel('English'), onDelete: () => speech.deleteModel('English'), s: s),
+      _ModelTile(title: 'Urdu speech recognition', description: 'Optional offline model for Urdu speech recognition and Urdu-script captions.', language: s.urduLabel, sizeMB: 239, isReady: speech.isModelReady('Urdu'), onDownload: () => speech.downloadOfflineModel('Urdu'), onDelete: () => speech.deleteModel('Urdu'), s: s),
+      Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: Text('Offline models improve privacy and availability when you do not have internet access. You can also use online speech recognition when available.', style: Theme.of(context).textTheme.bodySmall)),
+    ]);
   }
 }
 
 class _ModelTile extends StatelessWidget {
+  final String title;
+  final String description;
   final String language;
-  final String modelName;
   final int sizeMB;
-  final bool isStreaming;
   final bool isReady;
   final VoidCallback onDownload;
   final VoidCallback onDelete;
   final AppStrings s;
+  const _ModelTile({required this.title, required this.description, required this.language, required this.sizeMB, required this.isReady, required this.onDownload, required this.onDelete, required this.s});
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest, child: Icon(isReady ? Icons.check_circle : Icons.download_outlined, color: Theme.of(context).colorScheme.primary, size: 20)),
+    title: Text(title),
+    subtitle: Text('$description\n${isReady ? 'Ready' : 'Not downloaded'} · $sizeMB MB'),
+    isThreeLine: true,
+    trailing: isReady ? IconButton(tooltip: 'Remove download', icon: const Icon(Icons.delete_outline), onPressed: onDelete) : TextButton(onPressed: onDownload, child: Text(s.downloadLabel)),
+  );
+}
 
-  const _ModelTile({
-    required this.language,
-    required this.modelName,
-    required this.sizeMB,
-    required this.isStreaming,
-    required this.isReady,
-    required this.onDownload,
-    required this.onDelete,
-    required this.s,
-  });
-
+class _AboutSection extends StatelessWidget {
+  const _AboutSection();
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: isReady
-            ? Colors.green.withValues(alpha: 0.1)
-            : Colors.grey.withValues(alpha: 0.1),
-        child: Icon(
-          isReady ? Icons.check_circle : Icons.download,
-          color: isReady ? Colors.green : Colors.grey,
-          size: 20,
-        ),
-      ),
-      title: Text('$language ($modelName)'),
-      subtitle: Text(
-        isReady ? '${s.readyLabel} · ${sizeMB}MB' : '${s.notDownloaded} · ${sizeMB}MB',
-        style: TextStyle(
-          color: isReady ? Colors.green : Colors.grey,
-          fontSize: 12,
-        ),
-      ),
-      trailing: isReady
-          ? IconButton(
-              icon: const Icon(Icons.delete_outline, size: 20),
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: Text('${s.delete} $language Model?'),
-                    content: Text(s.deleteModelDesc(sizeMB)),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: Text(s.cancel),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          onDelete();
-                          Navigator.pop(ctx);
-                        },
-                        child: Text(s.delete, style: const TextStyle(color: Colors.red)),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            )
-          : TextButton(
-              onPressed: onDownload,
-              child: Text(s.downloadLabel),
-            ),
-    );
+    final theme = Theme.of(context);
+    return Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Image.asset('assets/logo.png', width: 56, height: 56), const SizedBox(width: 14), Expanded(child: Text('HumSukhan', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)))]),
+      const SizedBox(height: 16),
+      Text('Accessible communication, live captions, speech assistance, and professional listening in one place.', style: theme.textTheme.bodyLarge),
+      const SizedBox(height: 12),
+      Text('HumSukhan is designed to make everyday conversations, classrooms, meetings, and environmental awareness more accessible. It supports speech recognition, captions, text-to-speech, and accessibility-focused controls.', style: theme.textTheme.bodyMedium),
+      const SizedBox(height: 12),
+      Text('Your conversations and profile data are intended to stay under your control, with cloud synchronization available when you sign in.', style: theme.textTheme.bodyMedium),
+    ]))));
   }
 }

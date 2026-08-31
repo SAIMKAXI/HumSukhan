@@ -5,12 +5,13 @@ import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
+import '../widgets/speakable_caption_bubble.dart';
+import '../navigation/app_router.dart';
 import '../l10n/app_strings.dart';
 
 class SessionLiveScreen extends StatefulWidget {
   final String sessionId;
   const SessionLiveScreen({super.key, required this.sessionId});
-
   @override
   State<SessionLiveScreen> createState() => _SessionLiveScreenState();
 }
@@ -21,6 +22,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   StreamSubscription? _speechSubscription;
   Timer? _durationTimer;
   late DateTime _startTime;
+  String _lastPartialText = '';
 
   @override
   void initState() {
@@ -32,27 +34,31 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _initSession());
   }
 
-  void _initSession() {
-    context.read<ProfessionalProvider>().startSessionRecording(widget.sessionId);
+  Future<void> _initSession() async {
+    final pro = context.read<ProfessionalProvider>();
+    pro.startSessionRecording(widget.sessionId);
+    final session = pro.sessions.firstWhere((s) => s.id == widget.sessionId);
     final speech = context.read<SpeechProvider>();
-    speech.initialize();
+    await speech.initialize(preferredLanguage: session.captionLanguage);
     _speechSubscription = speech.onResult.listen((result) {
-      if (!mounted) return;
+      if (!mounted || result.text.trim().isEmpty) return;
       if (result.isFinal) {
-        context.read<ProfessionalProvider>().addCaptionToSession(
-          widget.sessionId,
-          Caption(text: result.text, speaker: 'Speaker 1', language: result.language),
-        );
-        _scrollToBottom();
+        pro.addCaptionToSession(widget.sessionId, Caption(text: result.text.trim(), speaker: 'Speaker 1', language: result.language));
+        _lastPartialText = '';
       }
+      setState(() {});
+      _scrollToBottom();
     });
+    await speech.startListening(language: session.captionLanguage == 'Roman Urdu' ? 'Urdu' : session.captionLanguage);
+    if (!speech.isLiveStt && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Live speech recognition is unavailable. Check microphone access or download the required speech model.')));
+    }
   }
 
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(_scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+        _scrollController.animateTo(_scrollController.position.maxScrollExtent, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
       }
     });
   }
@@ -74,102 +80,67 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   @override
   Widget build(BuildContext context) {
     final pro = context.watch<ProfessionalProvider>();
-    final session = pro.sessions.firstWhere(
-      (s) => s.id == widget.sessionId,
-      orElse: () => ProfessionalSession(title: 'Session', status: SessionStatus.inProgress),
-    );
+    final session = pro.sessions.cast<ProfessionalSession?>().firstWhere((s) => s?.id == widget.sessionId, orElse: () => null);
     final s = AppStrings.of(context);
-
+    if (session == null) {
+      return Scaffold(appBar: AppBar(), body: const Center(child: Text('Session not found')));
+    }
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(session.title),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppTheme.successLight.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.circle, size: 8, color: AppTheme.successLight),
-                  const SizedBox(width: 6),
-                  Text(_duration, style: TextStyle(color: AppTheme.successLight, fontWeight: FontWeight.w700, fontSize: 14)),
-                ]),
-              ),
-            ),
-          ),
-        ],
+        actions: [Padding(padding: const EdgeInsets.only(right: 16), child: Center(child: Text(_duration, style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w700))))],
       ),
       body: Column(children: [
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: AppTheme.successLight.withValues(alpha: 0.1),
+          color: theme.colorScheme.primary.withValues(alpha: .08),
           child: Row(children: [
-            Icon(Icons.mic, color: AppTheme.successLight, size: 18),
+            Icon(Icons.mic, color: theme.colorScheme.primary, size: 18),
             const SizedBox(width: 8),
-            Expanded(child: Text('${s.liveSession} · ${session.captionLanguage} · ${session.type.name}',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.successLight))),
+            Expanded(child: Text('${s.liveSession} · ${session.captionLanguage} · ${session.type.name}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: theme.colorScheme.primary))),
           ]),
         ),
         Expanded(
           child: session.captions.isEmpty
-              ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const SizedBox(width: 40, height: 40, child: CircularProgressIndicator(strokeWidth: 3)),
-                  const SizedBox(height: 16),
-                  Text(s.listeningDots, textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey[400], fontSize: 16)),
-                ]))
+              ? Center(child: Text(s.listeningDots, style: theme.textTheme.bodyLarge))
               : ListView.builder(
-                  controller: _scrollController, padding: const EdgeInsets.all(16), itemCount: session.captions.length,
-                  itemBuilder: (context, index) {
-                    final c = session.captions[index];
-                    return Padding(padding: const EdgeInsets.only(bottom: 12),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('${c.speaker} · ${c.timestamp.hour.toString().padLeft(2, '0')}:${c.timestamp.minute.toString().padLeft(2, '0')}',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 4),
-                        Text(c.text, style: Theme.of(context).textTheme.bodyLarge),
-                      ]));
-                  }),
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: session.captions.length,
+                  itemBuilder: (_, index) => SpeakableCaptionBubble(caption: session.captions[index], textSize: context.watch<SettingsProvider>().captionTextSize, isHighContrast: context.watch<SettingsProvider>().isHighContrast),
+                ),
         ),
         Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor,
-              border: Border(top: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.3)))),
+          decoration: BoxDecoration(color: theme.scaffoldBackgroundColor, border: Border(top: BorderSide(color: theme.dividerColor.withValues(alpha: .3)))),
           child: Row(children: [
-            Expanded(child: TextField(controller: _captionController,
-                decoration: InputDecoration(hintText: s.addCaptionManually, hintStyle: TextStyle(color: Colors.grey[400]),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusFull), borderSide: BorderSide.none),
-                    filled: true, fillColor: Theme.of(context).cardColor,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
-                onSubmitted: _addManualCaption)),
+            Expanded(child: TextField(controller: _captionController, decoration: InputDecoration(hintText: s.addCaptionManually, border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTokens.radiusFull), borderSide: BorderSide.none), filled: true, fillColor: theme.cardColor), onSubmitted: _addManualCaption)),
             const SizedBox(width: 8),
-            Container(decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, shape: BoxShape.circle),
-                child: IconButton(icon: const Icon(Icons.add, color: Colors.white), onPressed: () => _addManualCaption(_captionController.text))),
+            IconButton.filled(tooltip: 'Speak reply', icon: const Icon(Icons.volume_up), onPressed: _captionController.text.trim().isEmpty ? null : () => context.read<SpeechProvider>().speak(_captionController.text.trim(), language: session.captionLanguage)),
+            const SizedBox(width: 4),
+            IconButton.filled(tooltip: 'Add caption', icon: const Icon(Icons.add), onPressed: () => _addManualCaption(_captionController.text)),
           ]),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: PrimaryActionButton(label: s.stopSession, icon: Icons.stop, onPressed: () async {
-            context.read<SpeechProvider>().stopListening();
-            await context.read<ProfessionalProvider>().stopSession(widget.sessionId);
-            if (!mounted) return;
-            if (context.mounted) Navigator.pop(context);
-          }),
-        ),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: PrimaryActionButton(label: s.stopSession, icon: Icons.stop, onPressed: _stopSession)),
       ]),
     );
   }
 
   void _addManualCaption(String text) {
-    if (text.trim().isEmpty) return;
-    context.read<ProfessionalProvider>().addCaptionToSession(widget.sessionId,
-        Caption(text: text.trim(), speaker: 'Speaker 1', language: 'English'));
+    final value = text.trim();
+    if (value.isEmpty) return;
+    final session = context.read<ProfessionalProvider>().sessions.firstWhere((s) => s.id == widget.sessionId);
+    context.read<ProfessionalProvider>().addCaptionToSession(widget.sessionId, Caption(text: value, speaker: 'You', language: session.captionLanguage, isOwn: true));
     _captionController.clear();
+    setState(() {});
     _scrollToBottom();
+  }
+
+  Future<void> _stopSession() async {
+    await context.read<SpeechProvider>().stopListening();
+    await context.read<ProfessionalProvider>().stopSession(widget.sessionId);
+    if (mounted) Navigator.pop(context);
   }
 }
