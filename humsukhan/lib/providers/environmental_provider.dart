@@ -128,7 +128,14 @@ class EnvironmentalProvider extends ChangeNotifier {
     _currentAlert = event;
     _lastAlertType = event.type;
     _lastAlertTime = DateTime.now();
-    if (settings != null) AlertService.instance.triggerAlert(settings, severity: event.severity);
+    if (settings != null) {
+      AlertService.instance.triggerAlert(
+        settings,
+        type: event.type,
+        confidence: event.confidence,
+        severity: event.severity,
+      );
+    }
     notifyListeners();
     return true;
   }
