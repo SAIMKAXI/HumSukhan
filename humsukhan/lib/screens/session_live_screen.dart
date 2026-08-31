@@ -21,6 +21,9 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   StreamSubscription? _speechSubscription;
   Timer? _durationTimer;
   late DateTime _startTime;
+  String _liveText = '';
+  String _speechStatus = 'Starting microphone…';
+  bool _starting = true;
 
   @override
   void initState() {
@@ -37,25 +40,70 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     pro.startSessionRecording(widget.sessionId);
     final session = pro.sessions.firstWhere((s) => s.id == widget.sessionId);
     final speech = context.read<SpeechProvider>();
-    await speech.initialize(preferredLanguage: session.captionLanguage);
-    _speechSubscription = speech.onResult.listen((result) {
-      if (!mounted || result.text.trim().isEmpty) return;
-      if (result.isFinal) {
-        pro.addCaptionToSession(widget.sessionId, Caption(text: result.text.trim(), speaker: 'Speaker 1', language: result.language));
+
+    try {
+      await speech.initialize(preferredLanguage: session.captionLanguage);
+      await _speechSubscription?.cancel();
+      _speechSubscription = speech.onResult.listen((result) {
+        if (!mounted || result.text.trim().isEmpty) return;
+        if (result.isFinal) {
+          final text = result.text.trim();
+          pro.addCaptionToSession(widget.sessionId, Caption(
+            text: text,
+            speaker: 'Speaker 1',
+            language: result.language,
+          ));
+          setState(() {
+            _liveText = '';
+            _speechStatus = 'Listening for speech…';
+          });
+          _scrollToBottom();
+        } else {
+          setState(() {
+            _liveText = result.text.trim();
+            _speechStatus = 'Hearing speech…';
+          });
+        }
+      });
+
+      await speech.startListening(
+        language: session.captionLanguage == 'Roman Urdu' ? 'Urdu' : session.captionLanguage,
+      );
+
+      if (!mounted) return;
+      final listening = speech.sttProvider.isListening;
+      setState(() {
+        _starting = false;
+        _speechStatus = listening
+            ? 'Microphone active · Listening…'
+            : 'Microphone could not start';
+      });
+
+      if (!listening) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Speech recognition could not start. Check microphone permission and speech-model availability.'),
+        ));
       }
-      setState(() {});
-      _scrollToBottom();
-    });
-    await speech.startListening(language: session.captionLanguage == 'Roman Urdu' ? 'Urdu' : session.captionLanguage);
-    if (!speech.isLiveStt && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Live speech recognition is unavailable. Check microphone access or download the required speech model.')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _starting = false;
+        _speechStatus = 'Speech recognition unavailable';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Unable to start live speech recognition: $e'),
+      ));
     }
   }
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(_scrollController.position.maxScrollExtent, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        );
       }
     });
   }
@@ -77,16 +125,26 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   @override
   Widget build(BuildContext context) {
     final pro = context.watch<ProfessionalProvider>();
-    final session = pro.sessions.cast<ProfessionalSession?>().firstWhere((s) => s?.id == widget.sessionId, orElse: () => null);
+    final session = pro.sessions.cast<ProfessionalSession?>().firstWhere(
+      (s) => s?.id == widget.sessionId,
+      orElse: () => null,
+    );
     final s = AppStrings.of(context);
     if (session == null) {
       return Scaffold(appBar: AppBar(), body: const Center(child: Text('Session not found')));
     }
     final theme = Theme.of(context);
+    final captions = session.captions;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(session.title),
-        actions: [Padding(padding: const EdgeInsets.only(right: 16), child: Center(child: Text(_duration, style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w700))))],
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(child: Text(_duration, style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w700))),
+          ),
+        ],
       ),
       body: Column(children: [
         Container(
@@ -94,33 +152,78 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           color: theme.colorScheme.primary.withValues(alpha: .08),
           child: Row(children: [
-            Icon(Icons.mic, color: theme.colorScheme.primary, size: 18),
+            Icon(
+              _starting ? Icons.mic_none : (_liveText.isNotEmpty ? Icons.graphic_eq : Icons.mic),
+              color: theme.colorScheme.primary,
+              size: 18,
+            ),
             const SizedBox(width: 8),
-            Expanded(child: Text('${s.liveSession} · ${session.captionLanguage} · ${session.type.name}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: theme.colorScheme.primary))),
+            Expanded(child: Text(
+              '$_speechStatus · ${session.captionLanguage} · ${session.type.name}',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: theme.colorScheme.primary),
+            )),
           ]),
         ),
+        if (_liveText.isNotEmpty)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+            ),
+            child: Text(_liveText, style: theme.textTheme.bodyLarge),
+          ),
         Expanded(
-          child: session.captions.isEmpty
+          child: captions.isEmpty
               ? Center(child: Text(s.listeningDots, style: theme.textTheme.bodyLarge))
               : ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: session.captions.length,
-                  itemBuilder: (_, index) => SpeakableCaptionBubble(caption: session.captions[index], textSize: context.watch<SettingsProvider>().captionTextSize, isHighContrast: context.watch<SettingsProvider>().isHighContrast),
+                  itemCount: captions.length,
+                  itemBuilder: (_, index) => SpeakableCaptionBubble(
+                    caption: captions[index],
+                    textSize: context.watch<SettingsProvider>().captionTextSize,
+                    isHighContrast: context.watch<SettingsProvider>().isHighContrast,
+                  ),
                 ),
         ),
         Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: theme.scaffoldBackgroundColor, border: Border(top: BorderSide(color: theme.dividerColor.withValues(alpha: .3)))),
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor,
+            border: Border(top: BorderSide(color: theme.dividerColor.withValues(alpha: .3))),
+          ),
           child: Row(children: [
-            Expanded(child: TextField(controller: _captionController, decoration: InputDecoration(hintText: s.addCaptionManually, border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTokens.radiusFull), borderSide: BorderSide.none), filled: true, fillColor: theme.cardColor), onSubmitted: _addManualCaption)),
+            Expanded(child: TextField(
+              controller: _captionController,
+              decoration: InputDecoration(
+                hintText: s.addCaptionManually,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTokens.radiusFull), borderSide: BorderSide.none),
+                filled: true,
+                fillColor: theme.cardColor,
+              ),
+              onSubmitted: _addManualCaption,
+            )),
             const SizedBox(width: 8),
-            IconButton.filled(tooltip: 'Speak reply', icon: const Icon(Icons.volume_up), onPressed: _captionController.text.trim().isEmpty ? null : () => context.read<SpeechProvider>().speak(_captionController.text.trim(), language: session.captionLanguage)),
+            IconButton.filled(
+              tooltip: 'Speak reply',
+              icon: const Icon(Icons.volume_up),
+              onPressed: _captionController.text.trim().isEmpty ? null : () => context.read<SpeechProvider>().speak(_captionController.text.trim(), language: session.captionLanguage),
+            ),
             const SizedBox(width: 4),
-            IconButton.filled(tooltip: 'Add caption', icon: const Icon(Icons.add), onPressed: () => _addManualCaption(_captionController.text)),
+            IconButton.filled(
+              tooltip: 'Add caption',
+              icon: const Icon(Icons.add),
+              onPressed: () => _addManualCaption(_captionController.text),
+            ),
           ]),
         ),
-        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: PrimaryActionButton(label: s.stopSession, icon: Icons.stop, onPressed: _stopSession)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: PrimaryActionButton(label: s.stopSession, icon: Icons.stop, onPressed: _stopSession),
+        ),
       ]),
     );
   }
@@ -129,7 +232,12 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     final value = text.trim();
     if (value.isEmpty) return;
     final session = context.read<ProfessionalProvider>().sessions.firstWhere((s) => s.id == widget.sessionId);
-    context.read<ProfessionalProvider>().addCaptionToSession(widget.sessionId, Caption(text: value, speaker: 'You', language: session.captionLanguage, isOwn: true));
+    context.read<ProfessionalProvider>().addCaptionToSession(widget.sessionId, Caption(
+      text: value,
+      speaker: 'You',
+      language: session.captionLanguage,
+      isOwn: true,
+    ));
     _captionController.clear();
     setState(() {});
     _scrollToBottom();
