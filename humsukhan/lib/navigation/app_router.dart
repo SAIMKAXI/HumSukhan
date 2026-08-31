@@ -14,19 +14,20 @@ class AppRouter {
   static const String environmental = '/environmental';
   static const String settings = '/settings';
 
-  static bool _requiresAuthentication(String? name) =>
-      name != null && name != onboarding && name != auth;
+  static bool _requiresAuthentication(String? name) => name != null && name != onboarding && name != auth;
 
   static Route<dynamic> generateRoute(RouteSettings routeSettings) {
-    if (_requiresAuthentication(routeSettings.name) &&
-        !AuthService.instance.isAuthenticated) {
+    final authenticated = AuthService.instance.isAuthenticated;
+    if (_requiresAuthentication(routeSettings.name) && !authenticated) {
       return MaterialPageRoute(builder: (_) => const AuthScreen());
     }
 
     switch (routeSettings.name) {
       case onboarding:
+        if (!authenticated) return MaterialPageRoute(builder: (_) => const AuthScreen());
         return MaterialPageRoute(builder: (_) => const OnboardingScreen());
       case auth:
+        if (authenticated) return MaterialPageRoute(builder: (_) => const MainScaffold());
         return MaterialPageRoute(builder: (_) => const AuthScreen());
       case home:
         return MaterialPageRoute(builder: (_) => const MainScaffold());
@@ -45,11 +46,7 @@ class AppRouter {
       case settings:
         return MaterialPageRoute(builder: (_) => const SettingsScreen());
       default:
-        return MaterialPageRoute(
-          builder: (_) => AuthService.instance.isAuthenticated
-              ? const MainScaffold()
-              : const AuthScreen(),
-        );
+        return MaterialPageRoute(builder: (_) => authenticated ? const MainScaffold() : const AuthScreen());
     }
   }
 }
