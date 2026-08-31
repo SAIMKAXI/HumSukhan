@@ -90,7 +90,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             ),
           ),
           Positioned(
-            top: MediaQuery.paddingOf(context) + 4,
+            top: MediaQuery.paddingOf(context).top + 4,
             left: 4,
             child: Builder(
               builder: (context) => Material(
