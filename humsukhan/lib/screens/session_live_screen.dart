@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
+import '../services/stt/enhanced_stt.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
@@ -92,7 +93,6 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
 
     final now = DateTime.now();
     if (result.isFinal) {
-      // Avoid duplicate final callbacks from platform/Sherpa endpoint events.
       if (_lastFinalText == text &&
           _lastFinalAt != null &&
           now.difference(_lastFinalAt!) < const Duration(seconds: 2)) {
