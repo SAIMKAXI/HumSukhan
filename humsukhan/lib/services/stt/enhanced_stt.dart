@@ -22,6 +22,8 @@ class EnhancedSpeechProvider {
   STTMode _currentMode = STTMode.none;
   String _currentLanguage = 'English';
   String _platformLocale = 'en-US';
+  String _platformLastText = '';
+  String _lastEmittedPlatformText = '';
   StreamSubscription<SherpaSTTResult>? _sherpaSubscription;
   Timer? _platformRestartTimer;
 
@@ -42,12 +44,14 @@ class EnhancedSpeechProvider {
 
   Future<bool> initialize({String preferredLanguage = 'English'}) async {
     if (_initialized) return isAvailable;
-
     _currentLanguage = preferredLanguage;
     await _modelManager.initialize();
 
     try {
-      _sherpaAvailable = await _sherpaSTT.initialize(language: preferredLanguage);
+      final sherpaLanguage = preferredLanguage.toLowerCase() == 'auto'
+          ? (_modelManager.isModelReady('Urdu') ? 'Urdu' : 'English')
+          : preferredLanguage;
+      _sherpaAvailable = await _sherpaSTT.initialize(language: sherpaLanguage);
     } catch (e) {
       debugPrint('Sherpa STT init failed: $e');
       _sherpaAvailable = false;
@@ -74,6 +78,19 @@ class EnhancedSpeechProvider {
   }
 
   void _updateModeForLanguage(String language) {
+    if (language.toLowerCase() == 'auto') {
+      if (_modelManager.isModelReady('Urdu') && _sherpaAvailable) {
+        _currentMode = STTMode.sherpaBatch;
+        return;
+      }
+      if (_modelManager.isModelReady('English') && _sherpaAvailable) {
+        _currentMode = STTMode.sherpaStreaming;
+        return;
+      }
+      _currentMode = _platformAvailable ? STTMode.platform : STTMode.none;
+      return;
+    }
+
     if (_sherpaAvailable && _modelManager.isModelReady(language)) {
       final model = _modelManager.getBestModel(language);
       _currentMode = model?.isStreaming == true
@@ -88,11 +105,20 @@ class EnhancedSpeechProvider {
 
   void _onPlatformStatus(String status) {
     if (!_listening || _currentMode != STTMode.platform) return;
-    // Android's platform recognizer can terminate a recognition window even
-    // while the app is still in an active conversation/session. Keep the app's
-    // listening state alive and restart the recognizer without touching the
-    // accumulated transcript.
     if (status == 'notListening' || status == 'done') {
+      final pending = _platformLastText.trim();
+      if (pending.isNotEmpty && pending != _lastEmittedPlatformText) {
+        _controller.add(SpeechResultEvent(
+          text: pending,
+          isFinal: true,
+          confidence: 0.8,
+          language: _detectLanguage(pending, fallback: _currentLanguage),
+          isLive: true,
+          mode: STTMode.platform,
+        ));
+        _lastEmittedPlatformText = pending;
+      }
+      _platformLastText = '';
       _schedulePlatformRestart(delay: const Duration(milliseconds: 350));
     }
   }
@@ -102,6 +128,7 @@ class EnhancedSpeechProvider {
     if (_platformRestartTimer?.isActive == true || _platformRestartInFlight) return;
 
     _platformRestartTimer = Timer(delay, () async {
+      _platformRestartTimer = null;
       if (!_listening || _currentMode != STTMode.platform || _platformRestartInFlight) return;
       _platformRestartInFlight = true;
       try {
@@ -122,7 +149,6 @@ class EnhancedSpeechProvider {
             _platformRestartTimer = null;
             _schedulePlatformRestart(delay: Duration.zero);
           });
-          return;
         }
       } finally {
         _platformRestartInFlight = false;
@@ -132,23 +158,23 @@ class EnhancedSpeechProvider {
 
   Future<void> startListening({String language = 'English'}) async {
     if (!_initialized) await initialize(preferredLanguage: language);
-
     if (_listening) {
       if (language == _currentLanguage) return;
       await stopListening();
     }
-
     _currentLanguage = language;
     _updateModeForLanguage(language);
     _listening = true;
+    _platformLastText = '';
+    _lastEmittedPlatformText = '';
 
     try {
       switch (_currentMode) {
         case STTMode.sherpaStreaming:
-          await _startSherpaStreaming(language);
+          await _startSherpaStreaming(language.toLowerCase() == 'auto' ? 'Urdu' : language);
           break;
         case STTMode.sherpaBatch:
-          await _startSherpaBatch(language);
+          await _startSherpaBatch(language.toLowerCase() == 'auto' ? 'Urdu' : language);
           break;
         case STTMode.platform:
           await _startPlatformListening(language);
@@ -210,7 +236,10 @@ class EnhancedSpeechProvider {
   }
 
   void _onPlatformResult(SpeechRecognitionResult result) {
-    final text = result.recognizedWords;
+    final text = result.recognizedWords.trim();
+    if (text.isEmpty) return;
+    _platformLastText = text;
+    if (result.finalResult) _lastEmittedPlatformText = text;
     _controller.add(SpeechResultEvent(
       text: text,
       isFinal: result.finalResult,
@@ -226,13 +255,13 @@ class EnhancedSpeechProvider {
     _platformRestartTimer?.cancel();
     _platformRestartTimer = null;
     _platformRestartInFlight = false;
+    _platformLastText = '';
+    _lastEmittedPlatformText = '';
     _sherpaSubscription?.cancel();
     _sherpaSubscription = null;
-
     if (_currentMode == STTMode.platform) {
       await _platformSTT.stop();
-    } else if (_currentMode == STTMode.sherpaStreaming ||
-        _currentMode == STTMode.sherpaBatch) {
+    } else if (_currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch) {
       await _sherpaSTT.stopListening();
     }
   }
@@ -250,10 +279,11 @@ class EnhancedSpeechProvider {
     if (wasListening) await stopListening();
     _currentLanguage = language;
     _currentMode = STTMode.none;
-
     try {
-      final available = await _sherpaSTT.switchLanguage(language);
-      _sherpaAvailable = available;
+      final sherpaLanguage = language.toLowerCase() == 'auto'
+          ? (_modelManager.isModelReady('Urdu') ? 'Urdu' : 'English')
+          : language;
+      _sherpaAvailable = await _sherpaSTT.switchLanguage(sherpaLanguage);
     } catch (_) {
       _sherpaAvailable = false;
     }
@@ -267,7 +297,8 @@ class EnhancedSpeechProvider {
   Future<bool> downloadModel(String language) async {
     final success = await _modelManager.downloadModel(language);
     if (success) {
-      _sherpaAvailable = await _sherpaSTT.initialize(language: language);
+      final sherpaLanguage = language.toLowerCase() == 'auto' ? 'Urdu' : language;
+      _sherpaAvailable = await _sherpaSTT.initialize(language: sherpaLanguage);
       _updateModeForLanguage(language);
     }
     return success;
@@ -299,11 +330,7 @@ class EnhancedSpeechProvider {
       case 'roman urdu':
         return 'ur-PK';
       case 'auto':
-        // Conversational Mode can be used regardless of the app UI language.
-        // Urdu is the preferred recognition locale for the bilingual speaker
-        // flow; recognized script is surfaced as Urdu and Roman Urdu when the
-        // provider returns Latin-script Urdu.
-        return 'ur-PK';
+        return 'en-US';
       default:
         return 'en-US';
     }
@@ -312,7 +339,6 @@ class EnhancedSpeechProvider {
   String _detectLanguage(String text, {String fallback = 'English'}) {
     if (text.trim().isEmpty) return fallback;
     if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'Urdu';
-
     final normalized = text.toLowerCase().replaceAll(RegExp(r"[^a-z0-9\s']"), ' ');
     final tokens = normalized.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
     const romanUrduWords = {
@@ -322,9 +348,7 @@ class EnhancedSpeechProvider {
       'acha', 'achha', 'theek', 'karo', 'karna', 'jana', 'jao', 'chahiye', 'bhi', 'par',
     };
     final romanMatches = tokens.intersection(romanUrduWords).length;
-    if (romanMatches >= 2 || (romanMatches == 1 && tokens.length <= 5)) {
-      return 'Roman Urdu';
-    }
+    if (romanMatches >= 2 || (romanMatches == 1 && tokens.length <= 5)) return 'Roman Urdu';
     return 'English';
   }
 

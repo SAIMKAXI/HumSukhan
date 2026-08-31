@@ -29,42 +29,81 @@ class _MainScaffoldState extends State<MainScaffold> {
     });
   }
 
+  void _selectDestination(int index) {
+    Navigator.of(context).pop();
+    if (mounted) setState(() => _currentIndex = index);
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
+    final isUrdu = Localizations.localeOf(context).languageCode == 'ur';
+    final destinations = [
+      (s.navHome, Icons.home_outlined, Icons.home),
+      (s.navEveryday, Icons.chat_bubble_outline, Icons.chat_bubble),
+      (s.navProfessional, Icons.work_outline, Icons.work),
+      (s.navAlerts, Icons.volume_up_outlined, Icons.volume_up),
+      (s.navSettings, Icons.settings_outlined, Icons.settings),
+    ];
+
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                child: Align(
+                  alignment: isUrdu ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Text(
+                    s.appName,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: destinations.length,
+                  itemBuilder: (context, index) {
+                    final item = destinations[index];
+                    return ListTile(
+                      leading: Icon(index == _currentIndex ? item.$3 : item.$2),
+                      title: Text(item.$1),
+                      selected: index == _currentIndex,
+                      onTap: () => _selectDestination(index),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.home_outlined),
-            selectedIcon: const Icon(Icons.home),
-            label: s.navHome,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: _screens,
+            ),
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.chat_bubble_outline),
-            selectedIcon: const Icon(Icons.chat_bubble),
-            label: s.navEveryday,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.work_outline),
-            selectedIcon: const Icon(Icons.work),
-            label: s.navProfessional,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.volume_up_outlined),
-            selectedIcon: const Icon(Icons.volume_up),
-            label: s.navAlerts,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.settings_outlined),
-            selectedIcon: const Icon(Icons.settings),
-            label: s.navSettings,
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 4,
+            left: 4,
+            child: Builder(
+              builder: (context) => Material(
+                color: Theme.of(context).appBarTheme.backgroundColor ?? Theme.of(context).colorScheme.surface,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: IconButton(
+                  tooltip: isUrdu ? 'مینو کھولیں' : 'Open menu',
+                  icon: const Icon(Icons.menu),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
+              ),
+            ),
           ),
         ],
       ),

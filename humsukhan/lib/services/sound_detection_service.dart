@@ -91,9 +91,16 @@ class SoundDetectionService {
     if (!_microphoneReady || _audioRecorder == null) return false;
 
     try {
-      // Model loading is intentionally separate from microphone initialization.
-      // A missing/failed model must not be reported to the user as a microphone error.
-      _modelReady = await AudioModelManager.instance.initialize() && await _tagger.initialize();
+      final manager = AudioModelManager.instance;
+      _modelReady = await manager.initialize();
+      if (!_modelReady) {
+        // Environmental Alerts should work on a normal installation without
+        // requiring the user to discover a separate model-download screen.
+        // Download is explicit only in the sense that it is triggered by the
+        // user's Start Monitoring action, not silently in the background.
+        _modelReady = await manager.downloadModel();
+      }
+      _modelReady = _modelReady && await _tagger.initialize();
       if (!_modelReady) {
         debugPrint('SoundDetection model is unavailable');
         return false;
