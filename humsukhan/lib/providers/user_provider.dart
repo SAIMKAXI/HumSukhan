@@ -21,43 +21,51 @@ class UserProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      // Load from local first
       final prefs = await SharedPreferences.getInstance();
       final json = prefs.getString('userProfile');
-      if (json != null) {
-        _profile = UserProfile.fromJson(jsonDecode(json));
-      }
+      if (json != null) _profile = UserProfile.fromJson(jsonDecode(json));
 
-      // Sync from Supabase if authenticated
-      if (SupabaseService.instance.isAuthenticated) {
-        final userId = SupabaseService.instance.userId;
+      final supabase = SupabaseService.instance;
+      if (supabase.isAuthenticated) {
+        final userId = supabase.userId;
         final cloudProfile = await DatabaseService.instance.fetchProfile(userId);
         if (cloudProfile != null) {
           _profile = cloudProfile;
-          // Update local cache
           await prefs.setString('userProfile', jsonEncode(cloudProfile.toJson()));
         } else if (_profile != null) {
-          // Push local profile to cloud
-          await DatabaseService.instance.upsertProfile(_profile!);
+          // Never upload a locally generated UUID as the auth profile id.
+          await saveProfile(_profile!, syncCloud: true);
         }
       }
     } catch (e) {
       debugPrint('Error loading profile: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-    _isLoading = false;
-    notifyListeners();
   }
 
-  Future<void> saveProfile(UserProfile profile) async {
-    _profile = profile;
+  Future<void> saveProfile(UserProfile profile, {bool syncCloud = true}) async {
+    final supabase = SupabaseService.instance;
+    final userId = supabase.isAuthenticated ? supabase.userId : null;
+    final persisted = userId == null || userId.isEmpty || profile.id == userId
+        ? profile
+        : UserProfile(
+            id: userId,
+            name: profile.name,
+            avatarEmoji: profile.avatarEmoji,
+            preferredLanguage: profile.preferredLanguage,
+            tutorName: profile.tutorName,
+            createdAt: profile.createdAt,
+          );
+
+    _profile = persisted;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('userProfile', jsonEncode(profile.toJson()));
+    await prefs.setString('userProfile', jsonEncode(persisted.toJson()));
 
-    // Sync to Supabase if authenticated
-    if (SupabaseService.instance.isAuthenticated) {
-      await DatabaseService.instance.upsertProfile(profile);
+    if (syncCloud && supabase.isAuthenticated) {
+      await DatabaseService.instance.upsertProfile(persisted);
     }
-
     notifyListeners();
   }
 
@@ -67,12 +75,11 @@ class UserProvider extends ChangeNotifier {
     String preferredLanguage = 'English',
     String tutorName = 'Sam',
   }) async {
-    final profile = UserProfile(
+    await saveProfile(UserProfile(
       name: name,
       avatarEmoji: avatarEmoji,
       preferredLanguage: preferredLanguage,
       tutorName: tutorName,
-    );
-    await saveProfile(profile);
+    ));
   }
 }
