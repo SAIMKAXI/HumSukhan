@@ -29,13 +29,10 @@ class _EverydayScreenState extends State<EverydayScreen> {
 
   Future<void> _initSpeech() async {
     final speech = context.read<SpeechProvider>();
-    await speech.initialize();
+    await speech.initialize(preferredLanguage: 'Auto');
     _speechSubscription = speech.onResult.listen((result) {
       if (!mounted || result.text.trim().isEmpty) return;
       final conv = context.read<ConversationProvider>();
-      // Conversational Mode is intentionally push-to-talk. STT results only
-      // belong to the currently held speaker turn and never start listening by
-      // themselves.
       if (!conv.isSpeakerTurnActive) return;
       conv.updateSpeakerTurn(result.text, language: result.language);
       speech.detectLanguage(result.text);
@@ -54,17 +51,16 @@ class _EverydayScreenState extends State<EverydayScreen> {
     final conv = context.read<ConversationProvider>();
     if (conv.state != ConversationState.active) return;
 
-    final settings = context.read<SettingsProvider>();
     final speech = context.read<SpeechProvider>();
-    final language = settings.captionLanguage == 'Roman Urdu' ? 'Urdu' : settings.captionLanguage;
-
     _speakerPressActive = true;
     _speakerTurnToken++;
     final token = _speakerTurnToken;
-    conv.beginSpeakerTurn(language: language);
+    // Recognition is bilingual in Conversational Mode. The app UI language
+    // does not constrain the language spoken by the hearing speaker.
+    conv.beginSpeakerTurn(language: 'Auto');
     if (mounted) setState(() {});
 
-    await speech.startListening(language: language);
+    await speech.startListening(language: 'Auto');
 
     if (!speech.isListening && mounted && token == _speakerTurnToken) {
       _speakerPressActive = false;
@@ -82,8 +78,6 @@ class _EverydayScreenState extends State<EverydayScreen> {
     _speakerTurnToken++;
     final speech = context.read<SpeechProvider>();
 
-    // Stop the recognizer first so its trailing final event can update the
-    // current turn. A short drain window prevents the last word being lost.
     await speech.stopListening();
     await Future<void>.delayed(const Duration(milliseconds: 350));
     if (!mounted) return;
@@ -162,11 +156,11 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     : _buildCaptionArea(context, conv, settings, s),
           ),
           if (conv.state == ConversationState.active)
-            Container(
+            SizedBox(
               height: 50,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: ListView(
                 scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 children: quickReplies.replies.take(6).map((reply) => Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: QuickReplyChip(
@@ -183,52 +177,72 @@ class _EverydayScreenState extends State<EverydayScreen> {
               ),
             ),
           if (conv.state == ConversationState.active)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.scaffoldBackgroundColor,
-                border: Border(top: BorderSide(color: theme.dividerColor.withValues(alpha: .3))),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _textController,
-                      enabled: !conv.isListening,
-                      decoration: InputDecoration(
-                        hintText: conv.isListening ? 'Speaker is talking…' : s.typeResponse,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTokens.radiusFull), borderSide: BorderSide.none),
-                        filled: true,
-                        fillColor: theme.cardColor,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                decoration: BoxDecoration(
+                  color: theme.scaffoldBackgroundColor,
+                  border: Border(top: BorderSide(color: theme.dividerColor.withValues(alpha: .3))),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 120),
+                        child: TextField(
+                          controller: _textController,
+                          enabled: !conv.isListening,
+                          minLines: 1,
+                          maxLines: 4,
+                          textInputAction: TextInputAction.newline,
+                          decoration: InputDecoration(
+                            hintText: conv.isListening ? 'Speaker is talking…' : s.typeResponse,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppTokens.radiusFull),
+                              borderSide: BorderSide.none,
+                            ),
+                            filled: true,
+                            fillColor: theme.cardColor,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                          ),
+                          onChanged: (_) => setState(() {}),
+                          onSubmitted: (value) {
+                            if (value.trim().isNotEmpty) _sendTypedText(value);
+                          },
+                        ),
                       ),
-                      onChanged: (_) => setState(() {}),
-                      onSubmitted: _sendTypedText,
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    tooltip: 'Speak response',
-                    icon: Icon(speech.isSpeaking ? Icons.stop : Icons.volume_up),
-                    onPressed: conv.isListening || _textController.text.trim().isEmpty
-                        ? null
-                        : () => speech.isSpeaking
-                            ? speech.stopSpeaking()
-                            : speech.speak(_textController.text.trim(), language: settings.captionLanguage),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton.filled(
-                    tooltip: 'Send response',
-                    icon: const Icon(Icons.send),
-                    onPressed: conv.isListening ? null : () => _sendTypedText(_textController.text),
-                  ),
-                ],
+                    const SizedBox(width: 6),
+                    IconButton.filled(
+                      tooltip: 'Speak response',
+                      icon: Icon(speech.isSpeaking ? Icons.stop : Icons.volume_up),
+                      onPressed: conv.isListening || _textController.text.trim().isEmpty
+                          ? null
+                          : () => speech.isSpeaking
+                              ? speech.stopSpeaking()
+                              : speech.speak(_textController.text.trim(), language: 'Auto'),
+                    ),
+                    const SizedBox(width: 2),
+                    IconButton.filled(
+                      tooltip: 'Send response',
+                      icon: const Icon(Icons.send),
+                      onPressed: conv.isListening || _textController.text.trim().isEmpty
+                          ? null
+                          : () => _sendTypedText(_textController.text),
+                    ),
+                  ],
+                ),
               ),
             ),
           if (conv.state == ConversationState.active)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: PrimaryActionButton(label: s.stopConversation, icon: Icons.stop, onPressed: _stop),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
+                child: PrimaryActionButton(label: s.stopConversation, icon: Icons.stop, onPressed: _stop),
+              ),
             ),
         ],
       ),
@@ -236,19 +250,27 @@ class _EverydayScreenState extends State<EverydayScreen> {
   }
 
   Widget _buildSpeakerControls(BuildContext context, ConversationProvider conv, SettingsProvider settings, ThemeData theme) {
-    final language = settings.captionLanguage;
     return Material(
-      color: theme.colorScheme.primary.withValues(alpha: .08),
+      color: theme.colorScheme.primary.withValues(alpha: .06),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
         child: Column(
           children: [
-            Text(
-              conv.isListening
-                  ? 'Release when the speaker finishes'
-                  : 'Speaker: hold the microphone while talking',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              textAlign: TextAlign.center,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(conv.isListening ? Icons.record_voice_over : Icons.mic_none, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    conv.isListening
+                        ? 'Release when the speaker finishes'
+                        : 'Speaker: hold the microphone while talking',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             GestureDetector(
@@ -258,25 +280,20 @@ class _EverydayScreenState extends State<EverydayScreen> {
               onTapCancel: _endSpeakerPress,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 120),
-                width: 82,
-                height: 82,
+                width: 78,
+                height: 78,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: conv.isListening ? theme.colorScheme.error : theme.colorScheme.primary,
-                  boxShadow: [
-                    if (conv.isListening)
-                      BoxShadow(color: theme.colorScheme.error.withValues(alpha: .30), blurRadius: 18, spreadRadius: 3),
-                  ],
+                  boxShadow: conv.isListening
+                      ? [BoxShadow(color: theme.colorScheme.error.withValues(alpha: .25), blurRadius: 16, spreadRadius: 2)]
+                      : [],
                 ),
-                child: Icon(
-                  conv.isListening ? Icons.mic : Icons.mic_none,
-                  color: theme.colorScheme.onPrimary,
-                  size: 40,
-                ),
+                child: Icon(conv.isListening ? Icons.mic : Icons.mic_none, color: theme.colorScheme.onPrimary, size: 36),
               ),
             ),
             const SizedBox(height: 6),
-            Text(language, style: theme.textTheme.labelLarge),
+            Text('Bilingual speaker captions', style: theme.textTheme.labelLarge),
           ],
         ),
       ),
@@ -327,13 +344,20 @@ class _EverydayScreenState extends State<EverydayScreen> {
             ? Center(child: Text('Waiting for the speaker…', style: theme.textTheme.bodyLarge))
             : ListView.builder(
                 controller: _scrollController,
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                 itemCount: captions.length + (conv.currentPartial != null ? 1 : 0),
                 itemBuilder: (context, index) {
                   if (index == captions.length && conv.currentPartial != null) {
-                    return SpeakableCaptionBubble(caption: conv.currentPartial!, textSize: settings.captionTextSize, isHighContrast: settings.isHighContrast);
+                    return KeyedSubtree(
+                      key: ValueKey(conv.currentPartial!.id),
+                      child: SpeakableCaptionBubble(caption: conv.currentPartial!, textSize: settings.captionTextSize, isHighContrast: settings.isHighContrast),
+                    );
                   }
-                  return SpeakableCaptionBubble(caption: captions[index], textSize: settings.captionTextSize, isHighContrast: settings.isHighContrast);
+                  final caption = captions[index];
+                  return KeyedSubtree(
+                    key: ValueKey(caption.id),
+                    child: SpeakableCaptionBubble(caption: caption, textSize: settings.captionTextSize, isHighContrast: settings.isHighContrast),
+                  );
                 },
               ),
       ),
