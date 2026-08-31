@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/models.dart';
@@ -9,7 +8,10 @@ import '../services/sound_detection_service.dart';
 import 'settings_provider.dart';
 
 class EnvironmentalProvider extends ChangeNotifier {
-  EnvironmentalProvider() { unawaited(_initializeNativeBridge()); }
+  EnvironmentalProvider() {
+    unawaited(_initializeNativeBridge());
+  }
+
   final EnvironmentalMonitoringBridge _bridge = EnvironmentalMonitoringBridge.instance;
   final SoundDetectionService _soundService = SoundDetectionService.instance;
   final List<SoundEvent> _alertHistory = [];
@@ -28,9 +30,9 @@ class EnvironmentalProvider extends ChangeNotifier {
   bool get isStarting => _monitoringState == 'STARTING';
   bool get isStopping => _monitoringState == 'STOPPING';
   bool get hasError => _monitoringState == 'ERROR';
-  bool get isProcessing => false;
-  bool get isLocal => monitoringEnabled;
-  String get environmentalStatus => monitoringEnabled ? 'Offline / Local' : 'Off';
+  bool get isProcessing => _soundService.isMonitoring;
+  bool get isLocal => true;
+  String get environmentalStatus => monitoringEnabled ? 'Monitoring locally' : 'Off';
   List<SoundEvent> get alertHistory => List.unmodifiable(_alertHistory);
   SoundEvent? get currentAlert => _currentAlert;
 
@@ -56,22 +58,22 @@ class EnvironmentalProvider extends ChangeNotifier {
   Future<void> _initializeNativeBridge() async {
     if (_bridgeInitialized) return;
     _bridgeInitialized = true;
-    await _bridge.initialize(onChange: _handleNativeChange);
-    _monitoringState = _bridge.state;
-    notifyListeners();
-  }
-
-  void _handleNativeChange(String state, Map<String, dynamic>? event) {
-    _monitoringState = state;
-    if (event != null) {
-      final type = event['type']?.toString();
-      final confidence = (event['confidence'] as num?)?.toDouble();
-      final severity = event['severity']?.toString() ?? 'warning';
-      if (type != null && confidence != null) {
-        processSoundEvent(SoundEvent(type: type, confidence: confidence, severity: severity));
+    await _bridge.initialize(onChange: (state, event) {
+      // Keep native state visible for the Android quick-settings surface, but
+      // foreground alert detection is owned by SoundDetectionService below.
+      if (!_soundService.isMonitoring) {
+        _monitoringState = state;
+        notifyListeners();
       }
-    }
-    notifyListeners();
+      if (event != null) {
+        final type = event['type']?.toString();
+        final confidence = (event['confidence'] as num?)?.toDouble();
+        final severity = event['severity']?.toString() ?? 'warning';
+        if (type != null && confidence != null) {
+          processSoundEvent(SoundEvent(type: type, confidence: confidence, severity: severity));
+        }
+      }
+    });
   }
 
   Future<void> toggleMonitoring() async {
@@ -84,23 +86,24 @@ class EnvironmentalProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
+
     final permission = await Permission.microphone.request();
     if (!permission.isGranted) {
       _monitoringState = 'ERROR';
       notifyListeners();
       return;
     }
+
     _monitoringState = 'STARTING';
     notifyListeners();
-    if (Platform.isIOS) {
-      if (!await _bridge.start()) {
-        _monitoringState = 'ERROR';
-      } else {
-        _soundService.onSoundDetected = processSoundEvent;
-        _monitoringState = await _soundService.startMonitoring(permissionAlreadyGranted: true) ? 'ACTIVE' : 'ERROR';
-      }
-    } else {
-      _monitoringState = await _bridge.start() ? 'ACTIVE' : 'ERROR';
+    _soundService.onSoundDetected = processSoundEvent;
+    final started = await _soundService.startMonitoring(permissionAlreadyGranted: true);
+    _monitoringState = started ? 'ACTIVE' : 'ERROR';
+
+    // The native service remains available for Android Quick Settings, but it
+    // is not allowed to create a second recorder while foreground monitoring is active.
+    if (started) {
+      await _bridge.start();
     }
     notifyListeners();
   }
@@ -110,7 +113,6 @@ class EnvironmentalProvider extends ChangeNotifier {
     final settings = _settingsProvider;
     if (settings != null && settings.allowedAlerts[event.type] == false) return false;
 
-    // Cooldown is owned here so native/background and Flutter paths behave identically.
     if (_lastAlertType == event.type && _lastAlertTime != null &&
         DateTime.now().difference(_lastAlertTime!) < SoundDetectionService.cooldownDuration) {
       return false;
@@ -120,7 +122,9 @@ class EnvironmentalProvider extends ChangeNotifier {
     _currentAlert = event;
     _lastAlertType = event.type;
     _lastAlertTime = DateTime.now();
-    if (settings != null) AlertService.instance.triggerAlert(settings, severity: event.severity);
+    if (settings != null) {
+      AlertService.instance.triggerAlert(settings, severity: event.severity);
+    }
     notifyListeners();
     return true;
   }
@@ -134,10 +138,14 @@ class EnvironmentalProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearHistory() { _alertHistory.clear(); notifyListeners(); }
+  void clearHistory() {
+    _alertHistory.clear();
+    notifyListeners();
+  }
 
   @override
   void dispose() {
+    _soundService.stopMonitoring();
     unawaited(_bridge.dispose());
     super.dispose();
   }
