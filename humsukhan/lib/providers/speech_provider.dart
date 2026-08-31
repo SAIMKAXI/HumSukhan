@@ -20,13 +20,14 @@ class RealTtsProvider implements TtsProvider {
   @override
   Future<bool> initialize() async {
     try {
-      await _tts.setLanguage("en-US");
+      await _tts.setLanguage('en-US');
       await _tts.setSpeechRate(0.5);
       await _tts.setVolume(1.0);
       await _tts.setPitch(1.0);
       _tts.setStartHandler(() => _speaking = true);
       _tts.setCompletionHandler(() => _speaking = false);
-      _tts.setErrorHandler((msg) => _speaking = false);
+      _tts.setCancelHandler(() => _speaking = false);
+      _tts.setErrorHandler((_) => _speaking = false);
       return true;
     } catch (e) {
       debugPrint('TTS init failed: $e');
@@ -34,14 +35,32 @@ class RealTtsProvider implements TtsProvider {
     }
   }
 
+  String _localeForLanguage(String language) {
+    switch (language.toLowerCase()) {
+      case 'urdu':
+        return 'ur-PK';
+      case 'roman urdu':
+        return 'en-US';
+      default:
+        return 'en-US';
+    }
+  }
+
   @override
   Future<void> speak(String text, {String language = 'English'}) async {
+    final value = text.trim();
+    if (value.isEmpty) return;
+
     _speaking = true;
-    final locale = language.toLowerCase().contains('urdu') ? 'ur-PK' : 'en-US';
-    await _tts.setLanguage(locale);
-    await _tts.speak(text);
-    while (_speaking) {
-      await Future.delayed(const Duration(milliseconds: 100));
+    try {
+      await _tts.setLanguage(_localeForLanguage(language));
+      await _tts.speak(value);
+      while (_speaking) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+    } catch (e) {
+      debugPrint('TTS speak failed: $e');
+      _speaking = false;
     }
   }
 
@@ -65,7 +84,7 @@ class RealTtsProvider implements TtsProvider {
 /// Architecture:
 /// - English: Streaming Zipformer (real-time captions, offline)
 /// - Urdu/Hindi: Dolphin CTC (batch mode, offline)
-/// - Fallback: Platform STT (requires internet) → Demo mode
+/// - Fallback: Platform STT (requires internet)
 class SpeechProvider extends ChangeNotifier {
   late final EnhancedSpeechProvider _sttProvider;
   late final TtsProvider _ttsProvider;
@@ -80,7 +99,6 @@ class SpeechProvider extends ChangeNotifier {
   StreamSubscription<SpeechResultEvent>? _sttSubscription;
   StreamSubscription<ModelDownloadProgress>? _downloadSubscription;
 
-  // Model download state
   final Map<String, ModelDownloadProgress> _downloadProgress = {};
   bool _isDownloading = false;
 
@@ -90,28 +108,25 @@ class SpeechProvider extends ChangeNotifier {
     _modelManager = ModelManager.instance;
   }
 
-  // Getters
   EnhancedSpeechProvider get sttProvider => _sttProvider;
   bool get isInitialized => _isInitialized;
   bool get isSpeaking => _isSpeaking;
+  bool get isListening => _sttProvider.isListening;
   String get lastSpokenText => _lastSpokenText;
   LanguageResult? get detectedLanguage => _detectedLanguage;
   STTMode get currentMode => _currentMode;
   String get currentLanguage => _currentLanguage;
 
-  // Convenience mode checks
   bool get isOfflineMode => _currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch;
   bool get isStreamingMode => _currentMode == STTMode.sherpaStreaming;
   bool get isBatchMode => _currentMode == STTMode.sherpaBatch;
   bool get isOnlineMode => _currentMode == STTMode.platform;
   bool get isDemoMode => _currentMode == STTMode.demo;
-  bool get isLiveStt => _currentMode != STTMode.none && _currentMode != STTMode.demo;
+  bool get isLiveStt => _currentMode != STTMode.none && _currentMode != STTMode.demo && _sttProvider.isListening;
 
-  // Model management
   bool get isDownloading => _isDownloading;
   Map<String, ModelDownloadProgress> get downloadProgress => Map.unmodifiable(_downloadProgress);
 
-  /// Get the best mode label for UI display.
   String get sttModeLabel {
     switch (_currentMode) {
       case STTMode.sherpaStreaming:
@@ -127,7 +142,6 @@ class SpeechProvider extends ChangeNotifier {
     }
   }
 
-  /// Get a detailed description of the current STT mode.
   String get sttModeDescription {
     switch (_currentMode) {
       case STTMode.sherpaStreaming:
@@ -143,16 +157,12 @@ class SpeechProvider extends ChangeNotifier {
     }
   }
 
-  /// Initialize the speech provider.
   Future<void> initialize({String preferredLanguage = 'English'}) async {
     if (_isInitialized) return;
 
     _currentLanguage = preferredLanguage;
-
-    // Initialize model manager
     await _modelManager.initialize();
 
-    // Listen for model download progress
     _downloadSubscription = _modelManager.onProgress.listen((progress) {
       _downloadProgress[progress.language] = progress;
       _isDownloading = _downloadProgress.values.any(
@@ -161,7 +171,6 @@ class SpeechProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Initialize STT provider
     await _sttProvider.initialize(preferredLanguage: preferredLanguage);
     await _ttsProvider.initialize();
 
@@ -170,9 +179,12 @@ class SpeechProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Start listening for speech.
+  /// Start listening and verify that the recorder really became active.
+  /// If the selected offline recognizer cannot start, fall back to the
+  /// platform recognizer when available instead of leaving a false "listening"
+  /// state on the session screen.
   Future<void> startListening({String language = 'English'}) async {
-    _sttSubscription?.cancel();
+    await _sttSubscription?.cancel();
     _sttSubscription = _sttProvider.onResult.listen((result) {
       _currentMode = result.mode;
       notifyListeners();
@@ -181,17 +193,29 @@ class SpeechProvider extends ChangeNotifier {
     await _sttProvider.startListening(language: language);
     _currentMode = _sttProvider.currentMode;
     _currentLanguage = language;
+
+    if (!_sttProvider.isListening &&
+        _sttProvider.isPlatformAvailable &&
+        _sttProvider.currentMode != STTMode.platform) {
+      try {
+        await _sttProvider.switchMode(STTMode.platform, language: language);
+        await _sttProvider.startListening(language: language);
+        _currentMode = _sttProvider.currentMode;
+      } catch (e) {
+        debugPrint('Platform STT fallback failed: $e');
+      }
+    }
+
     notifyListeners();
   }
 
-  /// Stop listening for speech.
   Future<void> stopListening() async {
     await _sttProvider.stopListening();
-    _sttSubscription?.cancel();
+    await _sttSubscription?.cancel();
+    _sttSubscription = null;
     notifyListeners();
   }
 
-  /// Switch to offline streaming mode (English).
   Future<void> switchToOfflineStreamingMode({String language = 'English'}) async {
     await _sttProvider.switchMode(STTMode.sherpaStreaming, language: language);
     _currentMode = STTMode.sherpaStreaming;
@@ -199,7 +223,6 @@ class SpeechProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Switch to offline batch mode (Urdu/Hindi).
   Future<void> switchToOfflineBatchMode({String language = 'Urdu'}) async {
     await _sttProvider.switchMode(STTMode.sherpaBatch, language: language);
     _currentMode = STTMode.sherpaBatch;
@@ -207,7 +230,6 @@ class SpeechProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Switch to online mode (requires internet).
   Future<void> switchToOnlineMode({String language = 'English'}) async {
     await _sttProvider.switchMode(STTMode.platform, language: language);
     _currentMode = STTMode.platform;
@@ -215,7 +237,6 @@ class SpeechProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Switch to a different language.
   Future<void> switchLanguage(String language) async {
     await _sttProvider.switchLanguage(language);
     _currentLanguage = language;
@@ -223,27 +244,15 @@ class SpeechProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Get list of languages with offline models available for download.
   List<String> get offlineLanguages => ModelManager.availableModels.keys.toList();
-
-  /// Get list of languages with downloaded models ready to use.
   List<String> get readyLanguages => _modelManager.readyLanguages;
 
-  /// Check if a model is downloaded for a language.
-  bool isModelReady(String language) {
-    return _modelManager.isModelReady(language);
-  }
+  bool isModelReady(String language) => _modelManager.isModelReady(language);
+  ModelStatus? getModelStatus(String language) => _modelManager.statuses[language];
 
-  /// Get model status for a language.
-  ModelStatus? getModelStatus(String language) {
-    return _modelManager.statuses[language];
-  }
-
-  /// Download an offline model for a language.
   Future<bool> downloadOfflineModel(String language) async {
     final success = await _modelManager.downloadModel(language);
     if (success) {
-      // Re-initialize STT provider with new model
       await _sttProvider.initialize(preferredLanguage: language);
       _currentMode = _sttProvider.currentMode;
       notifyListeners();
@@ -251,11 +260,9 @@ class SpeechProvider extends ChangeNotifier {
     return success;
   }
 
-  /// Delete a downloaded model to free up space.
   Future<bool> deleteModel(String language) async {
     final success = await _modelManager.deleteModel(language);
     if (success) {
-      // Re-initialize STT provider
       await _sttProvider.initialize(preferredLanguage: _currentLanguage);
       _currentMode = _sttProvider.currentMode;
       notifyListeners();
@@ -263,27 +270,42 @@ class SpeechProvider extends ChangeNotifier {
     return success;
   }
 
-  /// Get the speech-to-text result stream.
   Stream<SpeechResultEvent> get onResult => _sttProvider.onResult;
 
-  /// Speak text using TTS.
   Future<void> speak(String text, {String language = 'English'}) async {
+    final value = text.trim();
+    if (value.isEmpty) return;
+
+    final wasListening = _sttProvider.isListening;
+    final resumeLanguage = _currentLanguage;
+    if (wasListening) {
+      await _sttProvider.stopListening();
+      await _sttSubscription?.cancel();
+      _sttSubscription = null;
+    }
+
     _isSpeaking = true;
-    _lastSpokenText = text;
+    _lastSpokenText = value;
     notifyListeners();
-    await _ttsProvider.speak(text, language: language);
-    _isSpeaking = false;
-    notifyListeners();
+
+    try {
+      await _ttsProvider.speak(value, language: language);
+    } finally {
+      _isSpeaking = false;
+      notifyListeners();
+    }
+
+    if (wasListening) {
+      await startListening(language: resumeLanguage);
+    }
   }
 
-  /// Stop speaking.
   Future<void> stopSpeaking() async {
     await _ttsProvider.stop();
     _isSpeaking = false;
     notifyListeners();
   }
 
-  /// Detect the language of a text string.
   void detectLanguage(String text) {
     final urduScriptRegex = RegExp(r'[\u0600-\u06FF]');
     final romanUrduWords = ['kya', 'hai', 'mein', 'tum', 'aap', 'ho', 'se', 'ko', 'ka', 'ki', 'ke'];
