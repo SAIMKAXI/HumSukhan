@@ -12,7 +12,6 @@ class ConversationProvider extends ChangeNotifier {
   Caption? _currentPartial;
   Caption? _activeSpeakerDraft;
   Timer? _partialCommitTimer;
-  DateTime? _partialStartedAt;
   String _isolateFingerprint = '';
   DateTime? _lastCommittedAt;
   bool _isListening = false;
@@ -41,7 +40,6 @@ class ConversationProvider extends ChangeNotifier {
     _captions.clear();
     _currentPartial = null;
     _activeSpeakerDraft = null;
-    _partialStartedAt = null;
     _isolateFingerprint = '';
     _lastCommittedAt = null;
     _state = ConversationState.active;
@@ -118,7 +116,6 @@ class ConversationProvider extends ChangeNotifier {
     _captions.clear();
     _currentPartial = null;
     _activeSpeakerDraft = null;
-    _partialStartedAt = null;
     _isolateFingerprint = '';
     _lastCommittedAt = null;
     _currentSessionId = null;
@@ -157,9 +154,18 @@ class ConversationProvider extends ChangeNotifier {
     _activeSpeakerDraft = _activeSpeakerDraft!.copyWith(
       text: value,
       speaker: 'Speaker 1',
-      language: language,
       isPartial: true,
     );
+    if (_activeSpeakerDraft!.language != language) {
+      _activeSpeakerDraft = Caption(
+        id: _activeSpeakerDraft!.id,
+        text: value,
+        speaker: 'Speaker 1',
+        timestamp: _activeSpeakerDraft!.timestamp,
+        language: language,
+        isPartial: true,
+      );
+    }
     _currentPartial = _activeSpeakerDraft;
     notifyListeners();
   }
@@ -170,7 +176,6 @@ class ConversationProvider extends ChangeNotifier {
     _partialCommitTimer = null;
     _activeSpeakerDraft = null;
     _currentPartial = null;
-    _partialStartedAt = null;
     _isListening = false;
     if (draft != null && draft.text.trim().isNotEmpty) {
       final committed = draft.copyWith(text: draft.text.trim(), isPartial: false);
@@ -226,7 +231,6 @@ class ConversationProvider extends ChangeNotifier {
       final committed = _currentPartial!.copyWith(text: value, isPartial: false);
       _captions.add(committed);
       _currentPartial = null;
-      _partialStartedAt = null;
       _isolateFingerprint = _fingerprint(value, speaker);
       _lastCommittedAt = committed.timestamp;
     } else {
@@ -261,7 +265,6 @@ class ConversationProvider extends ChangeNotifier {
     _captions.clear();
     _currentPartial = null;
     _activeSpeakerDraft = null;
-    _partialStartedAt = null;
     _isolateFingerprint = '';
     _lastCommittedAt = null;
     notifyListeners();
@@ -270,7 +273,6 @@ class ConversationProvider extends ChangeNotifier {
   void _beginPartial(String text, String speaker, String language) {
     _partialCommitTimer?.cancel();
     final now = DateTime.now();
-    _partialStartedAt = now;
     _currentPartial = Caption(
       text: text,
       speaker: speaker,
@@ -296,7 +298,6 @@ class ConversationProvider extends ChangeNotifier {
     final partial = _currentPartial;
     if (partial == null || partial.text.trim().isEmpty) {
       _currentPartial = null;
-      _partialStartedAt = null;
       return;
     }
     final value = partial.text.trim();
@@ -305,7 +306,6 @@ class ConversationProvider extends ChangeNotifier {
         _lastCommittedAt != null &&
         DateTime.now().difference(_lastCommittedAt!).inMilliseconds < 1800) {
       _currentPartial = null;
-      _partialStartedAt = null;
       return;
     }
     final committed = partial.copyWith(text: value, isPartial: false);
@@ -313,7 +313,6 @@ class ConversationProvider extends ChangeNotifier {
     _isolateFingerprint = fingerprint;
     _lastCommittedAt = committed.timestamp;
     _currentPartial = null;
-    _partialStartedAt = null;
     _sortCaptionsInPlace();
   }
 
