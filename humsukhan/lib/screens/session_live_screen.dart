@@ -6,7 +6,6 @@ import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
 import '../widgets/speakable_caption_bubble.dart';
-import '../navigation/app_router.dart';
 import '../l10n/app_strings.dart';
 
 class SessionLiveScreen extends StatefulWidget {
@@ -22,7 +21,6 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   StreamSubscription? _speechSubscription;
   Timer? _durationTimer;
   late DateTime _startTime;
-  String _lastPartialText = '';
 
   @override
   void initState() {
@@ -44,7 +42,6 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
       if (!mounted || result.text.trim().isEmpty) return;
       if (result.isFinal) {
         pro.addCaptionToSession(widget.sessionId, Caption(text: result.text.trim(), speaker: 'Speaker 1', language: result.language));
-        _lastPartialText = '';
       }
       setState(() {});
       _scrollToBottom();
