@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/auth_service.dart';
 
 class SettingsProvider extends ChangeNotifier {
   bool _isDarkMode = false, _isHighContrast = false, _isLargeText = false;
@@ -9,8 +10,9 @@ class SettingsProvider extends ChangeNotifier {
   bool _simplifiedLanguage = false;
   String _captionLanguage = 'English', _appLanguage = 'en';
   int _defaultRetentionDays = 7;
-  bool _isOnboardingComplete = false, _monitoringEnabled = false;
+  bool _legacyOnboardingComplete = false, _monitoringEnabled = false;
   bool _isLoaded = false;
+  final Set<String> _onboardedUsers = <String>{};
   final Map<String, bool> _allowedAlerts = {
     'Fire Alarm': true, 'Smoke Alarm': true, 'Siren': true, 'Doorbell': true,
     'Knock': true, 'Phone': true, 'Alarm Clock': true, 'Baby Cry': true,
@@ -30,7 +32,10 @@ class SettingsProvider extends ChangeNotifier {
   String get captionLanguage => _captionLanguage;
   String get appLanguage => _appLanguage;
   int get defaultRetentionDays => _defaultRetentionDays;
-  bool get isOnboardingComplete => _isOnboardingComplete;
+  bool get isOnboardingComplete {
+    final userId = AuthService.instance.currentUser?.id;
+    return userId != null && _onboardedUsers.contains(userId);
+  }
   bool get monitoringEnabled => _monitoringEnabled;
   Map<String, bool> get allowedAlerts => Map.unmodifiable(_allowedAlerts);
   ThemeMode get themeMode => _isDarkMode ? ThemeMode.dark : ThemeMode.light;
@@ -51,8 +56,23 @@ class SettingsProvider extends ChangeNotifier {
     _captionLanguage = prefs.getString('captionLanguage') ?? 'English';
     _appLanguage = prefs.getString('appLanguage') ?? 'en';
     _defaultRetentionDays = prefs.getInt('defaultRetentionDays') ?? 7;
-    _isOnboardingComplete = prefs.getBool('onboardingComplete') ?? false;
+    _legacyOnboardingComplete = prefs.getBool('onboardingComplete') ?? false;
     _monitoringEnabled = prefs.getBool('monitoringEnabled') ?? false;
+
+    // Migrate the old device-wide onboarding flag only for the account that is
+    // already signed in on an upgraded installation. New accounts get their
+    // own first-login tutorial state.
+    final currentUserId = AuthService.instance.currentUser?.id;
+    if (_legacyOnboardingComplete && currentUserId != null) {
+      _onboardedUsers.add(currentUserId);
+      await prefs.setBool('onboardingComplete:$currentUserId', true);
+    }
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith('onboardingComplete:') && prefs.getBool(key) == true) {
+        _onboardedUsers.add(key.substring('onboardingComplete:'.length));
+      }
+    }
+
     final storedAlerts = prefs.getString('allowedAlerts');
     if (storedAlerts != null) {
       try {
@@ -89,18 +109,22 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<bool> hasCompletedOnboardingForUser(String userId) async {
     if (userId.isEmpty) return false;
+    if (_onboardedUsers.contains(userId)) return true;
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('onboardingComplete:$userId') ?? _isOnboardingComplete;
+    final done = prefs.getBool('onboardingComplete:$userId') ?? false;
+    if (done) _onboardedUsers.add(userId);
+    return done;
   }
 
   Future<void> completeOnboardingForUser(String userId) async {
     if (userId.isEmpty) return;
-    _isOnboardingComplete = true;
-    await _save('onboardingComplete', true);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('onboardingComplete:$userId', true);
+    _onboardedUsers.add(userId);
+    await _save('onboardingComplete:$userId', true);
     notifyListeners();
   }
 
-  Future<void> completeOnboarding() async => completeOnboardingForUser('legacy');
+  Future<void> completeOnboarding() async {
+    final userId = AuthService.instance.currentUser?.id;
+    if (userId != null) await completeOnboardingForUser(userId);
+  }
 }
