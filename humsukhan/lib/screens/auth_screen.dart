@@ -30,14 +30,17 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final textTheme = theme.textTheme;
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [AppTokens.warmIvory, AppTokens.softCream],
+            colors: [theme.scaffoldBackgroundColor, colors.surfaceContainerHighest],
           ),
         ),
         child: SafeArea(
@@ -46,16 +49,23 @@ class _AuthScreenState extends State<AuthScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 40),
+                const SizedBox(height: 32),
                 Center(
                   child: Container(
-                    width: 80,
-                    height: 80,
-                    decoration: const BoxDecoration(
-                      borderRadius: BorderRadius.all(Radius.circular(20)),
+                    width: 104,
+                    height: 104,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colors.primary.withValues(alpha: 0.15),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
                     ),
                     child: ClipRRect(
-                      borderRadius: const BorderRadius.all(Radius.circular(20)),
+                      borderRadius: BorderRadius.circular(24),
                       child: Image.asset('assets/logo.png', fit: BoxFit.cover),
                     ),
                   ),
@@ -63,28 +73,22 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(height: 24),
                 Text(
                   _isSignUp ? 'Create Account' : 'Welcome Back',
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: AppTokens.textDeepForest,
-                  ),
+                  style: textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   _isSignUp
-                      ? 'Sign up to sync your data across devices'
-                      : 'Sign in to access your saved sessions',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppTokens.textSecondary,
-                  ),
+                      ? 'Create an account to securely sync your data across devices.'
+                      : 'Sign in to access your saved sessions and preferences.',
+                  style: textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
                 if (_isSignUp) ...[
                   TextField(
                     controller: _nameController,
+                    textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
                       labelText: 'Name',
                       prefixIcon: Icon(Icons.person_outline),
@@ -95,6 +99,8 @@ class _AuthScreenState extends State<AuthScreen> {
                 TextField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.username, AutofillHints.email],
                   decoration: const InputDecoration(
                     labelText: 'Email',
                     prefixIcon: Icon(Icons.email_outlined),
@@ -105,6 +111,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   maxLength: _isSignUp ? 8 : null,
+                  autofillHints: const [AutofillHints.password],
                   decoration: InputDecoration(
                     labelText: 'Password',
                     helperText: _isSignUp
@@ -112,10 +119,9 @@ class _AuthScreenState extends State<AuthScreen> {
                         : null,
                     prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
-                      icon: const Icon(Icons.visibility),
-                      onPressed: () {
-                        setState(() => _obscurePassword = !_obscurePassword);
-                      },
+                      icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                      tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
                 ),
@@ -124,15 +130,12 @@ class _AuthScreenState extends State<AuthScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: AppTokens.error.withValues(alpha: .1),
-                      borderRadius: BorderRadius.circular(8),
+                      color: colors.errorContainer,
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
                       auth.error!,
-                      style: const TextStyle(
-                        color: AppTokens.error,
-                        fontSize: 13,
-                      ),
+                      style: TextStyle(color: colors.onErrorContainer, fontSize: 13),
                     ),
                   ),
                 ],
@@ -142,53 +145,25 @@ class _AuthScreenState extends State<AuthScreen> {
                       ? 'Please wait...'
                       : (_isSignUp ? 'Create Account' : 'Sign In'),
                   icon: _isSignUp ? Icons.person_add : Icons.login,
-                  onPressed: auth.isLoading ? () {} : _handleSubmit,
+                  onPressed: auth.isLoading ? null : _handleSubmit,
                 ),
                 const SizedBox(height: 12),
                 TextButton(
                   onPressed: auth.isLoading
                       ? null
-                      : () => setState(() => _isSignUp = !_isSignUp),
+                      : () {
+                          auth.clearError();
+                          setState(() => _isSignUp = !_isSignUp);
+                        },
                   child: Text(
                     _isSignUp
                         ? 'Already have an account? Sign in'
                         : "Don't have an account? Sign up",
-                    style: const TextStyle(color: AppTokens.deepSage),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: auth.isLoading
-                      ? null
-                      : () async {
-                          final success = await auth.signInAnonymously();
-                          if (success && context.mounted) {
-                            Navigator.of(context).pushReplacementNamed('/home');
-                          }
-                        },
-                  icon: const Icon(Icons.explore, color: AppTokens.deepSage),
-                  label: const Text(
-                    'Try Without Account',
-                    style: TextStyle(color: AppTokens.deepSage),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 52),
-                    side: const BorderSide(color: AppTokens.deepSage),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () =>
-                      Navigator.of(context).pushReplacementNamed('/home'),
-                  child: const Text(
-                    'Skip for now (offline mode)',
-                    style: TextStyle(color: AppTokens.textMuted),
                   ),
                 ),
                 const SizedBox(height: 24),
-                const PrivacyNotice(
-                  text:
-                      'Your data is encrypted and stored securely. Audio is never stored — only text captions and metadata.',
+                PrivacyNotice(
+                  text: 'Your account data is securely synced through Supabase. Audio is not stored by HumSukhan; only captions and metadata are persisted where supported.',
                 ),
               ],
             ),
@@ -199,23 +174,20 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _handleSubmit() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final name = _nameController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter email and password')),
-      );
+      _showMessage('Please enter your email and password.');
       return;
     }
 
     if (_isSignUp) {
       final error = AuthService.validatePassword(password);
       if (error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error)),
-        );
+        _showMessage(error);
         return;
       }
     }
@@ -225,8 +197,21 @@ class _AuthScreenState extends State<AuthScreen> {
         ? await auth.signUp(email: email, password: password, name: name)
         : await auth.signIn(email: email, password: password);
 
-    if (success && mounted) {
+    if (!mounted || !success) return;
+
+    if (auth.isAuthenticated) {
       Navigator.of(context).pushReplacementNamed('/home');
+    } else if (_isSignUp) {
+      // Supabase may require email confirmation before a session is issued.
+      _showMessage('Account created. Check your email to confirm the account, then sign in.');
+      setState(() => _isSignUp = false);
+    } else {
+      _showMessage('Signed in, but no active session was returned. Please try again.');
     }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 }
