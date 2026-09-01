@@ -20,6 +20,8 @@ class _EverydayScreenState extends State<EverydayScreen> {
   StreamSubscription? _speechSubscription;
   bool _speakerActionInFlight = false;
   int _speakerTurnToken = 0;
+  String _speechLanguage = 'Auto';
+  String? _speechError;
 
   @override
   void initState() {
@@ -29,21 +31,24 @@ class _EverydayScreenState extends State<EverydayScreen> {
 
   Future<void> _initSpeech() async {
     final speech = context.read<SpeechProvider>();
-    await speech.initialize(preferredLanguage: 'Auto');
+    await speech.initialize(preferredLanguage: _speechLanguage);
+    await _speechSubscription?.cancel();
     _speechSubscription = speech.onResult.listen((result) {
       if (!mounted || result.text.trim().isEmpty) return;
       final conv = context.read<ConversationProvider>();
       if (!conv.isSpeakerTurnActive) return;
+      // Interim and final stream updates are buffered internally. Nothing from
+      // this callback is rendered directly; one completed bubble is committed
+      // when the speaker stops.
       conv.updateSpeakerTurn(result.text, language: result.language);
-      speech.detectLanguage(result.text);
-      _scrollToBottom();
+      if (result.isFinal) speech.detectLanguage(result.text);
     });
   }
 
   Future<void> _startConversation() async {
     final conv = context.read<ConversationProvider>();
     conv.startConversation();
-    if (mounted) setState(() {});
+    if (mounted) setState(() => _speechError = null);
   }
 
   Future<void> _toggleSpeakerListening() async {
@@ -54,6 +59,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
     final speech = context.read<SpeechProvider>();
     _speakerActionInFlight = true;
     final token = ++_speakerTurnToken;
+    if (mounted) setState(() => _speechError = null);
 
     try {
       if (speech.isListening) {
@@ -64,30 +70,28 @@ class _EverydayScreenState extends State<EverydayScreen> {
         return;
       }
 
-      conv.beginSpeakerTurn(language: 'Auto');
+      conv.beginSpeakerTurn(language: _speechLanguage);
       if (mounted) setState(() {});
-
-      // Auto mode uses the low-latency Deepgram streaming recognizer. It
-      // explicitly requests/validates microphone access and has a platform
-      // speech fallback if the cloud stream cannot be established.
-      await speech.startListening(language: 'Auto');
+      await speech.startListening(language: _speechLanguage);
 
       if (!speech.isListening) {
         final reason = speech.sttProvider.lastStartError;
         conv.commitSpeakerTurn();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(reason ?? 'Live speech recognition could not be started.'),
-              duration: const Duration(seconds: 4),
-            ),
-          );
+          setState(() => _speechError = reason ?? 'Live speech recognition could not be started.');
         }
       }
     } finally {
       _speakerActionInFlight = false;
       if (mounted) setState(() {});
     }
+  }
+
+  Future<void> _selectSpeechLanguage(String language) async {
+    if (_speakerActionInFlight || context.read<SpeechProvider>().isListening) return;
+    setState(() => _speechLanguage = language);
+    await context.read<SpeechProvider>().switchLanguage(language);
+    if (mounted) setState(() => _speechError = null);
   }
 
   Future<void> _stop() async {
@@ -125,7 +129,9 @@ class _EverydayScreenState extends State<EverydayScreen> {
     final settings = context.watch<SettingsProvider>();
     final quickReplies = context.watch<QuickReplyProvider>();
     final speech = context.watch<SpeechProvider>();
+    final connectivity = context.watch<ConnectivityProvider>();
     final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final s = AppStrings.of(context);
 
     return Scaffold(
@@ -133,13 +139,24 @@ class _EverydayScreenState extends State<EverydayScreen> {
         title: Text(s.everydayTitle),
         leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(context)),
         actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Speech language',
+            initialValue: _speechLanguage,
+            onSelected: _selectSpeechLanguage,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'Auto', child: Text('Auto — Urdu + English')),
+              PopupMenuItem(value: 'English', child: Text('English')),
+              PopupMenuItem(value: 'Urdu', child: Text('Urdu')),
+            ],
+            icon: const Icon(Icons.translate_rounded),
+          ),
           if (conv.state == ConversationState.active)
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Center(
                 child: StatusIndicator(
-                  label: conv.isListening ? 'Speaker talking' : 'Waiting for speaker',
-                  color: theme.colorScheme.primary,
+                  label: conv.isListening ? 'Listening' : 'Ready',
+                  color: colors.primary,
                   isActive: conv.isListening,
                   icon: conv.isListening ? Icons.mic : Icons.mic_none,
                 ),
@@ -157,7 +174,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                 ? _buildIdleState(context, s)
                 : conv.state == ConversationState.saveDecision
                     ? _buildSaveDecision(context, s)
-                    : _buildCaptionArea(context, conv, settings, s),
+                    : _buildCaptionArea(context, conv, settings, s, connectivity),
           ),
           if (conv.state == ConversationState.active)
             SizedBox(
@@ -170,12 +187,10 @@ class _EverydayScreenState extends State<EverydayScreen> {
                   child: QuickReplyChip(
                     reply: reply,
                     isHighContrast: settings.isHighContrast,
-                    onTap: conv.isListening
-                        ? null
-                        : () {
-                            conv.addOwnCaption(reply.text);
-                            _scrollToBottom();
-                          },
+                    onTap: conv.isListening ? null : () {
+                      conv.addOwnCaption(reply.text);
+                      _scrollToBottom();
+                    },
                   ),
                 )).toList(),
               ),
@@ -202,7 +217,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                           maxLines: 4,
                           textInputAction: TextInputAction.newline,
                           decoration: InputDecoration(
-                            hintText: conv.isListening ? 'Speaker is talking…' : s.typeResponse,
+                            hintText: conv.isListening ? 'Listening…' : s.typeResponse,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(AppTokens.radiusFull),
                               borderSide: BorderSide.none,
@@ -224,17 +239,13 @@ class _EverydayScreenState extends State<EverydayScreen> {
                       icon: Icon(speech.isSpeaking ? Icons.stop : Icons.volume_up),
                       onPressed: conv.isListening || _textController.text.trim().isEmpty
                           ? null
-                          : () => speech.isSpeaking
-                              ? speech.stopSpeaking()
-                              : speech.speak(_textController.text.trim(), language: 'Auto'),
+                          : () => speech.isSpeaking ? speech.stopSpeaking() : speech.speak(_textController.text.trim(), language: _speechLanguage),
                     ),
                     const SizedBox(width: 2),
                     IconButton.filled(
                       tooltip: 'Send response',
                       icon: const Icon(Icons.send),
-                      onPressed: conv.isListening || _textController.text.trim().isEmpty
-                          ? null
-                          : () => _sendTypedText(_textController.text),
+                      onPressed: conv.isListening || _textController.text.trim().isEmpty ? null : () => _sendTypedText(_textController.text),
                     ),
                   ],
                 ),
@@ -255,68 +266,66 @@ class _EverydayScreenState extends State<EverydayScreen> {
 
   Widget _buildSpeakerControls(BuildContext context, ConversationProvider conv, SettingsProvider settings, ThemeData theme) {
     final busy = _speakerActionInFlight;
+    final listening = conv.isListening;
     return Material(
       color: theme.colorScheme.primary.withValues(alpha: .06),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         child: Column(
           children: [
+            if (_speechError != null)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                ),
+                child: Row(children: [
+                  Icon(Icons.error_outline_rounded, color: theme.colorScheme.error),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(_speechError!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
+                ]),
+              ),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(conv.isListening ? Icons.record_voice_over : Icons.mic_none, color: theme.colorScheme.primary),
+                Icon(listening ? Icons.graphic_eq_rounded : Icons.mic_none_rounded, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    busy
-                        ? 'Starting speech recognition…'
-                        : conv.isListening
-                            ? 'Tap the microphone to stop'
-                            : 'Tap the microphone to start speaker captions',
+                    busy ? 'Starting…' : listening ? 'Listening…' : 'Tap microphone to speak',
                     style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                     textAlign: TextAlign.center,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            Semantics(
-              button: true,
-              label: conv.isListening ? 'Stop speaker microphone' : 'Start speaker microphone',
-              child: InkResponse(
-                radius: 52,
-                onTap: busy ? null : _toggleSpeakerListening,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 120),
-                  width: 78,
-                  height: 78,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: busy
-                        ? theme.colorScheme.surfaceContainerHighest
-                        : conv.isListening
-                            ? theme.colorScheme.error
-                            : theme.colorScheme.primary,
-                    boxShadow: conv.isListening
-                        ? [BoxShadow(color: theme.colorScheme.error.withValues(alpha: .25), blurRadius: 16, spreadRadius: 2)]
-                        : [],
-                  ),
-                  child: busy
-                      ? SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(strokeWidth: 3, color: theme.colorScheme.primary),
-                        )
-                      : Icon(
-                          conv.isListening ? Icons.mic : Icons.mic_none,
-                          color: theme.colorScheme.onPrimary,
-                          size: 36,
-                        ),
-                ),
-              ),
+            const SizedBox(height: 12),
+            _PulsingMicButton(
+              listening: listening,
+              busy: busy,
+              onPressed: busy ? null : _toggleSpeakerListening,
+              primary: theme.colorScheme.primary,
+              onPrimary: theme.colorScheme.onPrimary,
+              error: theme.colorScheme.error,
             ),
-            const SizedBox(height: 6),
-            Text('Bilingual speaker captions', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 8),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final language in const ['Auto', 'English', 'Urdu'])
+                  ChoiceChip(
+                    label: Text(language),
+                    selected: _speechLanguage == language,
+                    onSelected: listening || busy ? null : (_) => _selectSpeechLanguage(language),
+                  ),
+                OfflineBadge(isOnline: context.watch<ConnectivityProvider>().isOnline),
+              ],
+            ),
           ],
         ),
       ),
@@ -338,48 +347,47 @@ class _EverydayScreenState extends State<EverydayScreen> {
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.chat_bubble_outline, size: 80, color: theme.colorScheme.outlineVariant),
-          const SizedBox(height: 24),
+          Icon(Icons.forum_rounded, size: 72, color: theme.colorScheme.primary.withValues(alpha: .65)),
+          const SizedBox(height: 20),
           Text(s.startConversation, style: theme.textTheme.headlineMedium, textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          Text('Start a conversation, then tap the microphone whenever the speaker talks.', style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
-          const SizedBox(height: 32),
-          PrimaryActionButton(label: s.startListening, icon: Icons.chat, onPressed: _startConversation),
+          const SizedBox(height: 10),
+          Text('Speak naturally. HumSukhan shows the complete caption when you finish.', style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
+          const SizedBox(height: 24),
+          PrimaryActionButton(label: s.startListening, icon: Icons.chat_rounded, onPressed: _startConversation),
         ]),
       ),
     );
   }
 
-  Widget _buildCaptionArea(BuildContext context, ConversationProvider conv, SettingsProvider settings, AppStrings s) {
+  Widget _buildCaptionArea(BuildContext context, ConversationProvider conv, SettingsProvider settings, AppStrings s, ConnectivityProvider connectivity) {
     final theme = Theme.of(context);
     final captions = conv.captions;
     return Column(children: [
       Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
         child: Row(children: [
-          LanguageBadge(language: conv.currentLanguage),
+          Expanded(child: Text('Conversation', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700))),
+          LanguageBadge(language: _speechLanguage),
           const SizedBox(width: 8),
-          OfflineBadge(isOnline: context.watch<ConnectivityProvider>().isOnline),
+          OfflineBadge(isOnline: connectivity.isOnline),
         ]),
       ),
       Expanded(
-        child: captions.isEmpty && conv.currentPartial == null
-            ? Center(child: Text('Waiting for the speaker…', style: theme.textTheme.bodyLarge))
+        child: captions.isEmpty
+            ? Center(child: Text(conv.isListening ? 'Listening…' : 'Waiting for the speaker…', style: theme.textTheme.bodyLarge))
             : ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                itemCount: captions.length + (conv.currentPartial != null ? 1 : 0),
+                itemCount: captions.length,
                 itemBuilder: (context, index) {
-                  if (index == captions.length && conv.currentPartial != null) {
-                    return KeyedSubtree(
-                      key: ValueKey(conv.currentPartial!.id),
-                      child: SpeakableCaptionBubble(caption: conv.currentPartial!, textSize: settings.captionTextSize, isHighContrast: settings.isHighContrast),
-                    );
-                  }
                   final caption = captions[index];
                   return KeyedSubtree(
                     key: ValueKey(caption.id),
-                    child: SpeakableCaptionBubble(caption: caption, textSize: settings.captionTextSize, isHighContrast: settings.isHighContrast),
+                    child: SpeakableCaptionBubble(
+                      caption: caption,
+                      textSize: settings.captionTextSize,
+                      isHighContrast: settings.isHighContrast,
+                    ),
                   );
                 },
               ),
@@ -392,18 +400,91 @@ class _EverydayScreenState extends State<EverydayScreen> {
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.save_alt, size: 64, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(height: 24),
-          Text(s.saveConversation, style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center),
-          const SizedBox(height: 12),
+          Icon(Icons.check_circle_rounded, size: 64, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(height: 20),
+          Text('Conversation complete', style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center),
+          const SizedBox(height: 10),
           Text(s.saveConversationDesc, style: Theme.of(context).textTheme.bodyLarge, textAlign: TextAlign.center),
-          const SizedBox(height: 32),
-          PrimaryActionButton(label: s.save, icon: Icons.save, onPressed: () => context.read<ConversationProvider>().saveConversation()),
-          const SizedBox(height: 12),
-          SecondaryActionButton(label: s.delete, icon: Icons.delete_outline, onPressed: () => context.read<ConversationProvider>().deleteConversation()),
-          const SizedBox(height: 12),
+          const SizedBox(height: 28),
+          PrimaryActionButton(label: s.save, icon: Icons.save_rounded, onPressed: () => context.read<ConversationProvider>().saveConversation()),
+          const SizedBox(height: 10),
+          SecondaryActionButton(label: s.delete, icon: Icons.delete_outline_rounded, onPressed: () => context.read<ConversationProvider>().deleteConversation()),
+          const SizedBox(height: 8),
           TextButton(onPressed: () => context.read<ConversationProvider>().cancelStop(), child: Text(s.continueListening)),
         ]),
+      ),
+    );
+  }
+}
+
+class _PulsingMicButton extends StatefulWidget {
+  final bool listening;
+  final bool busy;
+  final VoidCallback? onPressed;
+  final Color primary;
+  final Color onPrimary;
+  final Color error;
+
+  const _PulsingMicButton({
+    required this.listening,
+    required this.busy,
+    required this.onPressed,
+    required this.primary,
+    required this.onPrimary,
+    required this.error,
+  });
+
+  @override
+  State<_PulsingMicButton> createState() => _PulsingMicButtonState();
+}
+
+class _PulsingMicButtonState extends State<_PulsingMicButton> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: widget.listening ? 'Stop microphone' : 'Start microphone',
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final pulse = widget.listening ? 1.0 + (_controller.value * .06) : 1.0;
+          return Transform.scale(
+            scale: pulse,
+            child: Material(
+              color: widget.busy
+                  ? Theme.of(context).colorScheme.surfaceContainerHighest
+                  : widget.listening
+                      ? widget.error
+                      : widget.primary,
+              shape: const CircleBorder(),
+              elevation: widget.listening ? 8 : 2,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: widget.onPressed,
+                child: SizedBox(
+                  width: 84,
+                  height: 84,
+                  child: Center(
+                    child: widget.busy
+                        ? SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3, color: widget.primary))
+                        : Icon(widget.listening ? Icons.stop_rounded : Icons.mic_rounded, size: 38, color: widget.onPrimary),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

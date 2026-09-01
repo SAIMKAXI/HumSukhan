@@ -40,15 +40,18 @@ class DeepgramTranscriptionService {
   bool _recording = false;
   String _language = 'multi';
   String _finalBuffer = '';
+  String _lastFinalTranscript = '';
   String? _lastStartError;
 
   Stream<DeepgramTranscriptResult> get onResult => _controller.stream;
   bool get isRecording => _recording;
   String? get lastStartError => _lastStartError;
+  String get lastFinalTranscript => _lastFinalTranscript;
 
   Future<bool> start({String language = 'auto'}) async {
     if (_recording) return true;
     _lastStartError = null;
+    _lastFinalTranscript = '';
 
     final client = SupabaseService.instance.client;
     if (client == null || client.auth.currentSession == null) {
@@ -201,15 +204,14 @@ class DeepgramTranscriptionService {
 
         if (speechFinal) {
           final complete = _finalBuffer.trim().isNotEmpty ? _finalBuffer.trim() : text;
-          if (complete.isNotEmpty && complete != text) {
-            _controller.add(DeepgramTranscriptResult(
-              transcript: complete,
-              language: _displayLanguage(language),
-              confidence: confidence,
-              isFinal: true,
-              speechFinal: true,
-            ));
-          }
+          _lastFinalTranscript = complete;
+          _controller.add(DeepgramTranscriptResult(
+            transcript: complete,
+            language: _displayLanguage(language),
+            confidence: confidence,
+            isFinal: true,
+            speechFinal: true,
+          ));
           _finalBuffer = '';
         }
       }
@@ -232,7 +234,7 @@ class DeepgramTranscriptionService {
     try {
       if (_socket?.readyState == WebSocket.open) {
         _socket!.add(jsonEncode({'type': 'Finalize'}));
-        await Future<void>.delayed(const Duration(milliseconds: 250));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
       }
     } catch (_) {}
     await _cleanup();
