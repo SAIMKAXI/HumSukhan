@@ -1,0 +1,1 @@
+The canonical HumSukhan logo was supplied as a square RGBA PNG by the product owner. CI validation for the Conversation Mode PR is independent of this branding asset.
