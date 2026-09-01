@@ -7,6 +7,8 @@ import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
 import 'screens/splash_screen.dart';
 import 'screens/auth_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'widgets/main_scaffold.dart';
 import 'l10n/app_strings.dart';
 import 'services/supabase_service.dart';
 import 'services/sound_detection_service.dart';
@@ -56,9 +58,27 @@ class HumSukhanApp extends StatefulWidget {
 }
 
 class _HumSukhanAppState extends State<HumSukhanApp> {
+  late final AuthProvider _authProvider;
   bool _showSplash = true;
   String _lastLanguage = 'en';
-  bool _settingsWired = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _authProvider = AuthProvider()..addListener(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _authProvider
+      ..removeListener(_handleAuthChanged)
+      ..dispose();
+    super.dispose();
+  }
 
   ThemeData _highContrastTheme({String? fontFamily, required bool dark}) {
     final foreground = dark ? Colors.white : Colors.black;
@@ -166,8 +186,9 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
+      key: ValueKey(_authProvider.userId),
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider.value(value: _authProvider),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => ConversationProvider()),
@@ -185,12 +206,10 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
               if (mounted) context.read<QuickReplyProvider>().switchLanguage(settings.appLanguage);
             });
           }
-          if (!_settingsWired) {
-            _settingsWired = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) context.read<EnvironmentalProvider>().setSettingsProvider(settings);
-            });
-          }
+
+          // This setter only records the current settings provider; it has no
+          // side effects and is safe to refresh whenever the account subtree is rebuilt.
+          context.read<EnvironmentalProvider>().setSettingsProvider(settings);
 
           if (!settings.isLoaded) {
             return MaterialApp(
@@ -227,20 +246,15 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
             );
           }
 
-          final landingRoute = !auth.isAuthenticated
-              ? AppRouter.auth
-              : (settings.isOnboardingComplete ? AppRouter.home : AppRouter.onboarding);
-
           return Directionality(
             textDirection: direction,
             child: MaterialApp(
-              key: ValueKey('${auth.isAuthenticated}-${settings.isOnboardingComplete}'),
               title: 'HumSukhan',
               debugShowCheckedModeBanner: false,
               theme: lightTheme,
               darkTheme: darkTheme,
               themeMode: themeMode,
-              initialRoute: landingRoute,
+              home: const _AccountGate(),
               onGenerateRoute: AppRouter.generateRoute,
               locale: appLocale,
               supportedLocales: locales,
@@ -251,5 +265,18 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
         },
       ),
     );
+  }
+}
+
+class _AccountGate extends StatelessWidget {
+  const _AccountGate();
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final settings = context.watch<SettingsProvider>();
+    if (!auth.isAuthenticated) return const AuthScreen();
+    if (!settings.isOnboardingComplete) return const OnboardingScreen();
+    return const MainScaffold();
   }
 }

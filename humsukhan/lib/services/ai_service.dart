@@ -20,7 +20,7 @@ class AiService {
     if (!isAvailable || transcript.trim().isEmpty) return null;
     try {
       final response = await SupabaseService.instance.client!.functions.invoke(
-        'generate-insights',
+        'generate-insights-v2',
         body: {
           'sessionId': sessionId,
           'transcript': transcript,

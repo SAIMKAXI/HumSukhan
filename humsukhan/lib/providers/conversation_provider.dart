@@ -20,6 +20,10 @@ class ConversationProvider extends ChangeNotifier {
   DateTime? _conversationStartedAt;
   String? _currentSessionId;
 
+  ConversationProvider() {
+    unawaited(_syncSavedConversationsFromCloud());
+  }
+
   ConversationState get state => _state;
   List<Caption> get captions => List.unmodifiable(_captions);
   Caption? get currentPartial => _currentPartial;
@@ -33,6 +37,47 @@ class ConversationProvider extends ChangeNotifier {
     if (_conversationStartedAt == null) return '0:00';
     final diff = DateTime.now().difference(_conversationStartedAt!);
     return '${diff.inMinutes}:${(diff.inSeconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _syncSavedConversationsFromCloud() async {
+    if (!SupabaseService.instance.isAuthenticated) return;
+    try {
+      final cloudSessions = await DatabaseService.instance.fetchSessions();
+      final saved = cloudSessions.where((s) => s.id.startsWith('everyday_'));
+      if (saved.isEmpty) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      final raw = jsonDecode(prefs.getString('everydayConversations') ?? '[]');
+      final local = <Map<String, dynamic>>[];
+      if (raw is List) {
+        for (final item in raw) {
+          if (item is Map) local.add(Map<String, dynamic>.from(item));
+        }
+      }
+
+      final byId = <String, Map<String, dynamic>>{
+        for (final item in local)
+          if (item['id']?.toString().isNotEmpty == true) item['id'].toString(): item,
+      };
+
+      for (final session in saved) {
+        final existing = byId[session.id];
+        byId[session.id] = {
+          'id': session.id,
+          'captions': session.captions.map((c) => c.toJson()).toList(),
+          'startedAt': existing?['startedAt'] ?? session.createdAt.toIso8601String(),
+          'savedAt': existing?['savedAt'] ?? session.createdAt.toIso8601String(),
+          'language': session.captionLanguage,
+        };
+      }
+
+      final merged = byId.values.toList()
+        ..sort((a, b) => (b['savedAt']?.toString() ?? '').compareTo(a['savedAt']?.toString() ?? ''));
+      await prefs.setString('everydayConversations', jsonEncode(merged));
+      debugPrint('Everyday conversations synced from cloud: ${saved.length}');
+    } catch (e) {
+      debugPrint('Everyday conversation cloud sync error: $e');
+    }
   }
 
   void startConversation() {
@@ -74,20 +119,22 @@ class ConversationProvider extends ChangeNotifier {
         jsonDecode(prefs.getString('everydayConversations') ?? '[]'),
       );
       final sorted = _sortedCaptions();
+      final sessionId = _currentSessionId ?? 'everyday_${DateTime.now().millisecondsSinceEpoch}';
       final session = {
-        'id': _currentSessionId ?? 'everyday_${DateTime.now().millisecondsSinceEpoch}',
+        'id': sessionId,
         'captions': sorted.map((c) => c.toJson()).toList(),
         'startedAt': _conversationStartedAt?.toIso8601String(),
         'savedAt': DateTime.now().toIso8601String(),
         'language': _currentLanguage,
       };
+      conversations.removeWhere((item) => item is Map && item['id']?.toString() == sessionId);
       conversations.add(session);
       await prefs.setString('everydayConversations', jsonEncode(conversations));
 
       if (SupabaseService.instance.isAuthenticated) {
         final transcript = sorted.map((c) => '${c.speaker}: ${c.text}').join('\n');
         final professionalSession = ProfessionalSession(
-          id: _currentSessionId,
+          id: sessionId,
           title: 'Everyday Conversation — ${_formatDate(_conversationStartedAt)}',
           type: SessionType.meeting,
           captionLanguage: _currentLanguage,

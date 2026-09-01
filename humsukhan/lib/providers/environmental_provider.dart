@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/models.dart';
@@ -29,9 +30,9 @@ class EnvironmentalProvider extends ChangeNotifier {
   bool get isStarting => _monitoringState == 'STARTING';
   bool get isStopping => _monitoringState == 'STOPPING';
   bool get hasError => _monitoringState == 'ERROR';
-  bool get isProcessing => _soundService.isMonitoring;
-  bool get isMicrophoneReady => _soundService.isMicrophoneReady;
-  bool get isModelReady => _soundService.isModelReady;
+  bool get isProcessing => Platform.isAndroid ? _bridge.isActive : _soundService.isMonitoring;
+  bool get isMicrophoneReady => Platform.isAndroid ? isProcessing : _soundService.isMicrophoneReady;
+  bool get isModelReady => Platform.isAndroid ? isProcessing && !hasError : _soundService.isModelReady;
   String? get errorMessage => _errorMessage;
   bool get isLocal => true;
   String get environmentalStatus => monitoringEnabled ? 'Monitoring locally' : 'Off';
@@ -61,15 +62,16 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (_bridgeInitialized) return;
     _bridgeInitialized = true;
     await _bridge.initialize(onChange: (state, event) {
-      if (!_soundService.isMonitoring) {
-        _monitoringState = state;
-        notifyListeners();
-      }
+      _monitoringState = state;
       if (event != null) {
         final type = event['type']?.toString();
         final confidence = (event['confidence'] as num?)?.toDouble();
         final severity = event['severity']?.toString() ?? 'warning';
-        if (type != null && confidence != null) processSoundEvent(SoundEvent(type: type, confidence: confidence, severity: severity));
+        if (type != null && confidence != null) {
+          processSoundEvent(SoundEvent(type: type, confidence: confidence, severity: severity));
+        }
+      } else {
+        notifyListeners();
       }
     });
   }
@@ -79,9 +81,17 @@ class EnvironmentalProvider extends ChangeNotifier {
       _monitoringState = 'STOPPING';
       _errorMessage = null;
       notifyListeners();
-      _soundService.stopMonitoring();
-      if (_bridge.isActive) await _bridge.stop();
-      _monitoringState = 'OFF';
+
+      if (Platform.isAndroid) {
+        final stopped = await _bridge.stop();
+        if (!stopped) {
+          _monitoringState = 'ERROR';
+          _errorMessage = 'Environmental monitoring could not be stopped safely.';
+        }
+      } else {
+        _soundService.stopMonitoring();
+        _monitoringState = 'OFF';
+      }
       notifyListeners();
       return;
     }
@@ -97,6 +107,20 @@ class EnvironmentalProvider extends ChangeNotifier {
 
     _monitoringState = 'STARTING';
     notifyListeners();
+
+    // Android owns environmental monitoring in a foreground microphone
+    // service. Starting a recorder in the UI isolate bypasses that service and
+    // is unreliable when the app is backgrounded or the activity is rebuilt.
+    if (Platform.isAndroid) {
+      final started = await _bridge.start();
+      if (!started) {
+        _monitoringState = 'ERROR';
+        _errorMessage = 'The environmental monitoring microphone service could not start.';
+      }
+      notifyListeners();
+      return;
+    }
+
     final initialized = await _soundService.initialize(requestPermission: false);
     if (!initialized || !_soundService.isMicrophoneReady) {
       _monitoringState = 'ERROR';
@@ -153,7 +177,7 @@ class EnvironmentalProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _soundService.stopMonitoring();
+    if (!Platform.isAndroid) _soundService.stopMonitoring();
     unawaited(_bridge.dispose());
     super.dispose();
   }
