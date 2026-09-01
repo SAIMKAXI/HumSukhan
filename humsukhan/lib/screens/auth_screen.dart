@@ -161,7 +161,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ? (isUrdu ? 'اکاؤنٹ بنائیں' : 'Create account')
                         : (isUrdu ? 'سائن اِن' : 'Sign in')),
                 icon: _isSignUp ? Icons.arrow_forward_rounded : Icons.login_rounded,
-                onPressed: auth.isLoading ? null : _handleSubmit,
+                onPressed: auth.isLoading ? null : () { _handleSubmit(); },
               ),
               const SizedBox(height: 12),
               PrivacyStrip(text: privacy),
@@ -294,7 +294,7 @@ class _AuthScreenState extends State<AuthScreen> {
               PrimaryActionButton(
                 label: auth.isLoading ? (isUrdu ? 'بھیجا جا رہا ہے…' : 'Sending…') : (isUrdu ? 'ری سیٹ لنک بھیجیں' : 'Send reset link'),
                 icon: Icons.send_outlined,
-                onPressed: auth.isLoading ? null : _handleResetRequest,
+                onPressed: auth.isLoading ? null : () { _handleResetRequest(); },
               ),
             ],
           ),
@@ -361,7 +361,7 @@ class _AuthScreenState extends State<AuthScreen> {
               PrimaryActionButton(
                 label: auth.isLoading ? (isUrdu ? 'اپ ڈیٹ ہو رہا ہے…' : 'Updating…') : (isUrdu ? 'پاس ورڈ اپ ڈیٹ کریں' : 'Update password'),
                 icon: Icons.check_circle_outline_rounded,
-                onPressed: auth.isLoading ? null : _handlePasswordUpdate,
+                onPressed: auth.isLoading ? null : () { _handlePasswordUpdate(); },
               ),
             ],
           ),
