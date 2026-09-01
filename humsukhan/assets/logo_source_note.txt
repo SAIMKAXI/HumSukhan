@@ -1,1 +1,0 @@
-Canonical HumSukhan application logo supplied by the product owner on 2026-09-01. The binary logo asset is maintained at assets/logo.png and is the source for branded app visuals.
