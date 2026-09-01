@@ -16,9 +16,14 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
   String get userId => _user?.id ?? '';
 
-  AuthProvider() { _init(); }
+  AuthProvider() { refresh(); }
 
-  void _init() {
+  /// Rebinds auth state after Supabase becomes available.
+  ///
+  /// The app intentionally renders its first frame before Supabase finishes
+  /// initializing, so auth state may be unavailable during construction.
+  void refresh() {
+    _authSubscription?.cancel();
     _user = _auth.currentUser;
     _authSubscription = _auth.onAuthStateChange.listen((state) {
       switch (state.event) {
@@ -35,6 +40,7 @@ class AuthProvider extends ChangeNotifier {
       }
       notifyListeners();
     });
+    notifyListeners();
   }
 
   Future<bool> signUp({required String email, required String password, String? name}) async {
