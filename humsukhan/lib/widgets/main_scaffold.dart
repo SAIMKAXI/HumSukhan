@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../screens/screens.dart';
 import '../l10n/app_strings.dart';
 import '../services/alert_service.dart';
+import 'modern_ui.dart';
 
 class MainScaffold extends StatefulWidget {
   const MainScaffold({super.key});
@@ -29,84 +30,41 @@ class _MainScaffoldState extends State<MainScaffold> {
     });
   }
 
-  void _selectDestination(int index) {
-    Navigator.of(context).pop();
-    if (mounted) setState(() => _currentIndex = index);
-  }
-
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    final isUrdu = Localizations.localeOf(context).languageCode == 'ur';
     final destinations = [
-      (s.navHome, Icons.home_outlined, Icons.home),
-      (s.navEveryday, Icons.chat_bubble_outline, Icons.chat_bubble),
-      (s.navProfessional, Icons.work_outline, Icons.work),
-      (s.navAlerts, Icons.volume_up_outlined, Icons.volume_up),
-      (s.navSettings, Icons.settings_outlined, Icons.settings),
+      (s.navHome, Icons.home_outlined, Icons.home_rounded),
+      (s.navEveryday, Icons.forum_outlined, Icons.forum_rounded),
+      (s.navProfessional, Icons.work_outline_rounded, Icons.work_rounded),
+      (s.navAlerts, Icons.notifications_none_rounded, Icons.notifications_rounded),
+      (s.navSettings, Icons.tune_rounded, Icons.tune_rounded),
     ];
 
     return Scaffold(
-      drawer: Drawer(
-        child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-                child: Align(
-                  alignment: isUrdu ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Text(
-                    s.appName,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: destinations.length,
-                  itemBuilder: (context, index) {
-                    final item = destinations[index];
-                    return ListTile(
-                      leading: Icon(index == _currentIndex ? item.$3 : item.$2),
-                      title: Text(item.$1),
-                      selected: index == _currentIndex,
-                      onTap: () => _selectDestination(index),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: IndexedStack(
-              index: _currentIndex,
-              children: _screens,
+      body: IndexedStack(index: _currentIndex, children: _screens),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) => setState(() => _currentIndex = index),
+        destinations: [
+          for (final item in destinations)
+            NavigationDestination(
+              icon: Icon(item.$2),
+              selectedIcon: Icon(item.$3),
+              label: item.$1,
             ),
-          ),
-          Positioned(
-            top: MediaQuery.paddingOf(context).top + 4,
-            left: 4,
-            child: Builder(
-              builder: (context) => Material(
-                color: Theme.of(context).appBarTheme.backgroundColor ?? Theme.of(context).colorScheme.surface,
-                shape: const CircleBorder(),
-                clipBehavior: Clip.antiAlias,
-                child: IconButton(
-                  tooltip: isUrdu ? 'مینو کھولیں' : 'Open menu',
-                  icon: const Icon(Icons.menu),
-                  onPressed: () => Scaffold.of(context).openDrawer(),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
+      drawer: null,
+      floatingActionButton: null,
     );
   }
+}
+
+// Kept as a small public visual helper for pages that need a compact brand mark.
+class ShellBrandMark extends StatelessWidget {
+  const ShellBrandMark({super.key});
+
+  @override
+  Widget build(BuildContext context) => const BrandLogo(size: 44, radius: AppTokens.radiusMd);
 }
