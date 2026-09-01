@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
 import 'supabase_service.dart';
@@ -24,12 +25,7 @@ class DeepgramTranscriptResult {
   });
 }
 
-/// Low-latency Deepgram streaming STT.
-///
-/// Audio is streamed as 16 kHz PCM directly from the microphone to Deepgram.
-/// The permanent Deepgram key never reaches the device: Supabase issues a
-/// short-lived Deepgram token through the authenticated deepgram-token Edge
-/// Function. Interim results are emitted continuously for live captions.
+/// Low-latency Deepgram streaming STT used by Conversational Auto mode.
 class DeepgramTranscriptionService {
   static DeepgramTranscriptionService? _instance;
   static DeepgramTranscriptionService get instance => _instance ??= DeepgramTranscriptionService._();
@@ -45,28 +41,54 @@ class DeepgramTranscriptionService {
   String _language = 'multi';
   String _lastInterim = '';
   String _finalBuffer = '';
+  String? _lastStartError;
 
   Stream<DeepgramTranscriptResult> get onResult => _controller.stream;
   bool get isRecording => _recording;
+  String? get lastStartError => _lastStartError;
 
   Future<bool> start({String language = 'auto'}) async {
     if (_recording) return true;
+    _lastStartError = null;
+
     final client = SupabaseService.instance.client;
     if (client == null || client.auth.currentSession == null) {
-      debugPrint('Deepgram streaming unavailable: authenticated Supabase session required');
+      _lastStartError = 'Speech service is not signed in. Please sign in again.';
+      debugPrint(_lastStartError!);
       return false;
     }
-    if (!await _recorder.hasPermission()) return false;
 
     try {
+      final permission = await Permission.microphone.status;
+      if (!permission.isGranted) {
+        final requested = await Permission.microphone.request();
+        if (!requested.isGranted) {
+          _lastStartError = requested.isPermanentlyDenied
+              ? 'Microphone access is blocked in Android settings.'
+              : 'Microphone access was not granted.';
+          debugPrint(_lastStartError!);
+          return false;
+        }
+      }
+
+      // record has its own Android-side permission check. Do this after the
+      // runtime permission request so a stale plugin state cannot immediately
+      // turn into the generic "microphone did not start" message.
+      if (!await _recorder.hasPermission()) {
+        _lastStartError = 'Android granted microphone access, but the audio recorder could not acquire it.';
+        debugPrint(_lastStartError!);
+        return false;
+      }
+
       final tokenResponse = await client.functions
           .invoke('deepgram-token')
           .timeout(const Duration(seconds: 5));
-      final tokenData = Map<String, dynamic>.from(tokenResponse.data as Map);
+      final raw = tokenResponse.data;
+      if (raw is! Map) throw StateError('Deepgram token service returned an invalid response');
+      final tokenData = Map<String, dynamic>.from(raw);
       final token = tokenData['accessToken']?.toString();
       if (token == null || token.isEmpty) {
-        debugPrint('Deepgram token endpoint returned no access token');
-        return false;
+        throw StateError(tokenData['error']?.toString() ?? 'Deepgram token service returned no token');
       }
 
       _language = _normalizeLanguage(language);
@@ -83,39 +105,55 @@ class DeepgramTranscriptionService {
         'utterance_end_ms': '1000',
         'vad_events': 'true',
       };
+
       final uri = Uri.parse('wss://api.deepgram.com/v1/listen').replace(queryParameters: query);
       _socket = await WebSocket.connect(
         uri.toString(),
         headers: {'Authorization': 'Bearer $token'},
-      ).timeout(const Duration(seconds: 6));
+      ).timeout(const Duration(seconds: 7));
 
       _lastInterim = '';
       _finalBuffer = '';
       _socketSubscription = _socket!.listen(
         _handleSocketMessage,
-        onError: (Object error) => debugPrint('Deepgram WebSocket error: $error'),
+        onError: (Object error) {
+          debugPrint('Deepgram WebSocket error: $error');
+        },
         onDone: () {
-          if (_recording) debugPrint('Deepgram WebSocket closed unexpectedly');
+          if (_recording) {
+            _lastStartError = 'The live speech connection closed unexpectedly.';
+          }
         },
         cancelOnError: false,
       );
 
-      final stream = await _recorder.startStream(const RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: 16000,
-        numChannels: 1,
-      ));
-      _audioSubscription = stream.listen(
-        (data) {
-          if (_recording && _socket?.readyState == WebSocket.open) {
-            _socket!.add(data);
-          }
-        },
-        onError: (Object error) => debugPrint('Deepgram microphone stream error: $error'),
-      );
+      // Mark active immediately before attaching the recorder listener. This
+      // prevents the first PCM frame from being dropped during startup.
       _recording = true;
+      try {
+        final stream = await _recorder.startStream(const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+        ));
+        _audioSubscription = stream.listen(
+          (data) {
+            if (_recording && _socket?.readyState == WebSocket.open) {
+              _socket!.add(data);
+            }
+          },
+          onError: (Object error) => debugPrint('Deepgram microphone stream error: $error'),
+          cancelOnError: false,
+        );
+      } catch (e) {
+        _recording = false;
+        _lastStartError = 'The Android microphone recorder could not start: $e';
+        rethrow;
+      }
+
       return true;
     } catch (e) {
+      _lastStartError ??= 'Could not start live speech recognition: $e';
       debugPrint('Deepgram streaming start failed: $e');
       await _cleanup();
       return false;
@@ -145,48 +183,47 @@ class DeepgramTranscriptionService {
     if (message is! String) return;
     try {
       final data = jsonDecode(message);
-      if (data is! Map) return;
-      if (data['type'] == 'Results') {
-        final alternative = data['channel']?['alternatives']?[0];
-        if (alternative is! Map) return;
-        final text = alternative['transcript']?.toString().trim() ?? '';
-        if (text.isEmpty) return;
-        final confidence = (alternative['confidence'] as num?)?.toDouble() ?? 0.0;
-        final isFinal = data['is_final'] == true;
-        final speechFinal = data['speech_final'] == true;
-        final language = data['channel']?['alternatives']?[0]?['detected_language']?.toString() ?? _language;
+      if (data is! Map || data['type'] != 'Results') return;
+      final channel = data['channel'];
+      final alternatives = channel is Map ? channel['alternatives'] : null;
+      final alternative = alternatives is List && alternatives.isNotEmpty ? alternatives.first : null;
+      if (alternative is! Map) return;
 
-        if (isFinal) {
-          // Deepgram sends rolling final segments. Keep a complete utterance
-          // buffer while exposing the current segment immediately to the UI.
-          _finalBuffer = _finalBuffer.isEmpty ? text : '$_finalBuffer $text';
-          _lastInterim = '';
-        } else {
-          _lastInterim = text;
+      final text = alternative['transcript']?.toString().trim() ?? '';
+      if (text.isEmpty) return;
+      final confidence = (alternative['confidence'] as num?)?.toDouble() ?? 0.0;
+      final isFinal = data['is_final'] == true;
+      final speechFinal = data['speech_final'] == true;
+      final language = alternative['detected_language']?.toString() ?? _language;
+
+      if (isFinal) {
+        _finalBuffer = _finalBuffer.isEmpty ? text : '$_finalBuffer $text';
+        _lastInterim = '';
+      } else {
+        _lastInterim = text;
+      }
+
+      _controller.add(DeepgramTranscriptResult(
+        transcript: text,
+        language: _displayLanguage(language),
+        confidence: confidence,
+        isFinal: isFinal,
+        speechFinal: speechFinal,
+      ));
+
+      if (speechFinal) {
+        final complete = _finalBuffer.trim().isNotEmpty ? _finalBuffer.trim() : text;
+        if (complete.isNotEmpty && complete != text) {
+          _controller.add(DeepgramTranscriptResult(
+            transcript: complete,
+            language: _displayLanguage(language),
+            confidence: confidence,
+            isFinal: true,
+            speechFinal: true,
+          ));
         }
-
-        _controller.add(DeepgramTranscriptResult(
-          transcript: text,
-          language: _displayLanguage(language),
-          confidence: confidence,
-          isFinal: isFinal,
-          speechFinal: speechFinal,
-        ));
-
-        if (speechFinal) {
-          final complete = _finalBuffer.trim().isNotEmpty ? _finalBuffer.trim() : text;
-          if (complete.isNotEmpty && complete != text) {
-            _controller.add(DeepgramTranscriptResult(
-              transcript: complete,
-              language: _displayLanguage(language),
-              confidence: confidence,
-              isFinal: true,
-              speechFinal: true,
-            ));
-          }
-          _finalBuffer = '';
-          _lastInterim = '';
-        }
+        _finalBuffer = '';
+        _lastInterim = '';
       }
     } catch (e) {
       debugPrint('Deepgram result parse failed: $e');
