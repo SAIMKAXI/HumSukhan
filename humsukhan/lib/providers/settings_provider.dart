@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -122,22 +123,29 @@ class SettingsProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
-    if (SupabaseService.instance.isAuthenticated) {
-      try {
-        final cloudSettings = await DatabaseService.instance.fetchSettings(SupabaseService.instance.userId);
-        if (cloudSettings != null && cloudSettings.isNotEmpty) {
-          _applySettings(cloudSettings);
-          await _persistAllLocal(prefs);
-        } else {
-          await _saveToCloud();
-        }
-      } catch (e) {
-        debugPrint('Settings cloud load error: $e');
-      }
-    }
-
+    // Local settings are sufficient for the first frame and for startup
+    // routing. Cloud synchronization is explicitly off the critical path.
     _isLoaded = true;
     notifyListeners();
+
+    unawaited(syncFromCloud());
+  }
+
+  /// Refreshes remote settings without blocking local startup.
+  Future<void> syncFromCloud() async {
+    if (!SupabaseService.instance.isAuthenticated) return;
+    try {
+      final cloudSettings = await DatabaseService.instance.fetchSettings(SupabaseService.instance.userId);
+      if (cloudSettings != null && cloudSettings.isNotEmpty) {
+        _applySettings(cloudSettings);
+        await _persistAllLocal();
+        notifyListeners();
+      } else {
+        await _saveToCloud();
+      }
+    } catch (e) {
+      debugPrint('Settings cloud sync error: $e');
+    }
   }
 
   Future<void> _persistAllLocal([SharedPreferences? existing]) async {
@@ -168,8 +176,7 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> _persistChange(String key, dynamic value) async {
     await _save(key, value);
-    if (key == 'allowedAlerts') await _saveToCloud();
-    else await _saveToCloud();
+    await _saveToCloud();
   }
 
   void toggleDarkMode() { _isDarkMode = !_isDarkMode; notifyListeners(); _persistChange('darkMode', _isDarkMode); }
