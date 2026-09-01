@@ -1,8 +1,12 @@
-/// Shared application infrastructure.
-///
-/// Core owns cross-cutting concerns only: navigation, localization, theme,
-/// shared models, shared widgets, and reusable platform/service adapters.
-/// Feature-specific business logic should stay inside its module.
+/// Shared application infrastructure only.
 export '../../navigation/app_router.dart';
 export '../../l10n/app_strings.dart';
 export '../../theme/app_theme.dart';
+export '../../models/models.dart';
+export '../../widgets/reusable_widgets.dart';
+export '../../widgets/main_scaffold.dart';
+export '../../providers/connectivity_provider.dart';
+export '../../providers/user_provider.dart';
+export '../../providers/quick_reply_provider.dart';
+export '../../services/database_service.dart';
+export '../../services/supabase_service.dart';
