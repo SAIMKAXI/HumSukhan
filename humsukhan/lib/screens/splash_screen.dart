@@ -75,7 +75,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           ),
           const SizedBox(height: 32),
           Semantics(
-            label: s.loading,
+            label: s.appName,
             child: SizedBox(
               width: 88,
               child: ClipRRect(
