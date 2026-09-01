@@ -18,7 +18,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   StreamSubscription? _speechSubscription;
-  bool _speakerPressActive = false;
+  bool _speakerActionInFlight = false;
   int _speakerTurnToken = 0;
 
   @override
@@ -46,52 +46,56 @@ class _EverydayScreenState extends State<EverydayScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _beginSpeakerPress() async {
-    if (!mounted || _speakerPressActive) return;
+  Future<void> _toggleSpeakerListening() async {
+    if (!mounted || _speakerActionInFlight) return;
     final conv = context.read<ConversationProvider>();
     if (conv.state != ConversationState.active) return;
 
     final speech = context.read<SpeechProvider>();
-    _speakerPressActive = true;
-    _speakerTurnToken++;
-    final token = _speakerTurnToken;
-    // Recognition is bilingual in Conversational Mode. The app UI language
-    // does not constrain the language spoken by the hearing speaker.
-    conv.beginSpeakerTurn(language: 'Auto');
-    if (mounted) setState(() {});
+    _speakerActionInFlight = true;
+    final token = ++_speakerTurnToken;
 
-    await speech.startListening(language: 'Auto');
+    try {
+      if (speech.isListening) {
+        await speech.stopListening();
+        if (!mounted || token != _speakerTurnToken) return;
+        conv.commitSpeakerTurn();
+        _scrollToBottom();
+        return;
+      }
 
-    if (!speech.isListening && mounted && token == _speakerTurnToken) {
-      _speakerPressActive = false;
-      conv.commitSpeakerTurn();
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('The speaker microphone could not start. Check microphone permission or the speech model.')),
-      );
+      conv.beginSpeakerTurn(language: 'Auto');
+      if (mounted) setState(() {});
+
+      // Auto mode uses the low-latency Deepgram streaming recognizer. It
+      // explicitly requests/validates microphone access and has a platform
+      // speech fallback if the cloud stream cannot be established.
+      await speech.startListening(language: 'Auto');
+
+      if (!speech.isListening) {
+        final reason = speech.sttProvider.lastStartError;
+        conv.commitSpeakerTurn();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(reason ?? 'Live speech recognition could not be started.'),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } finally {
+      _speakerActionInFlight = false;
+      if (mounted) setState(() {});
     }
   }
 
-  Future<void> _endSpeakerPress() async {
-    if (!_speakerPressActive) return;
-    _speakerPressActive = false;
-    _speakerTurnToken++;
-    final speech = context.read<SpeechProvider>();
-
-    await speech.stopListening();
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    if (!mounted) return;
-
-    context.read<ConversationProvider>().commitSpeakerTurn();
-    setState(() {});
-    _scrollToBottom();
-  }
-
   Future<void> _stop() async {
-    _speakerPressActive = false;
     _speakerTurnToken++;
+    _speakerActionInFlight = true;
     await context.read<SpeechProvider>().stopListening();
     if (mounted) context.read<ConversationProvider>().stopConversation();
+    _speakerActionInFlight = false;
   }
 
   void _scrollToBottom() {
@@ -250,6 +254,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
   }
 
   Widget _buildSpeakerControls(BuildContext context, ConversationProvider conv, SettingsProvider settings, ThemeData theme) {
+    final busy = _speakerActionInFlight;
     return Material(
       color: theme.colorScheme.primary.withValues(alpha: .06),
       child: Padding(
@@ -263,9 +268,11 @@ class _EverydayScreenState extends State<EverydayScreen> {
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    conv.isListening
-                        ? 'Release when the speaker finishes'
-                        : 'Speaker: hold the microphone while talking',
+                    busy
+                        ? 'Starting speech recognition…'
+                        : conv.isListening
+                            ? 'Tap the microphone to stop'
+                            : 'Tap the microphone to start speaker captions',
                     style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                     textAlign: TextAlign.center,
                   ),
@@ -273,23 +280,39 @@ class _EverydayScreenState extends State<EverydayScreen> {
               ],
             ),
             const SizedBox(height: 10),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (_) => _beginSpeakerPress(),
-              onTapUp: (_) => _endSpeakerPress(),
-              onTapCancel: _endSpeakerPress,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                width: 78,
-                height: 78,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: conv.isListening ? theme.colorScheme.error : theme.colorScheme.primary,
-                  boxShadow: conv.isListening
-                      ? [BoxShadow(color: theme.colorScheme.error.withValues(alpha: .25), blurRadius: 16, spreadRadius: 2)]
-                      : [],
+            Semantics(
+              button: true,
+              label: conv.isListening ? 'Stop speaker microphone' : 'Start speaker microphone',
+              child: InkResponse(
+                radius: 52,
+                onTap: busy ? null : _toggleSpeakerListening,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  width: 78,
+                  height: 78,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: busy
+                        ? theme.colorScheme.surfaceContainerHighest
+                        : conv.isListening
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.primary,
+                    boxShadow: conv.isListening
+                        ? [BoxShadow(color: theme.colorScheme.error.withValues(alpha: .25), blurRadius: 16, spreadRadius: 2)]
+                        : [],
+                  ),
+                  child: busy
+                      ? SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(strokeWidth: 3, color: theme.colorScheme.primary),
+                        )
+                      : Icon(
+                          conv.isListening ? Icons.mic : Icons.mic_none,
+                          color: theme.colorScheme.onPrimary,
+                          size: 36,
+                        ),
                 ),
-                child: Icon(conv.isListening ? Icons.mic : Icons.mic_none, color: theme.colorScheme.onPrimary, size: 36),
               ),
             ),
             const SizedBox(height: 6),
@@ -319,7 +342,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
           const SizedBox(height: 24),
           Text(s.startConversation, style: theme.textTheme.headlineMedium, textAlign: TextAlign.center),
           const SizedBox(height: 12),
-          Text('Start a conversation, then the speaker can hold the microphone for each turn.', style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
+          Text('Start a conversation, then tap the microphone whenever the speaker talks.', style: theme.textTheme.bodyLarge, textAlign: TextAlign.center),
           const SizedBox(height: 32),
           PrimaryActionButton(label: s.startListening, icon: Icons.chat, onPressed: _startConversation),
         ]),
