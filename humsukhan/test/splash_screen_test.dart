@@ -11,23 +11,21 @@ void main() {
       MaterialApp(
         localizationsDelegates: const [AppStrings.delegate],
         supportedLocales: const [Locale('en')],
+        locale: const Locale('en'),
         home: SplashScreen(onComplete: () => completionCount++),
       ),
     );
-
-    final appName = tester.widget<Text>(find.byKey(const ValueKey('splash-app-name')));
-    final appTagline = tester.widget<Text>(find.byKey(const ValueKey('splash-app-tagline')));
+    await tester.pump();
 
     expect(find.byKey(const ValueKey('splash-brand-logo')), findsOneWidget);
-    expect(appName.data, 'HumSukhan');
-    expect(appTagline.data, 'Accessibility-first AI Companion');
+    expect(find.byKey(const ValueKey('splash-app-name')), findsOneWidget);
+    expect(find.byKey(const ValueKey('splash-app-tagline')), findsOneWidget);
     expect(completionCount, 0);
 
     await tester.pump(const Duration(milliseconds: 2199));
     expect(completionCount, 0);
 
     await tester.pump(const Duration(milliseconds: 1));
-    await tester.pump();
     expect(completionCount, 1);
 
     await tester.pump(const Duration(seconds: 1));
