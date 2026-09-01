@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -41,13 +42,8 @@ Future<void> environmentalMonitoringBackgroundMain() async {
   await channel.invokeMethod('pipelineState', {'state': started ? 'ACTIVE' : 'ERROR'});
 }
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await SupabaseService.instance.initialize();
-  } catch (e) {
-    debugPrint('Supabase init failed: $e');
-  }
   runApp(const HumSukhanApp());
 }
 
@@ -61,11 +57,24 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
   late final AuthProvider _authProvider;
   bool _showSplash = true;
   String _lastLanguage = 'en';
+  String? _lastSyncedSettingsUserId;
 
   @override
   void initState() {
     super.initState();
     _authProvider = AuthProvider()..addListener(_handleAuthChanged);
+    unawaited(_initializeStartupServices());
+  }
+
+  Future<void> _initializeStartupServices() async {
+    try {
+      await SupabaseService.instance.initialize().timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint('Supabase startup initialization failed: $e');
+    }
+
+    if (!mounted) return;
+    _authProvider.refresh();
   }
 
   void _handleAuthChanged() {
@@ -207,17 +216,17 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
             });
           }
 
-          // This setter only records the current settings provider; it has no
-          // side effects and is safe to refresh whenever the account subtree is rebuilt.
-          context.read<EnvironmentalProvider>().setSettingsProvider(settings);
-
-          if (!settings.isLoaded) {
-            return MaterialApp(
-              debugShowCheckedModeBanner: false,
-              theme: AppTheme.lightTheme(fontFamily: 'NotoSans'),
-              home: const Scaffold(body: Center(child: CircularProgressIndicator())),
-            );
+          if (!auth.isAuthenticated) {
+            _lastSyncedSettingsUserId = null;
+          } else if (auth.userId != _lastSyncedSettingsUserId) {
+            _lastSyncedSettingsUserId = auth.userId;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              unawaited(context.read<SettingsProvider>().syncFromCloud());
+            });
           }
+
+          context.read<EnvironmentalProvider>().setSettingsProvider(settings);
 
           final appLocale = Locale(settings.appLanguage);
           const delegates = [AppStrings.delegate, GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate];
@@ -275,6 +284,11 @@ class _AccountGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final settings = context.watch<SettingsProvider>();
+    if (!settings.isLoaded) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (!auth.isAuthenticated) return const AuthScreen();
     if (!settings.isOnboardingComplete) return const OnboardingScreen();
     return const MainScaffold();
