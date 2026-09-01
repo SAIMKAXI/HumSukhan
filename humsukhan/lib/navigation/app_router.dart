@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
-import '../screens/screens.dart';
-import '../widgets/main_scaffold.dart';
+import '../modules/auth/auth.dart';
+import '../modules/onboarding/onboarding.dart';
+import '../modules/home/home.dart';
+import '../modules/conversation/conversation.dart';
+import '../modules/professional/professional.dart';
+import '../modules/environmental_alerts/environmental_alerts.dart';
+import '../modules/settings/settings.dart';
+import '../modules/splash/splash.dart';
 import '../services/auth_service.dart';
 
 class AppRouter {
@@ -13,8 +19,9 @@ class AppRouter {
   static const String sessionLive = '/session/live';
   static const String environmental = '/environmental';
   static const String settings = '/settings';
+  static const String splash = '/splash';
 
-  static bool _requiresAuthentication(String? name) => name != null && name != onboarding && name != auth;
+  static bool _requiresAuthentication(String? name) => name != null && name != onboarding && name != auth && name != splash;
 
   static Route<dynamic> generateRoute(RouteSettings routeSettings) {
     final authenticated = AuthService.instance.isAuthenticated;
@@ -23,6 +30,8 @@ class AppRouter {
     }
 
     switch (routeSettings.name) {
+      case splash:
+        return MaterialPageRoute(builder: (_) => const SplashScreen());
       case onboarding:
         if (!authenticated) return MaterialPageRoute(builder: (_) => const AuthScreen());
         return MaterialPageRoute(builder: (_) => const OnboardingScreen());
