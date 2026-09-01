@@ -90,22 +90,22 @@ void main() {
 
     test('fetchSessions returns empty list when unavailable', () async {
       final db = DatabaseService.instance;
-      expect(await db.fetchSessions('test-user'), isEmpty);
+      expect(await db.fetchSessions(), isEmpty);
     });
 
     test('fetchFolders returns empty list when unavailable', () async {
       final db = DatabaseService.instance;
-      expect(await db.fetchFolders('test-user'), isEmpty);
+      expect(await db.fetchFolders(), isEmpty);
     });
 
     test('fetchQuickReplies returns empty list when unavailable', () async {
       final db = DatabaseService.instance;
-      expect(await db.fetchQuickReplies('test-user'), isEmpty);
+      expect(await db.fetchQuickReplies(), isEmpty);
     });
 
     test('cleanupExpiredSessions returns 0 when unavailable', () async {
       final db = DatabaseService.instance;
-      expect(await db.cleanupExpiredSessions('test-user'), 0);
+      expect(await db.cleanupExpiredSessions(), 0);
     });
 
     test('deleteSession does not throw when unavailable', () async {
@@ -120,7 +120,7 @@ void main() {
 
     test('deleteAllUserData does not throw when unavailable', () async {
       final db = DatabaseService.instance;
-      await db.deleteAllUserData('test-user');
+      await db.deleteAllUserData();
     });
   });
 
