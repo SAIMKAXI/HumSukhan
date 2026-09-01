@@ -15,8 +15,21 @@ class AuthService {
   bool get isAuthenticated => _supabase.isAuthenticated;
   Stream<AuthState> get onAuthStateChange => _supabase.onAuthStateChange;
 
+  static final RegExp _emailPattern =
+      RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
   static final RegExp _strongEightCharPassword =
       RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8}$');
+
+  static String normalizeEmail(String email) => email.trim().toLowerCase();
+
+  static String? validateEmail(String email) {
+    final normalized = normalizeEmail(email);
+    if (normalized.isEmpty) return 'Please enter your email address.';
+    if (!_emailPattern.hasMatch(normalized)) {
+      return 'Please enter a valid email address.';
+    }
+    return null;
+  }
 
   static String? validatePassword(String password) {
     if (password.length != 8) {
@@ -39,30 +52,32 @@ class AuthService {
       );
     }
 
+    final emailError = validateEmail(email);
+    if (emailError != null) return AuthResult.failure(emailError);
     final passwordError = validatePassword(password);
     if (passwordError != null) return AuthResult.failure(passwordError);
 
-    final normalizedEmail = email.trim().toLowerCase();
+    final normalizedEmail = normalizeEmail(email);
     final normalizedName = name?.trim();
 
     try {
-      // Create the account through the trusted Edge Function with email_confirm=true.
-      // This intentionally bypasses email verification for the current prototype.
-      await _supabase.client!.functions.invoke(
-        'create-account',
-        body: {
-          'email': normalizedEmail,
-          'password': password,
-          if (normalizedName?.isNotEmpty == true) 'name': normalizedName,
-        },
-      );
+      await _supabase.client!.functions
+          .invoke(
+            'create-account',
+            body: {
+              'email': normalizedEmail,
+              'password': password,
+              if (normalizedName?.isNotEmpty == true) 'name': normalizedName,
+            },
+          )
+          .timeout(const Duration(seconds: 20));
 
-      // The function creates/confirms the account; sign in immediately so the app
-      // always receives a real authenticated session before navigating to Home.
-      final response = await _supabase.auth!.signInWithPassword(
-        email: normalizedEmail,
-        password: password,
-      );
+      final response = await _supabase.auth!
+          .signInWithPassword(
+            email: normalizedEmail,
+            password: password,
+          )
+          .timeout(const Duration(seconds: 20));
       final user = response.user;
       if (user == null || response.session == null) {
         return AuthResult.failure(
@@ -73,10 +88,13 @@ class AuthService {
       await ensureProfile(user, name: normalizedName);
       return AuthResult.success(user, hasActiveSession: true);
     } on AuthException catch (e) {
-      return AuthResult.failure(e.message);
-    } catch (e) {
-      debugPrint('Sign up error: $e');
+      return AuthResult.failure(_friendlyAuthMessage(e));
+    } on FunctionException catch (e) {
+      debugPrint('Sign up function error: ${e.details}');
       return AuthResult.failure('Account creation failed. Please try again.');
+    } on Exception catch (e) {
+      debugPrint('Sign up error: $e');
+      return AuthResult.failure('Account creation failed. Check your connection and try again.');
     }
   }
 
@@ -90,11 +108,17 @@ class AuthService {
       );
     }
 
+    final emailError = validateEmail(email);
+    if (emailError != null) return AuthResult.failure(emailError);
+    if (password.isEmpty) return AuthResult.failure('Please enter your password.');
+
     try {
-      final response = await _supabase.auth!.signInWithPassword(
-        email: email.trim(),
-        password: password,
-      );
+      final response = await _supabase.auth!
+          .signInWithPassword(
+            email: normalizeEmail(email),
+            password: password,
+          )
+          .timeout(const Duration(seconds: 20));
       final user = response.user;
       if (user == null || response.session == null) {
         return AuthResult.failure('Sign in failed: no active session was returned.');
@@ -103,14 +127,13 @@ class AuthService {
       await ensureProfile(user);
       return AuthResult.success(user, hasActiveSession: true);
     } on AuthException catch (e) {
-      return AuthResult.failure(e.message);
-    } catch (e) {
+      return AuthResult.failure(_friendlyAuthMessage(e));
+    } on Exception catch (e) {
       debugPrint('Sign in error: $e');
-      return AuthResult.failure('Sign in failed. Please try again.');
+      return AuthResult.failure('Sign in failed. Check your connection and try again.');
     }
   }
 
-  /// Ensure a profile exists for the authenticated Supabase user.
   Future<void> ensureProfile(User user, {String? name}) async {
     if (!isAvailable) return;
     try {
@@ -137,7 +160,9 @@ class AuthService {
       );
     }
     try {
-      final response = await _supabase.auth!.signInAnonymously();
+      final response = await _supabase.auth!
+          .signInAnonymously()
+          .timeout(const Duration(seconds: 20));
       if (response.user != null) {
         return AuthResult.success(
           response.user!,
@@ -146,30 +171,72 @@ class AuthService {
       }
       return AuthResult.failure('Anonymous sign in failed.');
     } on AuthException catch (e) {
-      return AuthResult.failure(e.message);
-    } catch (e) {
+      return AuthResult.failure(_friendlyAuthMessage(e));
+    } on Exception catch (e) {
       debugPrint('Anonymous sign in error: $e');
-      return AuthResult.failure('Anonymous sign in failed.');
+      return AuthResult.failure('Anonymous sign in failed. Check your connection and try again.');
+    }
+  }
+
+  Future<AuthResult> resetPassword(String email) async {
+    if (!isAvailable) {
+      return AuthResult.failure(
+        'Authentication unavailable. Please check your connection and try again.',
+      );
+    }
+    final emailError = validateEmail(email);
+    if (emailError != null) return AuthResult.failure(emailError);
+
+    try {
+      await _supabase.auth!
+          .resetPasswordForEmail(normalizeEmail(email))
+          .timeout(const Duration(seconds: 20));
+      return const AuthResult.success(null);
+    } on AuthException catch (e) {
+      return AuthResult.failure(_friendlyAuthMessage(e));
+    } on Exception catch (e) {
+      debugPrint('Password reset error: $e');
+      return AuthResult.failure('Unable to send the reset email. Check your connection and try again.');
+    }
+  }
+
+  Future<AuthResult> updatePassword(String password) async {
+    if (!isAvailable) {
+      return AuthResult.failure(
+        'Authentication unavailable. Please check your connection and try again.',
+      );
+    }
+    final passwordError = validatePassword(password);
+    if (passwordError != null) return AuthResult.failure(passwordError);
+
+    try {
+      final response = await _supabase.auth!
+          .updateUser(UserAttributes(password: password))
+          .timeout(const Duration(seconds: 20));
+      final user = response.user ?? currentUser;
+      if (user == null) return AuthResult.failure('Password updated, but your session is unavailable.');
+      return AuthResult.success(user, hasActiveSession: isAuthenticated);
+    } on AuthException catch (e) {
+      return AuthResult.failure(_friendlyAuthMessage(e));
+    } on Exception catch (e) {
+      debugPrint('Password update error: $e');
+      return AuthResult.failure('Unable to update your password. Check your connection and try again.');
     }
   }
 
   Future<void> signOut() async {
     if (!isAvailable) return;
     try {
-      await _supabase.auth!.signOut();
+      await _supabase.auth!.signOut().timeout(const Duration(seconds: 15));
     } catch (e) {
       debugPrint('Sign out error: $e');
     }
   }
 
-  Future<bool> resetPassword(String email) async {
-    if (!isAvailable) return false;
-    try {
-      await _supabase.auth!.resetPasswordForEmail(email.trim());
-      return true;
-    } catch (_) {
-      return false;
-    }
+  String _friendlyAuthMessage(AuthException exception) {
+    final message = exception.message.trim();
+    if (message.isEmpty) return 'Authentication failed. Please try again.';
+    return message;
   }
 }
 
