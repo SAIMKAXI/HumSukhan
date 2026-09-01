@@ -284,6 +284,7 @@ class _AccountGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final settings = context.watch<SettingsProvider>();
+    if (auth.isPasswordRecovery) return const AuthScreen(recoveryMode: true);
     if (!settings.isLoaded) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
