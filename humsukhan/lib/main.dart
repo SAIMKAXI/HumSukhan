@@ -57,6 +57,7 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
   late final AuthProvider _authProvider;
   bool _showSplash = true;
   String _lastLanguage = 'en';
+  String? _lastSyncedSettingsUserId;
 
   @override
   void initState() {
@@ -74,19 +75,10 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
 
     if (!mounted) return;
     _authProvider.refresh();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(context.read<SettingsProvider>().syncFromCloud());
-    });
   }
 
   void _handleAuthChanged() {
-    if (!mounted) return;
-    setState(() {});
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(context.read<SettingsProvider>().syncFromCloud());
-    });
+    if (mounted) setState(() {});
   }
 
   @override
@@ -221,6 +213,16 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
             _lastLanguage = settings.appLanguage;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) context.read<QuickReplyProvider>().switchLanguage(settings.appLanguage);
+            });
+          }
+
+          if (!auth.isAuthenticated) {
+            _lastSyncedSettingsUserId = null;
+          } else if (auth.userId != _lastSyncedSettingsUserId) {
+            _lastSyncedSettingsUserId = auth.userId;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              unawaited(context.read<SettingsProvider>().syncFromCloud());
             });
           }
 
