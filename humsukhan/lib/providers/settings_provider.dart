@@ -15,6 +15,7 @@ class SettingsProvider extends ChangeNotifier {
   int _defaultRetentionDays = 7;
   bool _legacyOnboardingComplete = false, _monitoringEnabled = false;
   bool _isLoaded = false;
+  bool _disposed = false;
   final Set<String> _onboardedUsers = <String>{};
   final Map<String, bool> _allowedAlerts = {
     'Fire Alarm': true, 'Smoke Alarm': true, 'Siren': true, 'Doorbell': true,
@@ -90,6 +91,8 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    if (_disposed) return;
+
     _isDarkMode = prefs.getBool('darkMode') ?? false;
     _isHighContrast = prefs.getBool('highContrast') ?? false;
     _isLargeText = prefs.getBool('largeText') ?? false;
@@ -123,33 +126,34 @@ class SettingsProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // Local settings are sufficient for the first frame and for startup
-    // routing. Cloud synchronization is explicitly off the critical path.
+    // Local settings are sufficient for startup. Remote synchronization is
+    // deliberately moved off the first-frame critical path.
     _isLoaded = true;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
 
     unawaited(syncFromCloud());
   }
 
-  /// Refreshes remote settings without blocking local startup.
   Future<void> syncFromCloud() async {
-    if (!SupabaseService.instance.isAuthenticated) return;
+    if (_disposed || !SupabaseService.instance.isAuthenticated) return;
     try {
       final cloudSettings = await DatabaseService.instance.fetchSettings(SupabaseService.instance.userId);
+      if (_disposed) return;
       if (cloudSettings != null && cloudSettings.isNotEmpty) {
         _applySettings(cloudSettings);
         await _persistAllLocal();
-        notifyListeners();
-      } else {
+        if (!_disposed) notifyListeners();
+      } else if (!_disposed) {
         await _saveToCloud();
       }
     } catch (e) {
-      debugPrint('Settings cloud sync error: $e');
+      if (!_disposed) debugPrint('Settings cloud sync error: $e');
     }
   }
 
   Future<void> _persistAllLocal([SharedPreferences? existing]) async {
     final prefs = existing ?? await SharedPreferences.getInstance();
+    if (_disposed) return;
     final data = _settingsPayload();
     for (final entry in data.entries) {
       final value = entry.value;
@@ -158,11 +162,13 @@ class SettingsProvider extends ChangeNotifier {
       if (value is int) await prefs.setInt(entry.key, value);
       if (value is String) await prefs.setString(entry.key, value);
       if (entry.key == 'allowedAlerts') await prefs.setString(entry.key, jsonEncode(value));
+      if (_disposed) return;
     }
   }
 
   Future<void> _save(String key, dynamic value) async {
     final prefs = await SharedPreferences.getInstance();
+    if (_disposed) return;
     if (value is bool) await prefs.setBool(key, value);
     else if (value is double) await prefs.setDouble(key, value);
     else if (value is int) await prefs.setInt(key, value);
@@ -170,7 +176,7 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   Future<void> _saveToCloud() async {
-    if (!SupabaseService.instance.isAuthenticated) return;
+    if (_disposed || !SupabaseService.instance.isAuthenticated) return;
     await DatabaseService.instance.upsertSettings(_settingsPayload());
   }
 
@@ -207,7 +213,7 @@ class SettingsProvider extends ChangeNotifier {
     if (userId.isEmpty) return;
     _onboardedUsers.add(userId);
     await _save('onboardingComplete:$userId', true);
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<void> completeOnboarding() async {
@@ -217,6 +223,7 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> clearLocalSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    if (_disposed) return;
     const keys = [
       'darkMode', 'highContrast', 'largeText', 'captionTextSize', 'hapticAlerts',
       'visualAlerts', 'flashAlerts', 'screenFlashAlerts', 'simplifiedLanguage',
@@ -241,6 +248,12 @@ class SettingsProvider extends ChangeNotifier {
     _monitoringEnabled = false;
     _onboardedUsers.clear();
     for (final key in _allowedAlerts.keys) _allowedAlerts[key] = true;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
