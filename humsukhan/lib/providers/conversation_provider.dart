@@ -73,7 +73,7 @@ class ConversationProvider extends ChangeNotifier {
       }
 
       final merged = byId.values.toList()
-        ..sort((a, b) => (b['savedAt']?.toString() ?? '').compareTo(a['savedAt']?.toString() ?? ''));
+        ..sort((a, b) => (b['savedAt']?.toString() ?? '').compareTo(b['savedAt']?.toString() ?? ''));
       await prefs.setString('everydayConversations', jsonEncode(merged));
       debugPrint('Everyday conversations synced from cloud: ${saved.length}');
     } catch (e) {
@@ -199,21 +199,14 @@ class ConversationProvider extends ChangeNotifier {
     final value = text.trim();
     if (value.isEmpty || _activeSpeakerDraft == null || _state != ConversationState.active) return;
     _currentLanguage = language;
-    _activeSpeakerDraft = _activeSpeakerDraft!.copyWith(
+    _activeSpeakerDraft = Caption(
+      id: _activeSpeakerDraft!.id,
       text: value,
       speaker: 'Speaker 1',
+      timestamp: _activeSpeakerDraft!.timestamp,
+      language: language,
       isPartial: true,
     );
-    if (_activeSpeakerDraft!.language != language) {
-      _activeSpeakerDraft = Caption(
-        id: _activeSpeakerDraft!.id,
-        text: value,
-        speaker: 'Speaker 1',
-        timestamp: _activeSpeakerDraft!.timestamp,
-        language: language,
-        isPartial: true,
-      );
-    }
     _currentPartial = _activeSpeakerDraft;
     notifyListeners();
   }
@@ -221,8 +214,12 @@ class ConversationProvider extends ChangeNotifier {
   void commitSpeakerTurn({bool notify = true}) {
     final deepgramFinal = DeepgramTranscriptionService.instance.lastFinalTranscript.trim();
     if (deepgramFinal.isNotEmpty && _activeSpeakerDraft != null) {
-      _activeSpeakerDraft = _activeSpeakerDraft!.copyWith(
+      _activeSpeakerDraft = Caption(
+        id: _activeSpeakerDraft!.id,
         text: deepgramFinal,
+        speaker: _activeSpeakerDraft!.speaker,
+        timestamp: _activeSpeakerDraft!.timestamp,
+        language: _activeSpeakerDraft!.language,
         isPartial: true,
       );
       _currentPartial = _activeSpeakerDraft;
@@ -235,7 +232,15 @@ class ConversationProvider extends ChangeNotifier {
     _currentPartial = null;
     _isListening = false;
     if (draft != null && draft.text.trim().isNotEmpty) {
-      final committed = draft.copyWith(text: draft.text.trim(), isPartial: false);
+      final committed = Caption(
+        id: draft.id,
+        text: draft.text.trim(),
+        speaker: draft.speaker,
+        timestamp: draft.timestamp,
+        language: draft.language,
+        isPartial: false,
+        isOwn: draft.isOwn,
+      );
       _captions.add(committed);
       _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
       _lastCommittedAt = committed.timestamp;
@@ -248,10 +253,6 @@ class ConversationProvider extends ChangeNotifier {
   void addPartialCaption(String text, {String speaker = 'Speaker 1', String language = 'English'}) {
     final value = text.trim();
     if (value.isEmpty || _state != ConversationState.active) return;
-
-    // Legacy callers now use the same hidden-draft semantics as the live
-    // Conversation flow. Interim text never becomes a visible caption until
-    // finalizeCaption/commitSpeakerTurn is called.
     final existing = _currentPartial;
     if (existing == null || existing.speaker != speaker) {
       _partialCommitTimer?.cancel();
@@ -263,10 +264,14 @@ class ConversationProvider extends ChangeNotifier {
         isPartial: true,
       );
     } else {
-      _currentPartial = existing.copyWith(
+      _currentPartial = Caption(
+        id: existing.id,
         text: value,
+        speaker: existing.speaker,
+        timestamp: existing.timestamp,
         language: language,
         isPartial: true,
+        isOwn: existing.isOwn,
       );
     }
     _currentLanguage = language;
@@ -278,13 +283,24 @@ class ConversationProvider extends ChangeNotifier {
     if (value.isEmpty || _state != ConversationState.active) return;
     _partialCommitTimer?.cancel();
     _partialCommitTimer = null;
+
     if (_activeSpeakerDraft != null && _activeSpeakerDraft!.speaker == speaker) {
       updateSpeakerTurn(value, language: language);
       commitSpeakerTurn();
       return;
     }
+
     if (_currentPartial != null && _currentPartial!.speaker == speaker) {
-      final committed = _currentPartial!.copyWith(text: value, isPartial: false, language: language);
+      final draft = _currentPartial!;
+      final committed = Caption(
+        id: draft.id,
+        text: value,
+        speaker: draft.speaker,
+        timestamp: draft.timestamp,
+        language: language,
+        isPartial: false,
+        isOwn: draft.isOwn,
+      );
       _captions.add(committed);
       _currentPartial = null;
       _isolateFingerprint = _fingerprint(value, speaker);
@@ -296,6 +312,18 @@ class ConversationProvider extends ChangeNotifier {
     _currentLanguage = language;
     _sortCaptionsInPlace();
     notifyListeners();
+  }
+
+  void _appendFinalCaption(String text, String speaker, String language) {
+    final committed = Caption(
+      text: text.trim(),
+      speaker: speaker,
+      language: language,
+      isPartial: false,
+    );
+    _captions.add(committed);
+    _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
+    _lastCommittedAt = committed.timestamp;
   }
 
   void addOwnCaption(String text) {
@@ -321,27 +349,21 @@ class ConversationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _beginPartial(String text, String speaker, String language) {
-    _partialCommitTimer?.cancel();
-    final now = DateTime.now();
-    _currentPartial = Caption(text: text, speaker: speaker, language: language, timestamp: now, isPartial: true);
-  }
-
-  void _restartPartialCommitTimer() {
-    _partialCommitTimer?.cancel();
-    _partialCommitTimer = Timer(const Duration(seconds: 2), () {
-      // Kept only for legacy callers; live Conversation Mode explicitly commits
-      // on the microphone stop/final utterance path.
-    });
-  }
-
   void _commitCurrentPartial() {
     final partial = _currentPartial;
     _partialCommitTimer?.cancel();
     _partialCommitTimer = null;
     _currentPartial = null;
     if (partial == null || partial.text.trim().isEmpty) return;
-    final committed = partial.copyWith(text: partial.text.trim(), isPartial: false);
+    final committed = Caption(
+      id: partial.id,
+      text: partial.text.trim(),
+      speaker: partial.speaker,
+      timestamp: partial.timestamp,
+      language: partial.language,
+      isPartial: false,
+      isOwn: partial.isOwn,
+    );
     _captions.add(committed);
     _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
     _lastCommittedAt = committed.timestamp;
@@ -363,13 +385,9 @@ class ConversationProvider extends ChangeNotifier {
     _captions.sort((a, b) => a.timestamp.compareTo(b.timestamp));
   }
 
-  bool _startsSameUtterance(String previous, String next) {
-    if (previous.trim().isEmpty) return true;
-    return next.startsWith(previous) || previous.startsWith(next);
-  }
-
   String _fingerprint(String text, String speaker) => '$speaker|${text.trim().toLowerCase()}';
 
+  @override
   void dispose() {
     _partialCommitTimer?.cancel();
     super.dispose();
