@@ -216,8 +216,8 @@ class SettingsScreen extends StatelessWidget {
               if (SupabaseService.instance.isAuthenticated) {
                 await DatabaseService.instance.deleteAllUserData();
               }
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.clear();
+              await context.read<SettingsProvider>().clearLocalSettings();
+              await context.read<UserProvider>().clearLocalProfile();
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.allDataDeletedMessage)));
               }
