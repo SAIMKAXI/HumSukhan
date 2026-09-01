@@ -48,11 +48,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final strings = AppStrings.of(context);
-    final reducedMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-
-    if (reducedMotion && !_controller.isCompleted) {
-      _controller.value = 1;
-    }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
