@@ -21,6 +21,11 @@ class ConversationProvider extends ChangeNotifier {
   DateTime? _conversationStartedAt;
   String? _currentSessionId;
 
+  String get _savedConversationsKey {
+    final userId = SupabaseService.instance.userId;
+    return userId.isEmpty ? 'everydayConversations:guest' : 'everydayConversations:$userId';
+  }
+
   ConversationProvider() {
     unawaited(_syncSavedConversationsFromCloud());
   }
@@ -48,7 +53,7 @@ class ConversationProvider extends ChangeNotifier {
       if (saved.isEmpty) return;
 
       final prefs = await SharedPreferences.getInstance();
-      final raw = jsonDecode(prefs.getString('everydayConversations') ?? '[]');
+      final raw = jsonDecode(prefs.getString(_savedConversationsKey) ?? '[]');
       final local = <Map<String, dynamic>>[];
       if (raw is List) {
         for (final item in raw) {
@@ -74,7 +79,7 @@ class ConversationProvider extends ChangeNotifier {
 
       final merged = byId.values.toList()
         ..sort((a, b) => (b['savedAt']?.toString() ?? '').compareTo(a['savedAt']?.toString() ?? ''));
-      await prefs.setString('everydayConversations', jsonEncode(merged));
+      await prefs.setString(_savedConversationsKey, jsonEncode(merged));
       debugPrint('Everyday conversations synced from cloud: ${saved.length}');
     } catch (e) {
       debugPrint('Everyday conversation cloud sync error: $e');
@@ -117,7 +122,7 @@ class ConversationProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final conversations = List<dynamic>.from(
-        jsonDecode(prefs.getString('everydayConversations') ?? '[]'),
+        jsonDecode(prefs.getString(_savedConversationsKey) ?? '[]'),
       );
       final sorted = _sortedCaptions();
       final sessionId = _currentSessionId ?? 'everyday_${DateTime.now().millisecondsSinceEpoch}';
@@ -130,7 +135,7 @@ class ConversationProvider extends ChangeNotifier {
       };
       conversations.removeWhere((item) => item is Map && item['id']?.toString() == sessionId);
       conversations.add(session);
-      await prefs.setString('everydayConversations', jsonEncode(conversations));
+      await prefs.setString(_savedConversationsKey, jsonEncode(conversations));
 
       if (SupabaseService.instance.isAuthenticated) {
         final transcript = sorted.map((c) => '${c.speaker}: ${c.text}').join('\n');
