@@ -89,13 +89,17 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    _isLoading = true;
-    notifyListeners();
-    await _auth.signOut();
+    // Remove the authenticated UI immediately. Supabase revocation continues
+    // afterward; no protected screen remains reachable through this provider.
     _user = null;
     _error = null;
     _isLoading = false;
     notifyListeners();
+    try {
+      await _auth.signOut();
+    } catch (e) {
+      debugPrint('Sign out error: $e');
+    }
   }
 
   void clearError() { _error = null; notifyListeners(); }
