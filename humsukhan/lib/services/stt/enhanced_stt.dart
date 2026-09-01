@@ -26,6 +26,7 @@ class EnhancedSpeechProvider {
   String _platformLocale = 'en-US';
   String _platformLastText = '';
   String _lastEmittedPlatformText = '';
+  String _lastEmittedDeepgramFinal = '';
   String? _lastStartError;
   StreamSubscription<SherpaSTTResult>? _sherpaSubscription;
   StreamSubscription<DeepgramTranscriptResult>? _deepgramSubscription;
@@ -97,19 +98,35 @@ class EnhancedSpeechProvider {
     if (status == 'notListening' || status == 'done') {
       final pending = _platformLastText.trim();
       if (pending.isNotEmpty && pending != _lastEmittedPlatformText) {
-        _controller.add(SpeechResultEvent(
-          text: pending,
+        _emitResult(
+          pending,
           isFinal: true,
-          confidence: 0.8,
           language: _detectLanguage(pending, fallback: _currentLanguage),
-          isLive: true,
           mode: STTMode.platform,
-        ));
+        );
         _lastEmittedPlatformText = pending;
       }
       _platformLastText = '';
       _schedulePlatformRestart(delay: const Duration(milliseconds: 350));
     }
+  }
+
+  void _emitResult(
+    String text, {
+    required bool isFinal,
+    required String language,
+    required STTMode mode,
+  }) {
+    final value = text.trim();
+    if (value.isEmpty) return;
+    _controller.add(SpeechResultEvent(
+      text: value,
+      isFinal: isFinal,
+      confidence: 0.9,
+      language: language,
+      isLive: true,
+      mode: mode,
+    ));
   }
 
   void _schedulePlatformRestart({Duration delay = const Duration(milliseconds: 350)}) {
@@ -151,6 +168,7 @@ class EnhancedSpeechProvider {
       await stopListening();
     }
     _lastStartError = null;
+    _lastEmittedDeepgramFinal = '';
     _currentLanguage = language;
     _updateModeForLanguage(language);
     _listening = true;
@@ -163,24 +181,21 @@ class EnhancedSpeechProvider {
         await _deepgramSubscription?.cancel();
         _deepgramSubscription = _deepgram.onResult.listen((result) {
           if (!_listening) return;
+          // Interim results are intentionally hidden from Conversation Mode.
+          // Only a speech-final utterance becomes user-visible text.
+          if (!result.speechFinal) return;
           final detected = result.language == 'Auto'
               ? _detectLanguage(result.transcript, fallback: 'English')
               : result.language;
-          _controller.add(SpeechResultEvent(
-            text: result.transcript,
-            isFinal: result.isFinal,
-            confidence: result.confidence,
-            language: detected,
-            isLive: true,
-            mode: STTMode.platform,
-          ));
+          final text = result.transcript.trim();
+          if (text.isEmpty || text == _lastEmittedDeepgramFinal) return;
+          _lastEmittedDeepgramFinal = text;
+          _emitResult(text, isFinal: true, language: detected, mode: STTMode.platform);
         });
 
         final started = await _deepgram.start(language: 'auto');
         if (started) return;
 
-        // Cloud Auto is preferred, but it must never prevent the microphone
-        // from working. Fall back to Android speech recognition immediately.
         await _deepgramSubscription?.cancel();
         _deepgramSubscription = null;
         _deepgramAutoMode = false;
@@ -271,33 +286,46 @@ class EnhancedSpeechProvider {
     if (text.isEmpty) return;
     _platformLastText = text;
     if (result.finalResult) _lastEmittedPlatformText = text;
-    _controller.add(SpeechResultEvent(
-      text: text,
+    _emitResult(
+      text,
       isFinal: result.finalResult,
-      confidence: result.confidence,
       language: _detectLanguage(text, fallback: _currentLanguage),
-      isLive: true,
       mode: STTMode.platform,
-    ));
+    );
   }
 
   Future<void> stopListening() async {
     final useDeepgram = _deepgramAutoMode;
-    _listening = false;
     _platformRestartTimer?.cancel();
     _platformRestartTimer = null;
     _platformRestartInFlight = false;
-    _platformLastText = '';
-    _lastEmittedPlatformText = '';
     _sherpaSubscription?.cancel();
     _sherpaSubscription = null;
-    _deepgramAutoMode = false;
+
     if (useDeepgram) {
+      // Keep the logical listening state alive while Deepgram flushes its final
+      // speech_final packet. The caller can then commit exactly one bubble.
+      await _deepgram.stop();
+      final flushed = _deepgram.lastFinalTranscript.trim();
+      if (flushed.isNotEmpty && flushed != _lastEmittedDeepgramFinal) {
+        _lastEmittedDeepgramFinal = flushed;
+        _emitResult(
+          flushed,
+          isFinal: true,
+          language: _detectLanguage(flushed, fallback: _currentLanguage),
+          mode: STTMode.platform,
+        );
+      }
+      _listening = false;
+      _deepgramAutoMode = false;
       await _deepgramSubscription?.cancel();
       _deepgramSubscription = null;
-      await _deepgram.stop();
       return;
     }
+
+    _listening = false;
+    _platformLastText = '';
+    _lastEmittedPlatformText = '';
     if (_currentMode == STTMode.platform) {
       await _platformSTT.stop();
     } else if (_currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch) {
