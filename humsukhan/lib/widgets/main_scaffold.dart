@@ -57,7 +57,6 @@ class _MainScaffoldState extends State<MainScaffold> {
       ),
       drawer: null,
       floatingActionButton: null,
-      restorationScopeId: 'main_shell',
     );
   }
 }
