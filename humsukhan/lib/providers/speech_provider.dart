@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
@@ -126,7 +127,7 @@ class ResilientTtsProvider implements TtsProvider {
     _speaking = true;
     try {
       final completion = _player.onPlayerComplete.first;
-      await _player.play(BytesSource(result.audioBytes));
+      await _player.play(BytesSource(Uint8List.fromList(result.audioBytes)));
       await completion.timeout(const Duration(seconds: 45));
     } finally {
       _speaking = false;
