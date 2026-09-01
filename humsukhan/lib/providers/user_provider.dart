@@ -86,4 +86,11 @@ class UserProvider extends ChangeNotifier {
   Future<void> createProfile({required String name, String avatarEmoji = '👤', String? avatarData, String preferredLanguage = 'English', String tutorName = 'Sam'}) async {
     await saveProfile(UserProfile(name: name, avatarEmoji: avatarEmoji, avatarData: avatarData, preferredLanguage: preferredLanguage, tutorName: tutorName));
   }
+
+  Future<void> clearLocalProfile() async {
+    _profile = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('userProfile');
+    notifyListeners();
+  }
 }
