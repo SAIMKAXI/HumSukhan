@@ -1,0 +1,131 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const DEEPGRAM_KEYS = [
+  Deno.env.get("DEEPGRAM_API_KEY_1"),
+  Deno.env.get("DEEPGRAM_API_KEY_2"),
+  Deno.env.get("DEEPGRAM_API_KEY_3"),
+].filter((value): value is string => !!value?.trim());
+
+const SONIOX_KEYS = [
+  Deno.env.get("SONIOX_API_KEY_1"),
+  Deno.env.get("SONIOX_API_KEY_2"),
+  Deno.env.get("SONIOX_API_KEY_3"),
+  Deno.env.get("SONIOX_API_KEY_4"),
+].filter((value): value is string => !!value?.trim());
+
+let deepgramCursor = 0;
+let sonioxCursor = 0;
+
+function corsJson(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function detectProvider(language: string, text: string): "soniox" | "deepgram" {
+  const normalized = language.toLowerCase().trim();
+  if (normalized === "urdu" || normalized === "roman urdu") return "soniox";
+  if (normalized === "auto" && /[\u0600-\u06ff]/u.test(text)) return "soniox";
+  return "deepgram";
+}
+
+async function synthesizeDeepgram(text: string) {
+  if (DEEPGRAM_KEYS.length === 0) throw new Error("Deepgram TTS is not configured");
+  let lastStatus = 502;
+  for (let attempt = 0; attempt < DEEPGRAM_KEYS.length; attempt += 1) {
+    const index = (deepgramCursor + attempt) % DEEPGRAM_KEYS.length;
+    const key = DEEPGRAM_KEYS[index];
+    const response = await fetch(
+      "https://api.deepgram.com/v2/speak?model=flux-hannah-en&encoding=mp3",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text, speed: 1, expressivity: 0 }),
+      },
+    );
+    if (response.ok) {
+      deepgramCursor = index;
+      return {
+        provider: "deepgram",
+        mimeType: response.headers.get("content-type") ?? "audio/mpeg",
+        bytes: new Uint8Array(await response.arrayBuffer()),
+      };
+    }
+    lastStatus = response.status;
+    if (![401, 402, 403, 429].includes(response.status)) break;
+  }
+  throw new Error(`Deepgram TTS failed (${lastStatus})`);
+}
+
+async function synthesizeSoniox(text: string) {
+  if (SONIOX_KEYS.length === 0) throw new Error("Soniox TTS is not configured");
+  let lastStatus = 502;
+  for (let attempt = 0; attempt < SONIOX_KEYS.length; attempt += 1) {
+    const index = (sonioxCursor + attempt) % SONIOX_KEYS.length;
+    const key = SONIOX_KEYS[index];
+    const response = await fetch("https://tts-rt.soniox.com/tts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "tts-rt-v2",
+        language: "ur",
+        voice: "Daniel",
+        audio_format: "mp3",
+        text,
+        speed: 1,
+        reduce_silence: true,
+      }),
+    });
+    if (response.ok) {
+      sonioxCursor = index;
+      return {
+        provider: "soniox",
+        mimeType: response.headers.get("content-type") ?? "audio/mpeg",
+        bytes: new Uint8Array(await response.arrayBuffer()),
+      };
+    }
+    lastStatus = response.status;
+    if (![401, 402, 403, 429].includes(response.status)) break;
+  }
+  throw new Error(`Soniox TTS failed (${lastStatus})`);
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  try {
+    const auth = req.headers.get("Authorization");
+    if (!auth?.startsWith("Bearer ")) return corsJson({ error: "Unauthorized" }, 401);
+
+    const body = await req.json();
+    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    const language = typeof body?.language === "string" ? body.language : "auto";
+    if (!text) return corsJson({ error: "Text is required" }, 400);
+
+    const provider = detectProvider(language, text);
+    const result = provider === "soniox"
+      ? await synthesizeSoniox(text)
+      : await synthesizeDeepgram(text);
+
+    return corsJson({
+      provider: result.provider,
+      mimeType: result.mimeType,
+      audioBase64: btoa(String.fromCharCode(...result.bytes)),
+    });
+  } catch (error) {
+    console.error(error);
+    return corsJson({ error: error instanceof Error ? error.message : "Speech synthesis failed" }, 503);
+  }
+});
