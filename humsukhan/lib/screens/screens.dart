@@ -1,9 +1,10 @@
-export 'home_screen.dart';
-export 'everyday_screen.dart';
-export 'professional_screen.dart';
-export 'session_detail_screen.dart';
-export 'session_live_screen.dart';
-export 'environmental_screen.dart';
-export 'settings_screen.dart';
-export 'onboarding_screen.dart';
-export 'auth_screen.dart';
+// Backward-compatible screen barrel during the feature-first migration.
+// New code should import from lib/modules/<feature>/ instead.
+export '../modules/home/home.dart';
+export '../modules/conversation/conversation.dart';
+export '../modules/professional/professional.dart';
+export '../modules/environmental_alerts/environmental_alerts.dart';
+export '../modules/settings/settings.dart';
+export '../modules/onboarding/onboarding.dart';
+export '../modules/auth/auth.dart';
+export '../modules/splash/splash.dart';
