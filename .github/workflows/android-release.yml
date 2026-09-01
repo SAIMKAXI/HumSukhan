@@ -71,10 +71,12 @@ jobs:
           KEYSTORE_FILE="$RUNNER_TEMP/humsukhan-release.jks"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
           test -s "$KEYSTORE_FILE" || { echo 'ERROR: decoded keystore is empty.'; exit 1; }
-          echo "HUMSUKHAN_KEYSTORE_FILE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
-          echo 'HUMSUKHAN_KEYSTORE_PASSWORD=$HUMSUKHAN_KEYSTORE_PASSWORD' >> "$GITHUB_ENV"
-          echo 'HUMSUKHAN_KEY_ALIAS=$HUMSUKHAN_KEY_ALIAS' >> "$GITHUB_ENV"
-          echo 'HUMSUKHAN_KEY_PASSWORD=$HUMSUKHAN_KEY_PASSWORD' >> "$GITHUB_ENV"
+          {
+            echo "HUMSUKHAN_KEYSTORE_FILE=$KEYSTORE_FILE"
+            echo "HUMSUKHAN_KEYSTORE_PASSWORD=$HUMSUKHAN_KEYSTORE_PASSWORD"
+            echo "HUMSUKHAN_KEY_ALIAS=$HUMSUKHAN_KEY_ALIAS"
+            echo "HUMSUKHAN_KEY_PASSWORD=$HUMSUKHAN_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
 
       - name: Check Supabase build configuration
         env:
