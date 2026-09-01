@@ -45,7 +45,7 @@ class CloudTtsService {
     try {
       final response = await client.functions
           .invoke(
-            'speech-synthesis',
+            'speech-synthesis-v2',
             body: {
               'text': text,
               'language': language,
