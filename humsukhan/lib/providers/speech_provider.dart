@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
@@ -17,15 +18,6 @@ abstract class TtsProvider {
   void dispose();
 }
 
-/// Cloud-first TTS with a device-native offline fallback.
-///
-/// Online path:
-///   English -> Deepgram
-///   Urdu/Roman Urdu -> Soniox
-///
-/// If cloud synthesis fails (network, quota, auth, provider outage), Android/iOS
-/// native TTS is used instead. This keeps speech output available offline and on
-/// devices that have a suitable installed voice.
 class ResilientTtsProvider implements TtsProvider {
   final FlutterTts _native = FlutterTts();
   final AudioPlayer _player = AudioPlayer();
@@ -54,8 +46,6 @@ class ResilientTtsProvider implements TtsProvider {
 
   String _deliveryLanguage(String language, String text) {
     final normalized = language.toLowerCase().trim();
-    if (normalized == 'urdu' || normalized == 'roman urdu') return 'urdu';
-    if (normalized == 'english') return 'english';
     if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'urdu';
     const romanUrdu = {
       'aap', 'ap', 'aapko', 'aapki', 'aapke', 'aapka', 'kya', 'kyun', 'hai', 'hain',
@@ -63,8 +53,12 @@ class ResilientTtsProvider implements TtsProvider {
       'ham', 'hum', 'mera', 'meri', 'mere', 'apna', 'nahi', 'nahin', 'acha', 'achha',
       'theek', 'karo', 'karna', 'jana', 'jao', 'chahiye', 'bhi', 'par',
     };
-    final words = text.toLowerCase().replaceAll(RegExp(r"[^a-z0-9\s']"), ' ').split(RegExp(r'\s+'));
+    final words = text.toLowerCase()
+        .replaceAll(RegExp(r"[^a-z0-9\s']"), ' ')
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty);
     if (words.any(romanUrdu.contains)) return 'urdu';
+    if (normalized == 'urdu' || normalized == 'roman urdu') return 'urdu';
     return 'english';
   }
 
@@ -91,7 +85,11 @@ class ResilientTtsProvider implements TtsProvider {
           if (raw is! Map) continue;
           final locale = raw['locale']?.toString() ?? '';
           if (locale.toLowerCase().startsWith(prefix)) {
-            await _native.setVoice({'name': raw['name']?.toString() ?? '', 'locale': locale});
+            final voice = <String, String>{
+              'name': raw['name']?.toString() ?? '',
+              'locale': locale,
+            };
+            await _native.setVoice(voice);
             return true;
           }
         }
@@ -104,12 +102,18 @@ class ResilientTtsProvider implements TtsProvider {
   Future<void> _speakNative(String text, String deliveryLanguage) async {
     final ready = await _setNativeLocale(deliveryLanguage);
     if (!ready) {
-      throw StateError('No installed ${deliveryLanguage == 'urdu' ? 'Urdu' : 'English'} device voice is available');
+      throw StateError(
+        'No installed ${deliveryLanguage == 'urdu' ? 'Urdu' : 'English'} device voice is available',
+      );
     }
     _speaking = true;
-    await _native.speak(text);
-    while (_speaking) {
-      await Future<void>.delayed(const Duration(milliseconds: 75));
+    try {
+      await _native.speak(text);
+      while (_speaking) {
+        await Future<void>.delayed(const Duration(milliseconds: 75));
+      }
+    } finally {
+      _speaking = false;
     }
   }
 
@@ -129,6 +133,16 @@ class ResilientTtsProvider implements TtsProvider {
     }
   }
 
+  Future<bool> _isLikelyOnline() async {
+    try {
+      final result = await InternetAddress.lookup('api.deepgram.com')
+          .timeout(const Duration(seconds: 2));
+      return result.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   Future<void> speak(String text, {String language = 'English'}) async {
     final value = text.trim();
@@ -138,13 +152,13 @@ class ResilientTtsProvider implements TtsProvider {
     final deliveryLanguage = _deliveryLanguage(language, value);
     await stop();
 
-    // Cloud-first. If the device is offline or every provider key is exhausted,
-    // the cloud request fails quickly and the native engine takes over.
-    try {
-      await _speakCloud(value, deliveryLanguage);
-      return;
-    } catch (e) {
-      debugPrint('Cloud TTS unavailable; falling back to device TTS: $e');
+    if (await _isLikelyOnline()) {
+      try {
+        await _speakCloud(value, deliveryLanguage);
+        return;
+      } catch (e) {
+        debugPrint('Cloud TTS unavailable; falling back to device TTS: $e');
+      }
     }
 
     try {
