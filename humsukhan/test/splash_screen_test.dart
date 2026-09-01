@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:humsukhan/l10n/app_strings.dart';
 import 'package:humsukhan/screens/splash_screen.dart';
 
@@ -9,7 +11,12 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: const [AppStrings.delegate],
+        localizationsDelegates: const [
+          AppStrings.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
         supportedLocales: const [Locale('en'), Locale('ur')],
         home: SplashScreen(onComplete: () => completed = true),
       ),
@@ -28,7 +35,12 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         locale: const Locale('ur'),
-        localizationsDelegates: const [AppStrings.delegate],
+        localizationsDelegates: const [
+          AppStrings.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
         supportedLocales: const [Locale('en'), Locale('ur')],
         home: SplashScreen(onComplete: () {}),
       ),
