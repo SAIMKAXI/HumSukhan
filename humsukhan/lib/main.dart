@@ -207,8 +207,6 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
             });
           }
 
-          // This setter only records the current settings provider; it has no
-          // side effects and is safe to refresh whenever the account subtree is rebuilt.
           context.read<EnvironmentalProvider>().setSettingsProvider(settings);
 
           if (!settings.isLoaded) {
@@ -275,6 +273,7 @@ class _AccountGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final settings = context.watch<SettingsProvider>();
+    if (auth.isPasswordRecovery) return const AuthScreen(recoveryMode: true);
     if (!auth.isAuthenticated) return const AuthScreen();
     if (!settings.isOnboardingComplete) return const OnboardingScreen();
     return const MainScaffold();
