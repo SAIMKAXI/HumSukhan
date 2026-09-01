@@ -6,9 +6,6 @@ import 'package:humsukhan/screens/splash_screen.dart';
 
 void main() {
   testWidgets('Splash renders branded loading state', (WidgetTester tester) async {
-    final semanticsHandle = tester.ensureSemantics();
-    addTearDown(semanticsHandle.dispose);
-
     var completed = false;
     await tester.pumpWidget(
       MaterialApp(
@@ -24,15 +21,13 @@ void main() {
     );
     await tester.pump();
 
-    final startupFinder = find.bySemanticsIdentifier('humsukhan-startup');
+    final startupFinder = find.byKey(const ValueKey('humsukhan-startup'));
     expect(startupFinder, findsOneWidget);
-    expect(
-      tester.getSemantics(startupFinder),
-      matchesSemantics(
-        identifier: 'humsukhan-startup',
-        label: 'HumSukhan startup',
-      ),
-    );
+
+    final startupSemantics = tester.widget<Semantics>(startupFinder);
+    expect(startupSemantics.identifier, 'humsukhan-startup');
+    expect(startupSemantics.properties.label, 'HumSukhan startup');
+    expect(startupSemantics.properties.liveRegion, isTrue);
     expect(find.text('HumSukhan'), findsOneWidget);
     expect(find.text('Accessibility-first AI Companion'), findsOneWidget);
     expect(completed, isFalse);
