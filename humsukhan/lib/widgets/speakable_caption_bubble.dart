@@ -25,9 +25,11 @@ class SpeakableCaptionBubble extends StatelessWidget {
         ? Colors.black
         : AppTheme.captionBubbleColor(isOwn: caption.isOwn, isDarkMode: isDark);
     final textColor = isHighContrast ? Colors.white : theme.colorScheme.onSurface;
+    final canSpeak = caption.text.trim().isNotEmpty;
+    final isThisMessageSpeaking = speech.isSpeaking && speech.lastSpokenText == caption.text;
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 12),
+      margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
       child: Column(
         crossAxisAlignment: caption.isOwn ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
@@ -35,6 +37,8 @@ class SpeakableCaptionBubble extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             child: Text(
               '${caption.speaker} · ${caption.timestamp.hour.toString().padLeft(2, '0')}:${caption.timestamp.minute.toString().padLeft(2, '0')}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
@@ -44,7 +48,9 @@ class SpeakableCaptionBubble extends StatelessWidget {
             children: [
               Flexible(
                 child: Container(
-                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * .78),
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.sizeOf(context).width * .68,
+                  ),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: bubbleColor,
@@ -58,6 +64,7 @@ class SpeakableCaptionBubble extends StatelessWidget {
                   ),
                   child: Text(
                     caption.text,
+                    softWrap: true,
                     style: TextStyle(
                       fontSize: textSize,
                       color: textColor,
@@ -67,19 +74,22 @@ class SpeakableCaptionBubble extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 2),
               IconButton(
-                tooltip: 'Speak this message',
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                padding: EdgeInsets.zero,
+                tooltip: isThisMessageSpeaking ? 'Stop speaking' : 'Speak this message',
                 icon: Icon(
-                  speech.isSpeaking && speech.lastSpokenText == caption.text
+                  isThisMessageSpeaking
                       ? Icons.stop_circle_outlined
                       : Icons.volume_up_outlined,
-                  color: theme.colorScheme.primary,
+                  color: canSpeak ? theme.colorScheme.primary : theme.colorScheme.outline,
+                  size: 22,
                 ),
-                onPressed: caption.isPartial
+                onPressed: !canSpeak
                     ? null
                     : () async {
-                        if (speech.isSpeaking && speech.lastSpokenText == caption.text) {
+                        if (isThisMessageSpeaking) {
                           await speech.stopSpeaking();
                         } else {
                           await speech.speak(caption.text, language: caption.language);
