@@ -58,6 +58,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
     final content = Semantics(
+      key: const ValueKey('humsukhan-startup'),
       identifier: 'humsukhan-startup',
       label: '${s.appName} startup',
       liveRegion: true,
