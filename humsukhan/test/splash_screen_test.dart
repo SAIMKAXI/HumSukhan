@@ -24,7 +24,15 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.bySemanticsLabel('HumSukhan startup'), findsOneWidget);
+    final startupFinder = find.bySemanticsIdentifier('humsukhan-startup');
+    expect(startupFinder, findsOneWidget);
+    expect(
+      tester.getSemantics(startupFinder),
+      matchesSemantics(
+        identifier: 'humsukhan-startup',
+        label: 'HumSukhan startup',
+      ),
+    );
     expect(find.text('HumSukhan'), findsOneWidget);
     expect(find.text('Accessibility-first AI Companion'), findsOneWidget);
     expect(completed, isFalse);
