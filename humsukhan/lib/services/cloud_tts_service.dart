@@ -43,15 +43,17 @@ class CloudTtsService {
     }
 
     try {
+      // Keep this name aligned with the function actually tracked and deployed
+      // in this repository. v2.2.5 incorrectly called speech-synthesis-v2.
       final response = await client.functions
           .invoke(
-            'speech-synthesis-v2',
+            'speech-synthesis',
             body: {
               'text': text,
               'language': language,
             },
           )
-          .timeout(const Duration(seconds: 8));
+          .timeout(const Duration(seconds: 6));
 
       final data = response.data;
       if (data is! Map) {
