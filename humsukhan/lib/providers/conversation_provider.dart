@@ -73,7 +73,7 @@ class ConversationProvider extends ChangeNotifier {
       }
 
       final merged = byId.values.toList()
-        ..sort((a, b) => (b['savedAt']?.toString() ?? '').compareTo(b['savedAt']?.toString() ?? ''));
+        ..sort((a, b) => (b['savedAt']?.toString() ?? '').compareTo(a['savedAt']?.toString() ?? ''));
       await prefs.setString('everydayConversations', jsonEncode(merged));
       debugPrint('Everyday conversations synced from cloud: ${saved.length}');
     } catch (e) {
