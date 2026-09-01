@@ -1,0 +1,1 @@
+Canonical supplied app logo: 1024x1024 RGBA PNG. This note records the intended source asset for platform launcher icons.
