@@ -12,6 +12,11 @@ class UserProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get hasProfile => _profile != null;
 
+  String get _profileStorageKey {
+    final userId = SupabaseService.instance.userId;
+    return userId.isEmpty ? 'userProfile:guest' : 'userProfile:$userId';
+  }
+
   UserProvider() { _loadProfile(); }
 
   Future<void> _loadProfile() async {
@@ -19,7 +24,7 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
-      final json = prefs.getString('userProfile');
+      final json = prefs.getString(_profileStorageKey);
       if (json != null) _profile = UserProfile.fromJson(jsonDecode(json));
       await reloadFromCloud();
     } catch (e) {
@@ -38,7 +43,7 @@ class UserProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       if (cloudProfile != null) {
         _profile = cloudProfile;
-        await prefs.setString('userProfile', jsonEncode(cloudProfile.toJson()));
+        await prefs.setString(_profileStorageKey, jsonEncode(cloudProfile.toJson()));
         return;
       }
       final metadataName = supabase.currentUser?.userMetadata?['name']?.toString().trim();
@@ -64,7 +69,7 @@ class UserProvider extends ChangeNotifier {
         : UserProfile(id: userId, name: profile.name, avatarEmoji: profile.avatarEmoji, avatarData: profile.avatarData, preferredLanguage: profile.preferredLanguage, tutorName: profile.tutorName, createdAt: profile.createdAt);
     _profile = persisted;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('userProfile', jsonEncode(persisted.toJson()));
+    await prefs.setString(_profileStorageKey, jsonEncode(persisted.toJson()));
     if (syncCloud && supabase.isAuthenticated && supabase.client != null) {
       try {
         await supabase.client!.from('profiles').upsert({
@@ -90,6 +95,7 @@ class UserProvider extends ChangeNotifier {
   Future<void> clearLocalProfile() async {
     _profile = null;
     final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_profileStorageKey);
     await prefs.remove('userProfile');
     notifyListeners();
   }
