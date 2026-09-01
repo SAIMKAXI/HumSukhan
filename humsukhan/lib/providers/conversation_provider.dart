@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/supabase_service.dart';
 import '../services/database_service.dart';
+import '../services/deepgram_transcription_service.dart';
 
 class ConversationProvider extends ChangeNotifier {
   ConversationState _state = ConversationState.idle;
@@ -90,7 +91,7 @@ class ConversationProvider extends ChangeNotifier {
     _state = ConversationState.active;
     _isListening = false;
     _conversationStartedAt = DateTime.now();
-    _listeningStatus = 'Hold the microphone while the speaker talks';
+    _listeningStatus = 'Tap the microphone to speak';
     _currentSessionId = 'everyday_${DateTime.now().millisecondsSinceEpoch}';
     notifyListeners();
   }
@@ -172,7 +173,7 @@ class ConversationProvider extends ChangeNotifier {
   void cancelStop() {
     _state = ConversationState.active;
     _isListening = false;
-    _listeningStatus = 'Hold the microphone while the speaker talks';
+    _listeningStatus = 'Tap the microphone to speak';
     notifyListeners();
   }
 
@@ -181,7 +182,7 @@ class ConversationProvider extends ChangeNotifier {
     _partialCommitTimer?.cancel();
     _currentLanguage = language;
     _isListening = true;
-    _listeningStatus = 'Speaker is talking… release when finished';
+    _listeningStatus = 'Listening…';
     final now = DateTime.now();
     _activeSpeakerDraft = Caption(
       text: '',
@@ -218,30 +219,33 @@ class ConversationProvider extends ChangeNotifier {
   }
 
   void commitSpeakerTurn({bool notify = true}) {
+    final deepgramFinal = DeepgramTranscriptionService.instance.lastFinalTranscript.trim();
+    if (deepgramFinal.isNotEmpty && _activeSpeakerDraft != null) {
+      _activeSpeakerDraft = _activeSpeakerDraft!.copyWith(
+        text: deepgramFinal,
+        isPartial: true,
+      );
+      _currentPartial = _activeSpeakerDraft;
+    }
+
     final draft = _activeSpeakerDraft;
     _partialCommitTimer?.cancel();
     _partialCommitTimer = null;
     _activeSpeakerDraft = null;
+    _currentPartial = null;
     _isListening = false;
-    if (draft != null) {
-      _currentPartial = null;
-      if (draft.text.trim().isNotEmpty) {
-        final committed = draft.copyWith(text: draft.text.trim(), isPartial: false);
-        _captions.add(committed);
-        _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
-        _lastCommittedAt = committed.timestamp;
-        _sortCaptionsInPlace();
-      }
+    if (draft != null && draft.text.trim().isNotEmpty) {
+      final committed = draft.copyWith(text: draft.text.trim(), isPartial: false);
+      _captions.add(committed);
+      _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
+      _lastCommittedAt = committed.timestamp;
+      _sortCaptionsInPlace();
     }
     _listeningStatus = 'Your turn — respond below';
     if (notify) notifyListeners();
   }
 
-  void addPartialCaption(
-    String text, {
-    String speaker = 'Speaker 1',
-    String language = 'English',
-  }) {
+  void addPartialCaption(String text, {String speaker = 'Speaker 1', String language = 'English'}) {
     final value = text.trim();
     if (value.isEmpty || _state != ConversationState.active) return;
     if (_currentPartial == null) {
@@ -262,11 +266,7 @@ class ConversationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void finalizeCaption(
-    String text, {
-    String speaker = 'Speaker 1',
-    String language = 'English',
-  }) {
+  void finalizeCaption(String text, {String speaker = 'Speaker 1', String language = 'English'}) {
     final value = text.trim();
     if (value.isEmpty || _state != ConversationState.active) return;
     _partialCommitTimer?.cancel();
@@ -296,15 +296,10 @@ class ConversationProvider extends ChangeNotifier {
     if (value.isEmpty || _state != ConversationState.active) return;
     commitSpeakerTurn(notify: false);
     _commitCurrentPartial();
-    final caption = Caption(
-      text: value,
-      speaker: 'You',
-      language: _currentLanguage,
-      isOwn: true,
-    );
+    final caption = Caption(text: value, speaker: 'You', language: _currentLanguage, isOwn: true);
     _captions.add(caption);
     _sortCaptionsInPlace();
-    _listeningStatus = 'Hold the microphone when the speaker talks again';
+    _listeningStatus = 'Tap the microphone to speak again';
     notifyListeners();
   }
 
@@ -322,13 +317,7 @@ class ConversationProvider extends ChangeNotifier {
   void _beginPartial(String text, String speaker, String language) {
     _partialCommitTimer?.cancel();
     final now = DateTime.now();
-    _currentPartial = Caption(
-      text: text,
-      speaker: speaker,
-      language: language,
-      timestamp: now,
-      isPartial: true,
-    );
+    _currentPartial = Caption(text: text, speaker: speaker, language: language, timestamp: now, isPartial: true);
     _restartPartialCommitTimer();
   }
 
@@ -351,9 +340,7 @@ class ConversationProvider extends ChangeNotifier {
     }
     final value = partial.text.trim();
     final fingerprint = _fingerprint(value, partial.speaker);
-    if (_isolateFingerprint == fingerprint &&
-        _lastCommittedAt != null &&
-        DateTime.now().difference(_lastCommittedAt!).inMilliseconds < 1800) {
+    if (_isolateFingerprint == fingerprint && _lastCommittedAt != null && DateTime.now().difference(_lastCommittedAt!).inMilliseconds < 1800) {
       _currentPartial = null;
       return;
     }
@@ -367,18 +354,8 @@ class ConversationProvider extends ChangeNotifier {
 
   void _appendFinalCaption(String text, String speaker, String language) {
     final fingerprint = _fingerprint(text, speaker);
-    if (_isolateFingerprint == fingerprint &&
-        _lastCommittedAt != null &&
-        DateTime.now().difference(_lastCommittedAt!).inMilliseconds < 1800) {
-      return;
-    }
-    final caption = Caption(
-      text: text,
-      speaker: speaker,
-      language: language,
-      timestamp: DateTime.now(),
-      isPartial: false,
-    );
+    if (_isolateFingerprint == fingerprint && _lastCommittedAt != null && DateTime.now().difference(_lastCommittedAt!).inMilliseconds < 1800) return;
+    final caption = Caption(text: text, speaker: speaker, language: language, timestamp: DateTime.now(), isPartial: false);
     _captions.add(caption);
     _isolateFingerprint = fingerprint;
     _lastCommittedAt = caption.timestamp;
@@ -398,11 +375,9 @@ class ConversationProvider extends ChangeNotifier {
     return jaccard >= 0.45;
   }
 
-  Set<String> _tokens(String text) =>
-      text.split(RegExp(r'\s+')).where((t) => t.length > 1).toSet();
+  Set<String> _tokens(String text) => text.split(RegExp(r'\s+')).where((t) => t.length > 1).toSet();
 
-  String _fingerprint(String text, String speaker) =>
-      '${speaker.toLowerCase()}|${text.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()}';
+  String _fingerprint(String text, String speaker) => '${speaker.toLowerCase()}|${text.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()}';
 
   List<Caption> _sortedCaptions() {
     final sorted = List<Caption>.from(_captions);
