@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
+import '../services/database_service.dart';
+import '../services/supabase_service.dart';
 
 class SettingsProvider extends ChangeNotifier {
   bool _isDarkMode = false, _isHighContrast = false, _isLargeText = false;
@@ -42,6 +44,49 @@ class SettingsProvider extends ChangeNotifier {
 
   SettingsProvider() { _loadSettings(); }
 
+  Map<String, dynamic> _settingsPayload() => {
+        'darkMode': _isDarkMode,
+        'highContrast': _isHighContrast,
+        'largeText': _isLargeText,
+        'captionTextSize': _captionTextSize,
+        'hapticAlerts': _hapticAlerts,
+        'visualAlerts': _visualAlerts,
+        'flashAlerts': _flashAlerts,
+        'screenFlashAlerts': _screenFlashAlerts,
+        'simplifiedLanguage': _simplifiedLanguage,
+        'captionLanguage': _captionLanguage,
+        'appLanguage': _appLanguage,
+        'defaultRetentionDays': _defaultRetentionDays,
+        'monitoringEnabled': _monitoringEnabled,
+        'allowedAlerts': _allowedAlerts,
+      };
+
+  void _applySettings(Map<String, dynamic> data) {
+    _isDarkMode = data['darkMode'] is bool ? data['darkMode'] as bool : _isDarkMode;
+    _isHighContrast = data['highContrast'] is bool ? data['highContrast'] as bool : _isHighContrast;
+    _isLargeText = data['largeText'] is bool ? data['largeText'] as bool : _isLargeText;
+    final captionSize = data['captionTextSize'];
+    if (captionSize is num) _captionTextSize = captionSize.toDouble().clamp(16.0, 48.0);
+    _hapticAlerts = data['hapticAlerts'] is bool ? data['hapticAlerts'] as bool : _hapticAlerts;
+    _visualAlerts = data['visualAlerts'] is bool ? data['visualAlerts'] as bool : _visualAlerts;
+    _flashAlerts = data['flashAlerts'] is bool ? data['flashAlerts'] as bool : _flashAlerts;
+    _screenFlashAlerts = data['screenFlashAlerts'] is bool ? data['screenFlashAlerts'] as bool : _screenFlashAlerts;
+    _simplifiedLanguage = data['simplifiedLanguage'] is bool ? data['simplifiedLanguage'] as bool : _simplifiedLanguage;
+    if (data['captionLanguage'] is String && const ['English', 'Roman Urdu', 'Urdu'].contains(data['captionLanguage'])) _captionLanguage = data['captionLanguage'] as String;
+    if (data['appLanguage'] is String && const ['en', 'ur'].contains(data['appLanguage'])) _appLanguage = data['appLanguage'] as String;
+    final retention = data['defaultRetentionDays'];
+    if (retention is int) _defaultRetentionDays = retention.clamp(1, 15);
+    _monitoringEnabled = data['monitoringEnabled'] is bool ? data['monitoringEnabled'] as bool : _monitoringEnabled;
+    final alerts = data['allowedAlerts'];
+    if (alerts is Map) {
+      for (final entry in alerts.entries) {
+        if (entry.key is String && entry.value is bool && _allowedAlerts.containsKey(entry.key)) {
+          _allowedAlerts[entry.key as String] = entry.value as bool;
+        }
+      }
+    }
+  }
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     _isDarkMode = prefs.getBool('darkMode') ?? false;
@@ -59,9 +104,6 @@ class SettingsProvider extends ChangeNotifier {
     _legacyOnboardingComplete = prefs.getBool('onboardingComplete') ?? false;
     _monitoringEnabled = prefs.getBool('monitoringEnabled') ?? false;
 
-    // Migrate the old device-wide onboarding flag only for the account that is
-    // already signed in on an upgraded installation. New accounts get their
-    // own first-login tutorial state.
     final currentUserId = AuthService.instance.currentUser?.id;
     if (_legacyOnboardingComplete && currentUserId != null) {
       _onboardedUsers.add(currentUserId);
@@ -76,12 +118,39 @@ class SettingsProvider extends ChangeNotifier {
     final storedAlerts = prefs.getString('allowedAlerts');
     if (storedAlerts != null) {
       try {
-        final decoded = Map<String, dynamic>.from(jsonDecode(storedAlerts));
-        for (final entry in decoded.entries) _allowedAlerts[entry.key] = entry.value == true;
+        _applySettings({'allowedAlerts': jsonDecode(storedAlerts)});
       } catch (_) {}
     }
+
+    if (SupabaseService.instance.isAuthenticated) {
+      try {
+        final cloudSettings = await DatabaseService.instance.fetchSettings(SupabaseService.instance.userId);
+        if (cloudSettings != null && cloudSettings.isNotEmpty) {
+          _applySettings(cloudSettings);
+          await _persistAllLocal(prefs);
+        } else {
+          await _saveToCloud();
+        }
+      } catch (e) {
+        debugPrint('Settings cloud load error: $e');
+      }
+    }
+
     _isLoaded = true;
     notifyListeners();
+  }
+
+  Future<void> _persistAllLocal([SharedPreferences? existing]) async {
+    final prefs = existing ?? await SharedPreferences.getInstance();
+    final data = _settingsPayload();
+    for (final entry in data.entries) {
+      final value = entry.value;
+      if (value is bool) await prefs.setBool(entry.key, value);
+      if (value is double) await prefs.setDouble(entry.key, value);
+      if (value is int) await prefs.setInt(entry.key, value);
+      if (value is String) await prefs.setString(entry.key, value);
+      if (entry.key == 'allowedAlerts') await prefs.setString(entry.key, jsonEncode(value));
+    }
   }
 
   Future<void> _save(String key, dynamic value) async {
@@ -92,20 +161,31 @@ class SettingsProvider extends ChangeNotifier {
     else if (value is String) await prefs.setString(key, value);
   }
 
-  void toggleDarkMode() { _isDarkMode = !_isDarkMode; notifyListeners(); _save('darkMode', _isDarkMode); }
-  void toggleHighContrast() { _isHighContrast = !_isHighContrast; notifyListeners(); _save('highContrast', _isHighContrast); }
-  void toggleLargeText() { _isLargeText = !_isLargeText; notifyListeners(); _save('largeText', _isLargeText); }
-  void setCaptionTextSize(double size) { _captionTextSize = size.clamp(16.0, 48.0); notifyListeners(); _save('captionTextSize', _captionTextSize); }
-  void toggleHapticAlerts() { _hapticAlerts = !_hapticAlerts; notifyListeners(); _save('hapticAlerts', _hapticAlerts); }
-  void toggleVisualAlerts() { _visualAlerts = !_visualAlerts; notifyListeners(); _save('visualAlerts', _visualAlerts); }
-  void toggleFlashAlerts() { _flashAlerts = !_flashAlerts; notifyListeners(); _save('flashAlerts', _flashAlerts); }
-  void toggleScreenFlashAlerts() { _screenFlashAlerts = !_screenFlashAlerts; notifyListeners(); _save('screenFlashAlerts', _screenFlashAlerts); }
-  void toggleSimplifiedLanguage() { _simplifiedLanguage = !_simplifiedLanguage; notifyListeners(); _save('simplifiedLanguage', _simplifiedLanguage); }
-  void setCaptionLanguage(String lang) { _captionLanguage = lang; notifyListeners(); _save('captionLanguage', lang); }
-  void setAppLanguage(String langCode) { _appLanguage = langCode; notifyListeners(); _save('appLanguage', langCode); }
-  void setDefaultRetentionDays(int days) { _defaultRetentionDays = days.clamp(1, 15); notifyListeners(); _save('defaultRetentionDays', _defaultRetentionDays); }
-  void toggleMonitoring() { _monitoringEnabled = !_monitoringEnabled; notifyListeners(); _save('monitoringEnabled', _monitoringEnabled); }
-  void toggleAllowedAlert(String alertType) { _allowedAlerts[alertType] = !(_allowedAlerts[alertType] ?? true); notifyListeners(); _save('allowedAlerts', jsonEncode(_allowedAlerts)); }
+  Future<void> _saveToCloud() async {
+    if (!SupabaseService.instance.isAuthenticated) return;
+    await DatabaseService.instance.upsertSettings(_settingsPayload());
+  }
+
+  Future<void> _persistChange(String key, dynamic value) async {
+    await _save(key, value);
+    if (key == 'allowedAlerts') await _saveToCloud();
+    else await _saveToCloud();
+  }
+
+  void toggleDarkMode() { _isDarkMode = !_isDarkMode; notifyListeners(); _persistChange('darkMode', _isDarkMode); }
+  void toggleHighContrast() { _isHighContrast = !_isHighContrast; notifyListeners(); _persistChange('highContrast', _isHighContrast); }
+  void toggleLargeText() { _isLargeText = !_isLargeText; notifyListeners(); _persistChange('largeText', _isLargeText); }
+  void setCaptionTextSize(double size) { _captionTextSize = size.clamp(16.0, 48.0); notifyListeners(); _persistChange('captionTextSize', _captionTextSize); }
+  void toggleHapticAlerts() { _hapticAlerts = !_hapticAlerts; notifyListeners(); _persistChange('hapticAlerts', _hapticAlerts); }
+  void toggleVisualAlerts() { _visualAlerts = !_visualAlerts; notifyListeners(); _persistChange('visualAlerts', _visualAlerts); }
+  void toggleFlashAlerts() { _flashAlerts = !_flashAlerts; notifyListeners(); _persistChange('flashAlerts', _flashAlerts); }
+  void toggleScreenFlashAlerts() { _screenFlashAlerts = !_screenFlashAlerts; notifyListeners(); _persistChange('screenFlashAlerts', _screenFlashAlerts); }
+  void toggleSimplifiedLanguage() { _simplifiedLanguage = !_simplifiedLanguage; notifyListeners(); _persistChange('simplifiedLanguage', _simplifiedLanguage); }
+  void setCaptionLanguage(String lang) { _captionLanguage = lang; notifyListeners(); _persistChange('captionLanguage', lang); }
+  void setAppLanguage(String langCode) { _appLanguage = langCode; notifyListeners(); _persistChange('appLanguage', langCode); }
+  void setDefaultRetentionDays(int days) { _defaultRetentionDays = days.clamp(1, 15); notifyListeners(); _persistChange('defaultRetentionDays', _defaultRetentionDays); }
+  void toggleMonitoring() { _monitoringEnabled = !_monitoringEnabled; notifyListeners(); _persistChange('monitoringEnabled', _monitoringEnabled); }
+  void toggleAllowedAlert(String alertType) { _allowedAlerts[alertType] = !(_allowedAlerts[alertType] ?? true); notifyListeners(); _persistChange('allowedAlerts', jsonEncode(_allowedAlerts)); }
 
   Future<bool> hasCompletedOnboardingForUser(String userId) async {
     if (userId.isEmpty) return false;
@@ -126,5 +206,34 @@ class SettingsProvider extends ChangeNotifier {
   Future<void> completeOnboarding() async {
     final userId = AuthService.instance.currentUser?.id;
     if (userId != null) await completeOnboardingForUser(userId);
+  }
+
+  Future<void> clearLocalSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    const keys = [
+      'darkMode', 'highContrast', 'largeText', 'captionTextSize', 'hapticAlerts',
+      'visualAlerts', 'flashAlerts', 'screenFlashAlerts', 'simplifiedLanguage',
+      'captionLanguage', 'appLanguage', 'defaultRetentionDays', 'monitoringEnabled',
+      'allowedAlerts', 'onboardingComplete',
+    ];
+    for (final key in keys) await prefs.remove(key);
+    final userKeys = prefs.getKeys().where((key) => key.startsWith('onboardingComplete:')).toList();
+    for (final key in userKeys) await prefs.remove(key);
+    _isDarkMode = false;
+    _isHighContrast = false;
+    _isLargeText = false;
+    _captionTextSize = 24.0;
+    _hapticAlerts = true;
+    _visualAlerts = true;
+    _flashAlerts = false;
+    _screenFlashAlerts = true;
+    _simplifiedLanguage = false;
+    _captionLanguage = 'English';
+    _appLanguage = 'en';
+    _defaultRetentionDays = 7;
+    _monitoringEnabled = false;
+    _onboardedUsers.clear();
+    for (final key in _allowedAlerts.keys) _allowedAlerts[key] = true;
+    notifyListeners();
   }
 }
