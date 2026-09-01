@@ -87,17 +87,25 @@ class SoundDetectionService {
 
   Future<bool> startMonitoring({bool permissionAlreadyGranted = false}) async {
     if (_monitoring) return true;
-    if (!_initialized && !await initialize(requestPermission: !permissionAlreadyGranted)) return false;
+
+    // The Android foreground service reaches this code through a secondary
+    // Flutter engine. Permission has already been checked by MainActivity, so
+    // do not depend on permission_handler's secondary-isolate state here.
+    if (!_initialized) {
+      if (permissionAlreadyGranted) {
+        _audioRecorder ??= AudioRecorder();
+        _microphoneReady = true;
+        _initialized = true;
+      } else if (!await initialize(requestPermission: true)) {
+        return false;
+      }
+    }
     if (!_microphoneReady || _audioRecorder == null) return false;
 
     try {
       final manager = AudioModelManager.instance;
       _modelReady = await manager.initialize();
       if (!_modelReady) {
-        // Environmental Alerts should work on a normal installation without
-        // requiring the user to discover a separate model-download screen.
-        // Download is explicit only in the sense that it is triggered by the
-        // user's Start Monitoring action, not silently in the background.
         _modelReady = await manager.downloadModel();
       }
       _modelReady = _modelReady && await _tagger.initialize();

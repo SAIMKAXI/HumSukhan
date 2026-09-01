@@ -31,8 +31,8 @@ class EnvironmentalProvider extends ChangeNotifier {
   bool get isStopping => _monitoringState == 'STOPPING';
   bool get hasError => _monitoringState == 'ERROR';
   bool get isProcessing => Platform.isAndroid ? _bridge.isActive : _soundService.isMonitoring;
-  bool get isMicrophoneReady => Platform.isAndroid ? isProcessing : _soundService.isMicrophoneReady;
-  bool get isModelReady => Platform.isAndroid ? isProcessing && !hasError : _soundService.isModelReady;
+  bool get isMicrophoneReady => Platform.isAndroid ? _bridge.isActive : _soundService.isMicrophoneReady;
+  bool get isModelReady => Platform.isAndroid ? _bridge.isActive && !hasError : _soundService.isModelReady;
   String? get errorMessage => _errorMessage;
   bool get isLocal => true;
   String get environmentalStatus => monitoringEnabled ? 'Monitoring locally' : 'Off';
@@ -86,7 +86,7 @@ class EnvironmentalProvider extends ChangeNotifier {
         final stopped = await _bridge.stop();
         if (!stopped) {
           _monitoringState = 'ERROR';
-          _errorMessage = 'Environmental monitoring could not be stopped safely.';
+          _errorMessage = 'Environmental monitoring could not be stopped safely. Try again.';
         }
       } else {
         _soundService.stopMonitoring();
@@ -100,7 +100,9 @@ class EnvironmentalProvider extends ChangeNotifier {
     final permission = await Permission.microphone.request();
     if (!permission.isGranted) {
       _monitoringState = 'ERROR';
-      _errorMessage = 'Microphone permission was denied.';
+      _errorMessage = permission.isPermanentlyDenied
+          ? 'Microphone permission is blocked. Open App Settings and allow Microphone, then tap Start Monitoring again.'
+          : 'Microphone permission is required for Environmental Alerts.';
       notifyListeners();
       return;
     }
@@ -115,7 +117,7 @@ class EnvironmentalProvider extends ChangeNotifier {
       final started = await _bridge.start();
       if (!started) {
         _monitoringState = 'ERROR';
-        _errorMessage = 'The environmental monitoring microphone service could not start.';
+        _errorMessage = 'The environmental monitoring service could not start. Check microphone permission and try again.';
       }
       notifyListeners();
       return;
@@ -135,12 +137,16 @@ class EnvironmentalProvider extends ChangeNotifier {
       _monitoringState = 'ACTIVE';
     } else if (!_soundService.isModelReady) {
       _monitoringState = 'ERROR';
-      _errorMessage = 'The environmental sound model is unavailable. Download/restore the monitoring model and try again.';
+      _errorMessage = 'The environmental sound model is unavailable. Try Start Monitoring again to restore it.';
     } else {
       _monitoringState = 'ERROR';
-      _errorMessage = 'The microphone recorder could not start.';
+      _errorMessage = 'The microphone recorder could not start. Check microphone permission and try again.';
     }
     notifyListeners();
+  }
+
+  Future<void> openMicrophoneSettings() async {
+    await openAppSettings();
   }
 
   bool processSoundEvent(SoundEvent event) {
