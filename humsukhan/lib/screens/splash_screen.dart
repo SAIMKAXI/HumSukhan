@@ -93,6 +93,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                         const SizedBox(height: 8),
                         Text(
                           strings.appTagline,
+                          key: const ValueKey('splash-app-tagline'),
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
                         ),
