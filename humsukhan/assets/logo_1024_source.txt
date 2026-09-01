@@ -1,0 +1,1 @@
+The canonical HumSukhan logo is supplied as a 1024x1024 RGBA PNG and is used to replace launcher/app branding assets.
