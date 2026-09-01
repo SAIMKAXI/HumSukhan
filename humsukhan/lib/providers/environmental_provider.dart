@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/models.dart';
 import '../services/alert_service.dart';
 import '../services/environmental_monitoring_bridge.dart';
@@ -9,11 +13,19 @@ import '../services/sound_detection_service.dart';
 import 'settings_provider.dart';
 
 class EnvironmentalProvider extends ChangeNotifier {
-  EnvironmentalProvider() { unawaited(_initializeNativeBridge()); }
+  EnvironmentalProvider() {
+    unawaited(_initializeNativeBridge());
+    unawaited(_loadAlertHistory());
+  }
+
+  static const _historyKey = 'environmentalAlertHistory';
+  static const _maxHistoryEntries = 100;
+  static const _minConfidence = 0.6;
 
   final EnvironmentalMonitoringBridge _bridge = EnvironmentalMonitoringBridge.instance;
   final SoundDetectionService _soundService = SoundDetectionService.instance;
   final List<SoundEvent> _alertHistory = [];
+
   SoundEvent? _currentAlert;
   String _monitoringState = 'OFF';
   String? _lastAlertType;
@@ -21,10 +33,10 @@ class EnvironmentalProvider extends ChangeNotifier {
   SettingsProvider? _settingsProvider;
   bool _bridgeInitialized = false;
   String? _errorMessage;
-
-  static const _minConfidence = 0.6;
+  Future<void> _historyWriteQueue = Future.value();
 
   void setSettingsProvider(SettingsProvider settings) => _settingsProvider = settings;
+
   bool get monitoringEnabled => _monitoringState == 'ACTIVE' || _monitoringState == 'STARTING';
   String get monitoringState => _monitoringState;
   bool get isStarting => _monitoringState == 'STARTING';
@@ -40,7 +52,8 @@ class EnvironmentalProvider extends ChangeNotifier {
   SoundEvent? get currentAlert => _currentAlert;
 
   List<SoundEvent> get recentAlerts {
-    final sorted = List<SoundEvent>.from(_alertHistory)..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final sorted = List<SoundEvent>.from(_alertHistory)
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return sorted.take(20).toList();
   }
 
@@ -58,6 +71,50 @@ class EnvironmentalProvider extends ChangeNotifier {
     'Dog Bark': 'A dog bark was detected.',
   };
 
+  Future<void> _loadAlertHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_historyKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          _alertHistory
+            ..clear()
+            ..addAll(
+              decoded
+                  .whereType<Map>()
+                  .map((item) => SoundEvent.fromJson(Map<String, dynamic>.from(item))),
+            );
+          _alertHistory.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          if (_alertHistory.isNotEmpty) {
+            _lastAlertType = _alertHistory.first.type;
+            _lastAlertTime = _alertHistory.first.timestamp;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Environmental alert history load error: $e');
+    }
+    notifyListeners();
+  }
+
+  Future<void> _saveAlertHistory() async {
+    _historyWriteQueue = _historyWriteQueue.then((_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          _historyKey,
+          jsonEncode(
+            _alertHistory.take(_maxHistoryEntries).map((event) => event.toJson()).toList(),
+          ),
+        );
+      } catch (e) {
+        debugPrint('Environmental alert history save error: $e');
+      }
+    });
+    await _historyWriteQueue;
+  }
+
   Future<void> _initializeNativeBridge() async {
     if (_bridgeInitialized) return;
     _bridgeInitialized = true;
@@ -68,7 +125,9 @@ class EnvironmentalProvider extends ChangeNotifier {
         final confidence = (event['confidence'] as num?)?.toDouble();
         final severity = event['severity']?.toString() ?? 'warning';
         if (type != null && confidence != null) {
-          processSoundEvent(SoundEvent(type: type, confidence: confidence, severity: severity));
+          processSoundEvent(
+            SoundEvent(type: type, confidence: confidence, severity: severity),
+          );
         }
       } else {
         notifyListeners();
@@ -77,7 +136,9 @@ class EnvironmentalProvider extends ChangeNotifier {
   }
 
   Future<void> toggleMonitoring() async {
-    if (monitoringEnabled) {
+    if (isStarting || isStopping) return;
+
+    if (_monitoringState == 'ACTIVE') {
       _monitoringState = 'STOPPING';
       _errorMessage = null;
       notifyListeners();
@@ -110,9 +171,6 @@ class EnvironmentalProvider extends ChangeNotifier {
     _monitoringState = 'STARTING';
     notifyListeners();
 
-    // Android owns environmental monitoring in a foreground microphone
-    // service. Starting a recorder in the UI isolate bypasses that service and
-    // is unreliable when the app is backgrounded or the activity is rebuilt.
     if (Platform.isAndroid) {
       final started = await _bridge.start();
       if (!started) {
@@ -123,10 +181,12 @@ class EnvironmentalProvider extends ChangeNotifier {
       return;
     }
 
+    // iOS uses the in-app detector directly because the Android foreground
+    // service bridge is not available there.
     final initialized = await _soundService.initialize(requestPermission: false);
     if (!initialized || !_soundService.isMicrophoneReady) {
       _monitoringState = 'ERROR';
-      _errorMessage = 'Microphone is not available to the recorder.';
+      _errorMessage = 'Microphone access is unavailable. Allow microphone access in App Settings, then try again.';
       notifyListeners();
       return;
     }
@@ -140,7 +200,7 @@ class EnvironmentalProvider extends ChangeNotifier {
       _errorMessage = 'The environmental sound model is unavailable. Try Start Monitoring again to restore it.';
     } else {
       _monitoringState = 'ERROR';
-      _errorMessage = 'The microphone recorder could not start. Check microphone permission and try again.';
+      _errorMessage = 'The microphone recorder could not start. Check microphone access and try again.';
     }
     notifyListeners();
   }
@@ -153,11 +213,20 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (!monitoringEnabled || event.confidence < _minConfidence) return false;
     final settings = _settingsProvider;
     if (settings != null && settings.allowedAlerts[event.type] == false) return false;
-    if (_lastAlertType == event.type && _lastAlertTime != null && DateTime.now().difference(_lastAlertTime!) < SoundDetectionService.cooldownDuration) return false;
-    _alertHistory.add(event);
+    if (_lastAlertType == event.type &&
+        _lastAlertTime != null &&
+        DateTime.now().difference(_lastAlertTime!) < SoundDetectionService.cooldownDuration) {
+      return false;
+    }
+
+    _alertHistory.insert(0, event);
+    if (_alertHistory.length > _maxHistoryEntries) {
+      _alertHistory.removeRange(_maxHistoryEntries, _alertHistory.length);
+    }
     _currentAlert = event;
     _lastAlertType = event.type;
-    _lastAlertTime = DateTime.now();
+    _lastAlertTime = event.timestamp;
+
     if (settings != null) {
       AlertService.instance.triggerAlert(
         settings,
@@ -167,24 +236,34 @@ class EnvironmentalProvider extends ChangeNotifier {
       );
     }
     notifyListeners();
+    unawaited(_saveAlertHistory());
     return true;
   }
 
   void dismissAlert() {
     if (_currentAlert != null) {
       final idx = _alertHistory.indexWhere((a) => a.id == _currentAlert!.id);
-      if (idx != -1) _alertHistory[idx] = _alertHistory[idx].copyWith(dismissed: true);
+      if (idx != -1) {
+        _alertHistory[idx] = _alertHistory[idx].copyWith(dismissed: true);
+        unawaited(_saveAlertHistory());
+      }
     }
     _currentAlert = null;
     notifyListeners();
   }
 
-  void clearHistory() { _alertHistory.clear(); notifyListeners(); }
+  void clearHistory() {
+    _alertHistory.clear();
+    _currentAlert = null;
+    unawaited(_saveAlertHistory());
+    notifyListeners();
+  }
 
   @override
   void dispose() {
     if (!Platform.isAndroid) _soundService.stopMonitoring();
     unawaited(_bridge.dispose());
+    AlertService.instance.stopAll();
     super.dispose();
   }
 }
