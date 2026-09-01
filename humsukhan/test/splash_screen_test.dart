@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:humsukhan/l10n/app_strings.dart';
@@ -7,8 +6,10 @@ import 'package:humsukhan/screens/splash_screen.dart';
 
 void main() {
   testWidgets('Splash renders branded loading state', (WidgetTester tester) async {
-    var completed = false;
+    final semanticsHandle = tester.ensureSemantics();
+    addTearDown(semanticsHandle.dispose);
 
+    var completed = false;
     await tester.pumpWidget(
       MaterialApp(
         localizationsDelegates: const [
@@ -21,6 +22,7 @@ void main() {
         home: SplashScreen(onComplete: () => completed = true),
       ),
     );
+    await tester.pump();
 
     expect(find.bySemanticsLabel('HumSukhan startup'), findsOneWidget);
     expect(find.text('HumSukhan'), findsOneWidget);
@@ -45,6 +47,7 @@ void main() {
         home: SplashScreen(onComplete: () {}),
       ),
     );
+    await tester.pump();
 
     expect(find.text('HumSukhan'), findsOneWidget);
     expect(find.text('قابلِ رسائی AI معاون'), findsOneWidget);
