@@ -3,14 +3,8 @@ name: HumSukhan Android Release
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-      - 'humsukhan/pubspec.yaml'
-      - 'humsukhan/lib/**'
-      - 'humsukhan/test/**'
-      - 'humsukhan/android/**'
-      - '.github/workflows/**'
+    tags:
+      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -28,36 +22,66 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+
       - name: Install dependencies
         run: flutter pub get
+
       - name: Static analysis
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
       - name: Tests
         run: flutter test
+
       - name: Read app version
         id: version
         shell: bash
         run: |
           VERSION=$(sed -n 's/^version: *//p' pubspec.yaml | head -1 | cut -d+ -f1)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
           test -n "$VERSION" || { echo 'ERROR: Could not read app version.'; exit 1; }
+          test "$VERSION" = "$TAG_VERSION" || { echo "ERROR: tag $TAG_VERSION does not match pubspec version $VERSION"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare Android release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          HUMSUKHAN_KEYSTORE_PASSWORD: ${{ secrets.HUMSUKHAN_KEYSTORE_PASSWORD }}
+          HUMSUKHAN_KEY_ALIAS: ${{ secrets.HUMSUKHAN_KEY_ALIAS }}
+          HUMSUKHAN_KEY_PASSWORD: ${{ secrets.HUMSUKHAN_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64" || { echo 'ERROR: ANDROID_KEYSTORE_BASE64 secret is missing.'; exit 1; }
+          test -n "$HUMSUKHAN_KEYSTORE_PASSWORD" || { echo 'ERROR: HUMSUKHAN_KEYSTORE_PASSWORD secret is missing.'; exit 1; }
+          test -n "$HUMSUKHAN_KEY_ALIAS" || { echo 'ERROR: HUMSUKHAN_KEY_ALIAS secret is missing.'; exit 1; }
+          test -n "$HUMSUKHAN_KEY_PASSWORD" || { echo 'ERROR: HUMSUKHAN_KEY_PASSWORD secret is missing.'; exit 1; }
+          KEYSTORE_FILE="$RUNNER_TEMP/humsukhan-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
+          test -s "$KEYSTORE_FILE" || { echo 'ERROR: decoded keystore is empty.'; exit 1; }
+          echo "HUMSUKHAN_KEYSTORE_FILE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
+          echo 'HUMSUKHAN_KEYSTORE_PASSWORD=$HUMSUKHAN_KEYSTORE_PASSWORD' >> "$GITHUB_ENV"
+          echo 'HUMSUKHAN_KEY_ALIAS=$HUMSUKHAN_KEY_ALIAS' >> "$GITHUB_ENV"
+          echo 'HUMSUKHAN_KEY_PASSWORD=$HUMSUKHAN_KEY_PASSWORD' >> "$GITHUB_ENV"
+
       - name: Check Supabase build configuration
         env:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           test -n "$SUPABASE_ANON_KEY" || { echo 'ERROR: SUPABASE_ANON_KEY secret is missing.'; exit 1; }
+
       - name: Build release APK
         env:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -65,14 +89,17 @@ jobs:
           flutter build apk --release \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/HumSukhan-${{ steps.version.outputs.version }}.apk
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: HumSukhan-android-${{ steps.version.outputs.version }}
           path: humsukhan/build/app/outputs/flutter-apk/HumSukhan-${{ steps.version.outputs.version }}.apk
           if-no-files-found: error
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
