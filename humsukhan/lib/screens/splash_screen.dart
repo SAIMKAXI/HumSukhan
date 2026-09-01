@@ -13,8 +13,9 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+  static const _duration = Duration(milliseconds: 2200);
+
   late final AnimationController _controller;
   late final Animation<double> _fade;
   late final Animation<double> _scale;
@@ -25,22 +26,19 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 900),
       vsync: this,
     );
-    _fade = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    );
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
     _scale = Tween<double>(begin: .92, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
     );
     _controller.forward();
-    _navigationTimer = Timer(const Duration(milliseconds: 1600), _complete);
+    _navigationTimer = Timer(_duration, _completeOnce);
   }
 
-  void _complete() {
-    if (!mounted || _completed) return;
+  void _completeOnce() {
+    if (_completed || !mounted) return;
     _completed = true;
     widget.onComplete();
   }
@@ -56,40 +54,38 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final s = AppStrings.of(context);
     final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
-    final content = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const BrandLogo(size: 132, radius: AppTokens.radiusXl),
-        const SizedBox(height: 28),
-        Text(
-          AppStrings.of(context).appName,
-          style: theme.textTheme.displaySmall?.copyWith(color: colors.primary),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          AppStrings.of(context).appTagline,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: colors.onSurfaceVariant,
+    final content = Semantics(
+      container: true,
+      label: '${s.appName} startup',
+      liveRegion: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const BrandLogo(size: 132, radius: AppTokens.radiusXl),
+          const SizedBox(height: 28),
+          Text(s.appName, style: theme.textTheme.displaySmall?.copyWith(color: colors.primary)),
+          const SizedBox(height: 8),
+          Text(
+            s.appTagline,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
           ),
-        ),
-        const SizedBox(height: 32),
-        Semantics(
-          label: 'Loading HumSukhan',
-          value: 'Starting up',
-          liveRegion: true,
-          child: SizedBox(
-            width: 88,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(AppTokens.radiusFull),
-              child: const LinearProgressIndicator(minHeight: 4),
+          const SizedBox(height: 32),
+          Semantics(
+            label: s.loading,
+            child: SizedBox(
+              width: 88,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppTokens.radiusFull),
+                child: const LinearProgressIndicator(minHeight: 4),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
 
     final animatedContent = reduceMotion
@@ -102,28 +98,20 @@ class _SplashScreenState extends State<SplashScreen>
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: theme.brightness == Brightness.dark
-            ? Brightness.light
-            : Brightness.dark,
+        statusBarIconBrightness: theme.brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: theme.brightness == Brightness.dark ? Brightness.dark : Brightness.light,
       ),
       child: Scaffold(
-        body: Semantics(
-          container: true,
-          label: 'HumSukhan startup',
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: theme.scaffoldBackgroundColor,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  theme.scaffoldBackgroundColor,
-                  colors.primary.withValues(alpha: .08),
-                ],
-              ),
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [theme.scaffoldBackgroundColor, colors.primary.withValues(alpha: .08)],
             ),
-            child: Center(child: animatedContent),
           ),
+          child: Center(child: animatedContent),
         ),
       ),
     );
