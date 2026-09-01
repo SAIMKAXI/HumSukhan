@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import '../models/models.dart';
+import '../services/cloud_tts_service.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/stt/model_manager.dart';
 
@@ -13,82 +13,37 @@ abstract class TtsProvider {
   void dispose();
 }
 
-class RealTtsProvider implements TtsProvider {
-  final FlutterTts _tts = FlutterTts();
-  bool _speaking = false;
+class CloudTtsProvider implements TtsProvider {
+  final CloudTtsService _service = CloudTtsService.instance;
 
   @override
-  Future<bool> initialize() async {
-    try {
-      await _tts.setLanguage('en-US');
-      await _tts.setSpeechRate(0.5);
-      await _tts.setVolume(1.0);
-      await _tts.setPitch(1.0);
-      _tts.setStartHandler(() => _speaking = true);
-      _tts.setCompletionHandler(() => _speaking = false);
-      _tts.setCancelHandler(() => _speaking = false);
-      _tts.setErrorHandler((_) => _speaking = false);
-      return true;
-    } catch (e) {
-      debugPrint('TTS init failed: $e');
-      return false;
-    }
-  }
-
-  String _localeForText(String language, String text) {
-    final normalizedLanguage = language.toLowerCase().trim();
-    if (normalizedLanguage == 'urdu') return 'ur-PK';
-    if (normalizedLanguage == 'roman urdu') return 'ur-PK';
-    if (normalizedLanguage == 'auto') {
-      if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'ur-PK';
-      final normalized = text.toLowerCase().replaceAll(RegExp(r"[^a-z0-9\s']"), ' ');
-      final tokens = normalized.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
-      const romanUrduWords = {
-        'aap', 'ap', 'aapko', 'aapki', 'aapke', 'aapka', 'kya', 'kyun', 'hai', 'hain',
-        'ho', 'mein', 'main', 'mujhe', 'tum', 'se', 'ko', 'ka', 'ki', 'ke', 'yeh', 'woh',
-        'ham', 'hum', 'mera', 'meri', 'mere', 'apna', 'nahi', 'nahin', 'acha', 'achha',
-        'theek', 'karo', 'karna', 'jana', 'jao', 'chahiye', 'bhi', 'par',
-      };
-      if (tokens.intersection(romanUrduWords).length >= 1) return 'ur-PK';
-    }
-    return 'en-US';
-  }
+  Future<bool> initialize() async => true;
 
   @override
   Future<void> speak(String text, {String language = 'English'}) async {
-    final value = text.trim();
-    if (value.isEmpty) return;
-
-    _speaking = true;
-    try {
-      final locale = _localeForText(language, value);
-      await _tts.setLanguage(locale);
-      await _tts.speak(value);
-      while (_speaking) {
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-    } catch (e) {
-      debugPrint('TTS speak failed: $e');
-      _speaking = false;
-    }
+    await _service.speak(text, language: language);
   }
 
   @override
   Future<void> stop() async {
-    await _tts.stop();
-    _speaking = false;
+    await _service.stop();
   }
 
   @override
-  bool get isSpeaking => _speaking;
+  bool get isSpeaking => _service.isSpeaking;
 
   @override
   void dispose() {
-    _tts.stop();
+    _service.dispose();
   }
 }
 
-/// Speech provider with hybrid STT support and model management.
+/// Speech provider with hybrid STT support and cloud-backed TTS.
+///
+/// STT remains on the existing hybrid architecture. TTS is intentionally
+/// provider-routed server-side:
+/// - English: Deepgram
+/// - Urdu / Roman Urdu: Soniox
 class SpeechProvider extends ChangeNotifier {
   late final EnhancedSpeechProvider _sttProvider;
   late final TtsProvider _ttsProvider;
@@ -107,7 +62,7 @@ class SpeechProvider extends ChangeNotifier {
 
   SpeechProvider() {
     _sttProvider = EnhancedSpeechProvider();
-    _ttsProvider = RealTtsProvider();
+    _ttsProvider = CloudTtsProvider();
     _modelManager = ModelManager.instance;
   }
 
