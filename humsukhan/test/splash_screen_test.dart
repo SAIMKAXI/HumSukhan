@@ -26,8 +26,8 @@ void main() {
 
     final startupSemantics = tester.widget<Semantics>(startupFinder);
     expect(startupSemantics.identifier, 'humsukhan-startup');
-    expect(startupSemantics.properties.label, 'HumSukhan startup');
-    expect(startupSemantics.properties.liveRegion, isTrue);
+    expect(startupSemantics.label, 'HumSukhan startup');
+    expect(startupSemantics.liveRegion, isTrue);
     expect(find.text('HumSukhan'), findsOneWidget);
     expect(find.text('Accessibility-first AI Companion'), findsOneWidget);
     expect(completed, isFalse);
