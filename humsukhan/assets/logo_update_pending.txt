@@ -1,0 +1,1 @@
+The supplied 1024x1024 logo is the intended canonical app icon. CI asset replacement requires a binary Git object upload; this marker prevents the source file from being mistaken for a completed platform-icon migration.
