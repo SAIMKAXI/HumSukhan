@@ -19,8 +19,14 @@ class HomeScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final profile = user.profile;
-    final profileName = profile?.name ?? auth.user?.userMetadata?['name']?.toString().trim() ?? 'there';
+    final profileValue = profile?.name?.trim();
+    final metadataValue = auth.user?.userMetadata?['name']?.toString().trim();
     final s = AppStrings.of(context);
+    final profileName = profileValue?.isNotEmpty == true
+        ? profileValue!
+        : metadataValue?.isNotEmpty == true
+            ? metadataValue!
+            : s.appName;
 
     return Scaffold(
       appBar: AppBar(
@@ -56,7 +62,7 @@ class HomeScreen extends StatelessWidget {
               Text(s.quickActions, style: theme.textTheme.labelMedium?.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 12),
               ModernModeCard(
-                eyebrow: 'Everyday',
+                eyebrow: s.everydayMode,
                 title: s.everydayMode,
                 subtitle: s.startConversation,
                 icon: Icons.forum_rounded,
@@ -65,7 +71,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               ModernModeCard(
-                eyebrow: 'Work & study',
+                eyebrow: s.professionalMode,
                 title: s.professionalMode,
                 subtitle: s.startMeetingLecture,
                 icon: Icons.work_rounded,
@@ -73,12 +79,12 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               ModernModeCard(
-                eyebrow: 'Always aware',
+                eyebrow: s.environmentalAlerts,
                 title: s.environmentalAlerts,
                 subtitle: environmental.monitoringEnabled ? s.monitoringActive : s.monitoringOff,
                 icon: Icons.notifications_rounded,
                 trailing: StatusPill(
-                  label: environmental.monitoringEnabled ? 'ON' : 'OFF',
+                  label: environmental.monitoringEnabled ? s.monitoringActive : s.monitoringOff,
                   icon: environmental.monitoringEnabled ? Icons.sensors_rounded : Icons.sensors_off_rounded,
                   color: environmental.monitoringEnabled ? colors.primary : colors.onSurfaceVariant,
                 ),
@@ -110,9 +116,7 @@ class HomeScreen extends StatelessWidget {
                         child: Icon(Icons.auto_awesome_rounded, color: colors.primary, size: 28),
                       ),
                       const SizedBox(height: 16),
-                      Text('Your workspace is ready', style: theme.textTheme.titleMedium),
-                      const SizedBox(height: 6),
-                      Text(s.noRecentSessions, textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+                      Text(s.noRecentSessions, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
                     ],
                   ),
                 )
