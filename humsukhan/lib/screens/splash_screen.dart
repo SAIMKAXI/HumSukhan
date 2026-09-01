@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../l10n/app_strings.dart';
+import '../widgets/modern_ui.dart';
 
 class SplashScreen extends StatefulWidget {
   final VoidCallback onComplete;
@@ -12,30 +13,20 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
+  late Animation<double> _fade;
+  late Animation<double> _scale;
   Timer? _navigationTimer;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1500),
-      vsync: this,
-    );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeIn),
-    );
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
-    );
+    _controller = AnimationController(duration: const Duration(milliseconds: 1100), vsync: this);
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _scale = Tween<double>(begin: .88, end: 1).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
     _controller.forward();
-
-    // Auto-navigate after delay
-    _navigationTimer = Timer(const Duration(milliseconds: 2500), () {
+    _navigationTimer = Timer(const Duration(milliseconds: 2200), () {
       if (mounted) widget.onComplete();
     });
   }
@@ -49,84 +40,42 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-      ),
+      value: SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: theme.brightness == Brightness.dark ? Brightness.light : Brightness.dark),
       child: Scaffold(
-        body: Container(
-          width: double.infinity,
-          height: double.infinity,
-          decoration: const BoxDecoration(
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor,
             gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                AppTokens.warmIvory,
-                AppTokens.softCream,
-              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [theme.scaffoldBackgroundColor, colors.primary.withValues(alpha: .08)],
             ),
           ),
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              return Opacity(
-                opacity: _fadeAnimation.value,
-                child: Transform.scale(
-                  scale: _scaleAnimation.value,
+          child: Center(
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) => FadeTransition(
+                opacity: _fade,
+                child: ScaleTransition(
+                  scale: _scale,
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Logo
-                      Container(
-                        width: 160,
-                        height: 160,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(32),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppTokens.deepSage.withValues(alpha: 0.2),
-                              blurRadius: 30,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(32),
-                          child: Image.asset(
-                            'assets/logo.png',
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      // App Name
-                      Text(
-                        'HumSukhan',
-                        style: TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.w700,
-                          color: AppTokens.deepSage,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
+                      const BrandLogo(size: 132, radius: AppTokens.radiusXl),
+                      const SizedBox(height: 28),
+                      Text('HumSukhan', style: theme.textTheme.displaySmall?.copyWith(color: colors.primary)),
                       const SizedBox(height: 8),
-                      // Tagline
-                      Text(
-                        AppStrings.of(context).appTagline,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                          color: AppTokens.textSecondary,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
+                      Text(AppStrings.of(context).appTagline, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant)),
+                      const SizedBox(height: 32),
+                      SizedBox(width: 88, child: ClipRRect(borderRadius: BorderRadius.circular(AppTokens.radiusFull), child: const LinearProgressIndicator(minHeight: 4))),
                     ],
                   ),
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ),
       ),
