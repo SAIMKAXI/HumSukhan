@@ -1,7 +1,11 @@
 import 'dart:async';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+
 import '../models/models.dart';
+import '../services/cloud_tts_service.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/stt/model_manager.dart';
 
@@ -13,21 +17,34 @@ abstract class TtsProvider {
   void dispose();
 }
 
-class RealTtsProvider implements TtsProvider {
-  final FlutterTts _tts = FlutterTts();
+/// Cloud-first TTS with a device-native offline fallback.
+///
+/// Online path:
+///   English -> Deepgram
+///   Urdu/Roman Urdu -> Soniox
+///
+/// If cloud synthesis fails (network, quota, auth, provider outage), Android/iOS
+/// native TTS is used instead. This keeps speech output available offline and on
+/// devices that have a suitable installed voice.
+class ResilientTtsProvider implements TtsProvider {
+  final FlutterTts _native = FlutterTts();
+  final AudioPlayer _player = AudioPlayer();
   bool _speaking = false;
+  bool _initialized = false;
 
   @override
   Future<bool> initialize() async {
+    if (_initialized) return true;
     try {
-      await _tts.setLanguage('en-US');
-      await _tts.setSpeechRate(0.5);
-      await _tts.setVolume(1.0);
-      await _tts.setPitch(1.0);
-      _tts.setStartHandler(() => _speaking = true);
-      _tts.setCompletionHandler(() => _speaking = false);
-      _tts.setCancelHandler(() => _speaking = false);
-      _tts.setErrorHandler((_) => _speaking = false);
+      await _native.awaitSpeakCompletion(true);
+      await _native.setSpeechRate(0.5);
+      await _native.setVolume(1.0);
+      await _native.setPitch(1.0);
+      _native.setStartHandler(() => _speaking = true);
+      _native.setCompletionHandler(() => _speaking = false);
+      _native.setCancelHandler(() => _speaking = false);
+      _native.setErrorHandler((_) => _speaking = false);
+      _initialized = true;
       return true;
     } catch (e) {
       debugPrint('TTS init failed: $e');
@@ -35,47 +52,118 @@ class RealTtsProvider implements TtsProvider {
     }
   }
 
-  String _localeForText(String language, String text) {
-    final normalizedLanguage = language.toLowerCase().trim();
-    if (normalizedLanguage == 'urdu') return 'ur-PK';
-    if (normalizedLanguage == 'roman urdu') return 'ur-PK';
-    if (normalizedLanguage == 'auto') {
-      if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'ur-PK';
-      final normalized = text.toLowerCase().replaceAll(RegExp(r"[^a-z0-9\s']"), ' ');
-      final tokens = normalized.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
-      const romanUrduWords = {
-        'aap', 'ap', 'aapko', 'aapki', 'aapke', 'aapka', 'kya', 'kyun', 'hai', 'hain',
-        'ho', 'mein', 'main', 'mujhe', 'tum', 'se', 'ko', 'ka', 'ki', 'ke', 'yeh', 'woh',
-        'ham', 'hum', 'mera', 'meri', 'mere', 'apna', 'nahi', 'nahin', 'acha', 'achha',
-        'theek', 'karo', 'karna', 'jana', 'jao', 'chahiye', 'bhi', 'par',
-      };
-      if (tokens.intersection(romanUrduWords).length >= 1) return 'ur-PK';
+  String _deliveryLanguage(String language, String text) {
+    final normalized = language.toLowerCase().trim();
+    if (normalized == 'urdu' || normalized == 'roman urdu') return 'urdu';
+    if (normalized == 'english') return 'english';
+    if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'urdu';
+    const romanUrdu = {
+      'aap', 'ap', 'aapko', 'aapki', 'aapke', 'aapka', 'kya', 'kyun', 'hai', 'hain',
+      'ho', 'mein', 'main', 'mujhe', 'tum', 'se', 'ko', 'ka', 'ki', 'ke', 'yeh', 'woh',
+      'ham', 'hum', 'mera', 'meri', 'mere', 'apna', 'nahi', 'nahin', 'acha', 'achha',
+      'theek', 'karo', 'karna', 'jana', 'jao', 'chahiye', 'bhi', 'par',
+    };
+    final words = text.toLowerCase().replaceAll(RegExp(r"[^a-z0-9\s']"), ' ').split(RegExp(r'\s+'));
+    if (words.any(romanUrdu.contains)) return 'urdu';
+    return 'english';
+  }
+
+  Future<bool> _setNativeLocale(String deliveryLanguage) async {
+    final candidates = deliveryLanguage == 'urdu'
+        ? const ['ur-PK', 'ur-IN']
+        : const ['en-US', 'en-GB', 'en-IN'];
+
+    for (final locale in candidates) {
+      try {
+        final available = await _native.isLanguageAvailable(locale);
+        if (available == true || available.toString().toLowerCase() == 'true') {
+          await _native.setLanguage(locale);
+          return true;
+        }
+      } catch (_) {}
     }
-    return 'en-US';
+
+    try {
+      final voices = await _native.getVoices;
+      if (voices is List) {
+        final prefix = deliveryLanguage == 'urdu' ? 'ur' : 'en';
+        for (final raw in voices) {
+          if (raw is! Map) continue;
+          final locale = raw['locale']?.toString() ?? '';
+          if (locale.toLowerCase().startsWith(prefix)) {
+            await _native.setVoice({'name': raw['name']?.toString() ?? '', 'locale': locale});
+            return true;
+          }
+        }
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
+  Future<void> _speakNative(String text, String deliveryLanguage) async {
+    final ready = await _setNativeLocale(deliveryLanguage);
+    if (!ready) {
+      throw StateError('No installed ${deliveryLanguage == 'urdu' ? 'Urdu' : 'English'} device voice is available');
+    }
+    _speaking = true;
+    await _native.speak(text);
+    while (_speaking) {
+      await Future<void>.delayed(const Duration(milliseconds: 75));
+    }
+  }
+
+  Future<void> _speakCloud(String text, String deliveryLanguage) async {
+    final result = await CloudTtsService.instance.synthesize(
+      text: text,
+      language: deliveryLanguage,
+    );
+    await _player.stop();
+    _speaking = true;
+    try {
+      final completion = _player.onPlayerComplete.first;
+      await _player.play(BytesSource(result.audioBytes));
+      await completion.timeout(const Duration(seconds: 45));
+    } finally {
+      _speaking = false;
+    }
   }
 
   @override
   Future<void> speak(String text, {String language = 'English'}) async {
     final value = text.trim();
     if (value.isEmpty) return;
+    await initialize();
 
-    _speaking = true;
+    final deliveryLanguage = _deliveryLanguage(language, value);
+    await stop();
+
+    // Cloud-first. If the device is offline or every provider key is exhausted,
+    // the cloud request fails quickly and the native engine takes over.
     try {
-      final locale = _localeForText(language, value);
-      await _tts.setLanguage(locale);
-      await _tts.speak(value);
-      while (_speaking) {
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
+      await _speakCloud(value, deliveryLanguage);
+      return;
     } catch (e) {
-      debugPrint('TTS speak failed: $e');
+      debugPrint('Cloud TTS unavailable; falling back to device TTS: $e');
+    }
+
+    try {
+      await _speakNative(value, deliveryLanguage);
+    } catch (e) {
       _speaking = false;
+      debugPrint('Native TTS unavailable: $e');
+      rethrow;
     }
   }
 
   @override
   Future<void> stop() async {
-    await _tts.stop();
+    try {
+      await _player.stop();
+    } catch (_) {}
+    try {
+      await _native.stop();
+    } catch (_) {}
     _speaking = false;
   }
 
@@ -84,7 +172,8 @@ class RealTtsProvider implements TtsProvider {
 
   @override
   void dispose() {
-    _tts.stop();
+    unawaited(_player.dispose());
+    unawaited(_native.stop());
   }
 }
 
@@ -107,7 +196,7 @@ class SpeechProvider extends ChangeNotifier {
 
   SpeechProvider() {
     _sttProvider = EnhancedSpeechProvider();
-    _ttsProvider = RealTtsProvider();
+    _ttsProvider = ResilientTtsProvider();
     _modelManager = ModelManager.instance;
   }
 
