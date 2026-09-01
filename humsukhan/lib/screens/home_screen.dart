@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../widgets/reusable_widgets.dart';
+import '../widgets/modern_ui.dart';
 import '../l10n/app_strings.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -18,217 +19,118 @@ class HomeScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final profile = user.profile;
-    final profileName = profile?.name ??
-        auth.user?.userMetadata?['name']?.toString().trim() ??
-        'there';
+    final profileName = profile?.name ?? auth.user?.userMetadata?['name']?.toString().trim() ?? 'there';
     final s = AppStrings.of(context);
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [theme.scaffoldBackgroundColor, colors.surfaceContainerHighest],
-          ),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        titleSpacing: 20,
+        title: Row(
+          children: [
+            const BrandLogo(size: 40, radius: AppTokens.radiusMd),
+            const SizedBox(width: 12),
+            Expanded(child: Text(s.appName)),
+            StatusPill(
+              label: connectivity.statusLabel,
+              icon: connectivity.isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+              color: connectivity.isOnline ? colors.primary : colors.error,
+            ),
+          ],
         ),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppTokens.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: AppTokens.lg),
-                Row(
-                  children: [
-                    Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colors.primary.withValues(alpha: 0.15),
-                            blurRadius: 12,
-                            offset: const Offset(0, 5),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: Image.asset('assets/logo.png', fit: BoxFit.cover),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${_timeGreeting(s)}, $profileName',
-                            style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            s.yourCompanion,
-                            style: theme.textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: connectivity.isOnline
-                            ? colors.primary.withValues(alpha: 0.1)
-                            : colors.error.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppTokens.radiusFull),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            connectivity.isOnline ? Icons.wifi : Icons.wifi_off,
-                            size: 12,
-                            color: connectivity.isOnline ? colors.primary : colors.error,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            connectivity.statusLabel,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: connectivity.isOnline ? colors.primary : colors.error,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+      ),
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${_timeGreeting(s)},', style: theme.textTheme.titleMedium?.copyWith(color: colors.onSurfaceVariant)),
+              const SizedBox(height: 4),
+              Text(profileName, style: theme.textTheme.displaySmall),
+              const SizedBox(height: 8),
+              Text(s.yourCompanion, style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant)),
+              const SizedBox(height: 28),
+
+              Text(s.quickActions, style: theme.textTheme.labelMedium?.copyWith(letterSpacing: 1.2)),
+              const SizedBox(height: 12),
+              ModernModeCard(
+                eyebrow: 'Everyday',
+                title: s.everydayMode,
+                subtitle: s.startConversation,
+                icon: Icons.forum_rounded,
+                emphasized: true,
+                onTap: () => Navigator.pushNamed(context, '/everyday'),
+              ),
+              const SizedBox(height: 12),
+              ModernModeCard(
+                eyebrow: 'Work & study',
+                title: s.professionalMode,
+                subtitle: s.startMeetingLecture,
+                icon: Icons.work_rounded,
+                onTap: () => Navigator.pushNamed(context, '/professional'),
+              ),
+              const SizedBox(height: 12),
+              ModernModeCard(
+                eyebrow: 'Always aware',
+                title: s.environmentalAlerts,
+                subtitle: environmental.monitoringEnabled ? s.monitoringActive : s.monitoringOff,
+                icon: Icons.notifications_rounded,
+                trailing: StatusPill(
+                  label: environmental.monitoringEnabled ? 'ON' : 'OFF',
+                  icon: environmental.monitoringEnabled ? Icons.sensors_rounded : Icons.sensors_off_rounded,
+                  color: environmental.monitoringEnabled ? colors.primary : colors.onSurfaceVariant,
                 ),
-                const SizedBox(height: AppTokens.xl),
-                Text(
-                  s.quickActions,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: colors.onSurfaceVariant,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: AppTokens.md),
-                _ActionCard(
-                  title: s.everydayMode,
-                  subtitle: s.startConversation,
-                  icon: Icons.chat_bubble_outline,
-                  onTap: () => Navigator.pushNamed(context, '/everyday'),
-                ),
-                const SizedBox(height: AppTokens.sm),
-                _ActionCard(
-                  title: s.professionalMode,
-                  subtitle: s.startMeetingLecture,
-                  icon: Icons.work_outline,
-                  onTap: () => Navigator.pushNamed(context, '/professional'),
-                ),
-                const SizedBox(height: AppTokens.sm),
-                _ActionCard(
-                  title: s.environmentalAlerts,
-                  subtitle: environmental.monitoringEnabled ? s.monitoringActive : s.monitoringOff,
-                  icon: Icons.volume_up,
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: environmental.monitoringEnabled
-                          ? colors.primary.withValues(alpha: 0.15)
-                          : colors.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(AppTokens.radiusFull),
-                    ),
-                    child: Text(
-                      environmental.monitoringEnabled ? 'ON' : 'OFF',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: environmental.monitoringEnabled
-                            ? colors.primary
-                            : colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  onTap: () => Navigator.pushNamed(context, '/environmental'),
-                ),
-                const SizedBox(height: AppTokens.xl),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      s.recentSessions,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: colors.onSurfaceVariant,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pushNamed(context, '/professional'),
-                      child: Text(s.viewAll),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppTokens.sm),
-                if (professional.recentSessions.isEmpty)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          Icon(Icons.event_note, color: colors.onSurfaceVariant),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              s.noRecentSessions,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: colors.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  ...professional.recentSessions.map(
-                    (session) => SessionCard(
-                      session: session,
-                      insight: professional.getInsightForSession(session.id),
-                      onTap: () => Navigator.pushNamed(
-                        context,
-                        '/session/detail',
-                        arguments: session.id,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: AppTokens.xl),
+                onTap: () => Navigator.pushNamed(context, '/environmental'),
+              ),
+
+              const SizedBox(height: 32),
+              ModernSectionHeader(
+                title: s.recentSessions,
+                actionLabel: s.viewAll,
+                onAction: () => Navigator.pushNamed(context, '/professional'),
+              ),
+              const SizedBox(height: 12),
+              if (professional.recentSessions.isEmpty)
                 Container(
-                  padding: const EdgeInsets.all(14),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-                    border: Border.all(color: colors.primary.withValues(alpha: 0.15)),
+                    color: colors.surface,
+                    borderRadius: BorderRadius.circular(AppTokens.radiusXl),
+                    border: Border.all(color: colors.outline.withValues(alpha: .55)),
                   ),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Icon(Icons.shield, size: 18, color: colors.primary),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          s.privacyNote,
-                          style: theme.textTheme.bodySmall?.copyWith(color: colors.primary),
-                        ),
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(color: colors.primary.withValues(alpha: .08), shape: BoxShape.circle),
+                        child: Icon(Icons.auto_awesome_rounded, color: colors.primary, size: 28),
                       ),
+                      const SizedBox(height: 16),
+                      Text('Your workspace is ready', style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 6),
+                      Text(s.noRecentSessions, textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
                     ],
                   ),
+                )
+              else
+                ...professional.recentSessions.map(
+                  (session) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: SessionCard(
+                      session: session,
+                      insight: professional.getInsightForSession(session.id),
+                      onTap: () => Navigator.pushNamed(context, '/session/detail', arguments: session.id),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: AppTokens.lg),
-              ],
-            ),
+
+              const SizedBox(height: 24),
+              PrivacyStrip(text: s.privacyNote),
+            ],
           ),
         ),
       ),
@@ -240,67 +142,5 @@ class HomeScreen extends StatelessWidget {
     if (hour < 12) return s.goodMorning;
     if (hour < 17) return s.goodAfternoon;
     return s.goodEvening;
-  }
-}
-
-class _ActionCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final VoidCallback onTap;
-  final Widget? trailing;
-
-  const _ActionCard({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.onTap,
-    this.trailing,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return Card(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppTokens.radiusSm),
-                ),
-                child: Icon(icon, color: colors.primary, size: 24),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              trailing ?? Icon(Icons.chevron_right, color: colors.onSurfaceVariant, size: 22),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
