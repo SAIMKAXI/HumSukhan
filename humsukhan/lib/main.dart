@@ -44,9 +44,14 @@ Future<void> environmentalMonitoringBackgroundMain() async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await SupabaseService.instance.initialize();
+    await SupabaseService.instance.initialize().timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        debugPrint('Supabase initialization timed out; continuing to app.');
+      },
+    );
   } catch (e) {
-    debugPrint('Supabase init failed: $e');
+    debugPrint('Supabase init failed; continuing to app: $e');
   }
   runApp(const HumSukhanApp());
 }
