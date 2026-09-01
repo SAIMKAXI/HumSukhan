@@ -27,6 +27,7 @@ class EnhancedSpeechProvider {
   String _platformLastText = '';
   String _lastEmittedPlatformText = '';
   StreamSubscription<SherpaSTTResult>? _sherpaSubscription;
+  StreamSubscription<DeepgramTranscriptResult>? _deepgramSubscription;
   Timer? _platformRestartTimer;
 
   Stream<SpeechResultEvent> get onResult => _controller.stream;
@@ -148,11 +149,28 @@ class EnhancedSpeechProvider {
     _deepgramAutoMode = language.toLowerCase() == 'auto';
     try {
       if (_deepgramAutoMode) {
-        final started = await _deepgram.start();
+        await _deepgramSubscription?.cancel();
+        _deepgramSubscription = _deepgram.onResult.listen((result) {
+          if (!_listening) return;
+          final detected = result.language == 'Auto'
+              ? _detectLanguage(result.transcript, fallback: 'English')
+              : result.language;
+          _controller.add(SpeechResultEvent(
+            text: result.transcript,
+            isFinal: result.isFinal,
+            confidence: result.confidence,
+            language: detected,
+            isLive: true,
+            mode: STTMode.platform,
+          ));
+        });
+        final started = await _deepgram.start(language: 'auto');
         if (!started) {
+          await _deepgramSubscription?.cancel();
+          _deepgramSubscription = null;
           _deepgramAutoMode = false;
           _listening = false;
-          debugPrint('Deepgram microphone recording could not start');
+          debugPrint('Deepgram streaming microphone could not start');
         }
         return;
       }
@@ -220,10 +238,9 @@ class EnhancedSpeechProvider {
     _sherpaSubscription = null;
     _deepgramAutoMode = false;
     if (useDeepgram) {
-      final result = await _deepgram.stopAndTranscribe(language: 'auto');
-      if (result != null && result.transcript.isNotEmpty) {
-        _controller.add(SpeechResultEvent(text: result.transcript, isFinal: true, confidence: result.confidence, language: _normalizeDetectedLanguage(result.language, result.transcript), isLive: true, mode: STTMode.platform));
-      }
+      await _deepgramSubscription?.cancel();
+      _deepgramSubscription = null;
+      await _deepgram.stop();
       return;
     }
     if (_currentMode == STTMode.platform) {
@@ -312,6 +329,7 @@ class EnhancedSpeechProvider {
   void dispose() {
     _platformRestartTimer?.cancel();
     _sherpaSubscription?.cancel();
+    _deepgramSubscription?.cancel();
     _platformSTT.cancel();
     _deepgram.cancel();
     _sherpaSTT.dispose();
