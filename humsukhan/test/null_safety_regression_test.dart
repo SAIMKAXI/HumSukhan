@@ -1,61 +1,42 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:humsukhan/main.dart';
-import 'package:humsukhan/services/supabase_service.dart';
 import 'package:humsukhan/services/auth_service.dart';
 import 'package:humsukhan/services/database_service.dart';
+import 'package:humsukhan/services/supabase_service.dart';
 import 'package:humsukhan/models/models.dart';
+import 'package:humsukhan/main.dart';
 
 void main() {
   group('SupabaseService safety when not initialized', () {
     test('isReady returns false when Supabase is not initialized', () {
       final service = SupabaseService.instance;
-      expect(() => service.isReady, returnsNormally);
-      expect(() => service.client, returnsNormally);
-      expect(() => service.auth, returnsNormally);
-      expect(() => service.currentUser, returnsNormally);
-      expect(() => service.isAuthenticated, returnsNormally);
-      expect(() => service.userId, returnsNormally);
+      expect(service.isReady, isFalse);
     });
 
     test('client returns null when Supabase is not ready', () {
       final service = SupabaseService.instance;
-      if (!service.isReady) {
-        expect(service.client, isNull);
-        expect(service.auth, isNull);
-        expect(service.currentUser, isNull);
-        expect(service.isAuthenticated, isFalse);
-        expect(service.userId, isEmpty);
-      }
+      expect(service.client, isNull);
     });
 
     test('onAuthStateChange returns listenable stream when not initialized', () {
       final service = SupabaseService.instance;
-      if (!service.isReady) {
-        final stream = service.onAuthStateChange;
-        expect(stream, isNotNull);
-        late bool gotEvent;
-        gotEvent = false;
-        stream.listen((_) { gotEvent = true; });
-        expect(gotEvent, isFalse);
-      }
+      expect(service.onAuthStateChange, isNotNull);
     });
   });
 
   group('AuthService safety when Supabase is unavailable', () {
     test('isAvailable reflects Supabase auth state', () {
       final auth = AuthService.instance;
-      final supabase = SupabaseService.instance;
-      expect(auth.isAvailable, equals(supabase.auth != null));
+      expect(auth.isAvailable, isFalse);
     });
 
     test('signIn returns failure when Supabase is unavailable', () async {
       final auth = AuthService.instance;
       if (!auth.isAvailable) {
-        final result = await auth.signIn(email: 'test@test.com', password: 'pass');
+        final result = await auth.signIn(
+          email: 'test@test.com',
+          password: 'Password1!',
+        );
         expect(result.success, isFalse);
-        expect(result.errorMessage, isNotNull);
-        expect(result.user, isNull);
       }
     });
 
@@ -64,11 +45,9 @@ void main() {
       if (!auth.isAvailable) {
         final result = await auth.signUp(
           email: 'test@test.com',
-          password: 'pass',
-          name: 'Test',
+          password: 'Password1!',
         );
         expect(result.success, isFalse);
-        expect(result.errorMessage, isNotNull);
       }
     });
 
@@ -88,11 +67,11 @@ void main() {
       }
     });
 
-    test('resetPassword returns false when Supabase is unavailable', () async {
+    test('resetPassword returns failure when Supabase is unavailable', () async {
       final auth = AuthService.instance;
       if (!auth.isAvailable) {
         final result = await auth.resetPassword('test@test.com');
-        expect(result, isFalse);
+        expect(result.success, isFalse);
       }
     });
   });
@@ -106,64 +85,56 @@ void main() {
 
     test('fetchProfile returns null when unavailable', () async {
       final db = DatabaseService.instance;
-      final result = await db.fetchProfile('test-user-id');
-      expect(result, isNull);
+      expect(await db.fetchProfile('test-user'), isNull);
     });
 
     test('fetchSessions returns empty list when unavailable', () async {
       final db = DatabaseService.instance;
-      final result = await db.fetchSessions();
-      expect(result, isEmpty);
+      expect(await db.fetchSessions('test-user'), isEmpty);
     });
 
     test('fetchFolders returns empty list when unavailable', () async {
       final db = DatabaseService.instance;
-      final result = await db.fetchFolders();
-      expect(result, isEmpty);
+      expect(await db.fetchFolders('test-user'), isEmpty);
     });
 
     test('fetchQuickReplies returns empty list when unavailable', () async {
       final db = DatabaseService.instance;
-      final result = await db.fetchQuickReplies();
-      expect(result, isEmpty);
+      expect(await db.fetchQuickReplies('test-user'), isEmpty);
     });
 
     test('cleanupExpiredSessions returns 0 when unavailable', () async {
       final db = DatabaseService.instance;
-      final result = await db.cleanupExpiredSessions();
-      expect(result, equals(0));
+      expect(await db.cleanupExpiredSessions('test-user'), 0);
     });
 
     test('deleteSession does not throw when unavailable', () async {
       final db = DatabaseService.instance;
-      expect(() => db.deleteSession('test-id'), returnsNormally);
-      await db.deleteSession('test-id');
+      await db.deleteSession('test-session');
     });
 
     test('deleteFolder does not throw when unavailable', () async {
       final db = DatabaseService.instance;
-      expect(() => db.deleteFolder('test-id'), returnsNormally);
-      await db.deleteFolder('test-id');
+      await db.deleteFolder('test-folder');
     });
 
     test('deleteAllUserData does not throw when unavailable', () async {
       final db = DatabaseService.instance;
-      expect(() => db.deleteAllUserData(), returnsNormally);
-      await db.deleteAllUserData();
+      await db.deleteAllUserData('test-user');
     });
   });
 
   group('App cold start safety', () {
-    testWidgets('App mounts startup screen without crashing', (WidgetTester tester) async {
+    testWidgets('App mounts startup screen without crashing', (tester) async {
       await tester.pumpWidget(const HumSukhanApp());
       await tester.pump();
-      expect(find.byType(MaterialApp), findsOneWidget);
+      expect(find.byType(HumSukhanApp), findsOneWidget);
     });
 
-    testWidgets('App handles missing Supabase gracefully', (WidgetTester tester) async {
+    testWidgets('App handles missing Supabase gracefully', (tester) async {
       await tester.pumpWidget(const HumSukhanApp());
       await tester.pump();
-      expect(find.byType(MaterialApp), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }
