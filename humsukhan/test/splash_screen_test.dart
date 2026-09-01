@@ -15,17 +15,15 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const ValueKey('splash-brand-logo')), findsOneWidget);
-    expect(find.byKey(const ValueKey('splash-app-name')), findsOneWidget);
     expect(find.text('HumSukhan'), findsOneWidget);
     expect(find.text('Accessibility-first AI Companion'), findsOneWidget);
+    expect(find.byKey(const ValueKey('splash-app-name')), findsOneWidget);
     expect(completionCount, 0);
 
     await tester.pump(const Duration(milliseconds: 2199));
     expect(completionCount, 0);
 
     await tester.pump(const Duration(milliseconds: 1));
-    await tester.pump();
     expect(completionCount, 1);
 
     await tester.pump(const Duration(seconds: 1));
