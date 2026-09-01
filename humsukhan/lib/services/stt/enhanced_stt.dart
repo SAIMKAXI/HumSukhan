@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'vosk_stt.dart';
@@ -27,7 +26,6 @@ class EnhancedSpeechProvider {
   String _platformLocale = 'en-US';
   String _platformLastText = '';
   String _lastEmittedPlatformText = '';
-  String? _lastStartError;
   StreamSubscription<SherpaSTTResult>? _sherpaSubscription;
   StreamSubscription<DeepgramTranscriptResult>? _deepgramSubscription;
   Timer? _platformRestartTimer;
@@ -39,7 +37,6 @@ class EnhancedSpeechProvider {
   String get currentLanguage => _currentLanguage;
   bool get isSherpaAvailable => _sherpaAvailable;
   bool get isPlatformAvailable => _platformAvailable;
-  String? get lastStartError => _lastStartError;
   bool get isOfflineMode => _currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch;
   bool get isStreamingMode => _currentMode == STTMode.sherpaStreaming;
   bool get isBatchMode => _currentMode == STTMode.sherpaBatch;
@@ -63,8 +60,7 @@ class EnhancedSpeechProvider {
       _platformAvailable = await _platformSTT.initialize(
         onStatus: _onPlatformStatus,
         onError: (error) {
-          _lastStartError = 'Platform speech recognition error: ${error.errorMsg}';
-          debugPrint(_lastStartError!);
+          debugPrint('Platform STT error: ${error.errorMsg}');
           if (_listening && _currentMode == STTMode.platform && !_deepgramAutoMode) {
             _schedulePlatformRestart(delay: const Duration(milliseconds: 500));
           }
@@ -126,8 +122,7 @@ class EnhancedSpeechProvider {
           ),
         );
       } catch (e) {
-        _lastStartError = 'Platform speech restart failed: $e';
-        debugPrint(_lastStartError!);
+        debugPrint('Platform STT restart failed: $e');
         if (_listening && _currentMode == STTMode.platform && !_deepgramAutoMode) {
           _platformRestartTimer = Timer(const Duration(seconds: 1), () {
             _platformRestartTimer = null;
@@ -146,29 +141,13 @@ class EnhancedSpeechProvider {
       if (language == _currentLanguage) return;
       await stopListening();
     }
-
-    _lastStartError = null;
     _currentLanguage = language;
     _updateModeForLanguage(language);
     _listening = true;
     _platformLastText = '';
     _lastEmittedPlatformText = '';
     _deepgramAutoMode = language.toLowerCase() == 'auto';
-
     try {
-      final permission = await Permission.microphone.status;
-      if (!permission.isGranted) {
-        final requested = await Permission.microphone.request();
-        if (!requested.isGranted) {
-          _lastStartError = requested.isPermanentlyDenied
-              ? 'Microphone access is blocked in Android settings.'
-              : 'Microphone access was not granted.';
-          _listening = false;
-          _deepgramAutoMode = false;
-          return;
-        }
-      }
-
       if (_deepgramAutoMode) {
         await _deepgramSubscription?.cancel();
         _deepgramSubscription = _deepgram.onResult.listen((result) {
@@ -185,54 +164,16 @@ class EnhancedSpeechProvider {
             mode: STTMode.platform,
           ));
         });
-
         final started = await _deepgram.start(language: 'auto');
-        if (started) return;
-
-        final deepgramError = _deepgram.lastStartError;
-        await _deepgramSubscription?.cancel();
-        _deepgramSubscription = null;
-        _deepgramAutoMode = false;
-
-        // Never strand the speaker because a cloud dependency failed. Android
-        // speech_to_text is the final microphone fallback and still emits
-        // partial captions immediately.
-        if (_platformAvailable) {
-          try {
-            _currentMode = STTMode.platform;
-            _platformLocale = 'en-US';
-            _controller.add(const SpeechResultEvent(
-              text: '',
-              isFinal: false,
-              confidence: 0.0,
-              language: 'English',
-              isLive: true,
-              mode: STTMode.platform,
-            ));
-            await _platformSTT.listen(
-              onResult: _onPlatformResult,
-              listenOptions: const SpeechListenOptions(
-                listenFor: Duration(minutes: 30),
-                pauseFor: Duration(seconds: 30),
-                localeId: 'en-US',
-                cancelOnError: false,
-                partialResults: true,
-              ),
-            );
-            if (_platformSTT.isNotListening) {
-              throw StateError('Android speech recognizer did not enter listening state');
-            }
-            return;
-          } catch (fallbackError) {
-            _lastStartError = 'Live speech could not start. ${deepgramError ?? fallbackError}';
-          }
-        } else {
-          _lastStartError = deepgramError ?? 'No speech recognizer is available on this device.';
+        if (!started) {
+          await _deepgramSubscription?.cancel();
+          _deepgramSubscription = null;
+          _deepgramAutoMode = false;
+          _listening = false;
+          debugPrint('Deepgram streaming microphone could not start');
         }
-        _listening = false;
         return;
       }
-
       switch (_currentMode) {
         case STTMode.sherpaStreaming:
           await _startSherpaStreaming(language);
@@ -246,14 +187,13 @@ class EnhancedSpeechProvider {
         case STTMode.none:
         case STTMode.demo:
           _listening = false;
-          _lastStartError = 'Speech recognition is unavailable for $language. Download the language model or enable device speech recognition.';
+          debugPrint('Speech recognition unavailable for $language');
           break;
       }
     } catch (e) {
       _listening = false;
       _deepgramAutoMode = false;
-      _lastStartError ??= 'Failed to start listening: $e';
-      debugPrint(_lastStartError!);
+      debugPrint('Failed to start listening: $e');
     }
   }
 
@@ -275,26 +215,16 @@ class EnhancedSpeechProvider {
 
   Future<void> _startPlatformListening(String language) async {
     _platformLocale = _getLocaleId(language);
-    try {
-      await _platformSTT.listen(
-        onResult: _onPlatformResult,
-        listenOptions: SpeechListenOptions(
-          listenFor: const Duration(minutes: 30),
-          pauseFor: const Duration(seconds: 30),
-          localeId: _platformLocale,
-          cancelOnError: false,
-          partialResults: true,
-        ),
-      );
-      if (_platformSTT.isNotListening) {
-        _lastStartError = 'Android speech recognizer did not enter listening state.';
-        _listening = false;
-      }
-    } catch (e) {
-      _lastStartError = 'Android speech recognizer failed to start: $e';
-      _listening = false;
-      rethrow;
-    }
+    await _platformSTT.listen(
+      onResult: _onPlatformResult,
+      listenOptions: SpeechListenOptions(
+        listenFor: const Duration(minutes: 30),
+        pauseFor: const Duration(seconds: 30),
+        localeId: _platformLocale,
+        cancelOnError: false,
+        partialResults: true,
+      ),
+    );
   }
 
   void _onPlatformResult(SpeechRecognitionResult result) {
@@ -345,8 +275,7 @@ class EnhancedSpeechProvider {
     try {
       final sherpaLanguage = language.toLowerCase() == 'auto' ? (_modelManager.isModelReady('Urdu') ? 'Urdu' : 'English') : language;
       _sherpaAvailable = await _sherpaSTT.switchLanguage(sherpaLanguage);
-    } catch (e) {
-      debugPrint('Sherpa language switch failed: $e');
+    } catch (_) {
       _sherpaAvailable = false;
     }
     _updateModeForLanguage(language);
@@ -386,6 +315,13 @@ class EnhancedSpeechProvider {
       case 'auto': return 'en-US';
       default: return 'en-US';
     }
+  }
+
+  String _normalizeDetectedLanguage(String value, String transcript) {
+    final language = value.toLowerCase();
+    if (language.startsWith('ur')) return 'Urdu';
+    if (language.startsWith('en')) return 'English';
+    return _detectLanguage(transcript, fallback: 'English');
   }
 
   String _detectLanguage(String text, {String fallback = 'English'}) {
