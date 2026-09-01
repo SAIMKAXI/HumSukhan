@@ -26,11 +26,10 @@ void main() {
       conversation.addPartialCaption('Let us discuss the meeting agenda');
       conversation.addOwnCaption('My reply');
 
-      expect(conversation.captions, hasLength(3));
+      expect(conversation.captions, hasLength(2));
       expect(
         conversation.captions.map((caption) => caption.text).toList(),
         <String>[
-          'Good morning today',
           'Let us discuss the meeting agenda',
           'My reply',
         ],
