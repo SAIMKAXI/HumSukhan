@@ -8,6 +8,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 
 import '../models/models.dart';
 import '../services/cloud_tts_service.dart';
+import '../services/mixed_transcript_parser.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/stt/model_manager.dart';
 
@@ -24,6 +25,7 @@ class ResilientTtsProvider implements TtsProvider {
   final AudioPlayer _player = AudioPlayer();
   bool _speaking = false;
   bool _initialized = false;
+  int _generation = 0;
 
   @override
   Future<bool> initialize() async {
@@ -144,26 +146,23 @@ class ResilientTtsProvider implements TtsProvider {
     }
   }
 
-  @override
-  Future<void> speak(String text, {String language = 'English'}) async {
-    final value = text.trim();
-    if (value.isEmpty) return;
-    await initialize();
-
-    final deliveryLanguage = _deliveryLanguage(language, value);
-    await stop();
-
+  Future<void> _speakChunk(
+    String text,
+    String deliveryLanguage, {
+    required int generation,
+  }) async {
+    if (generation != _generation || text.trim().isEmpty) return;
     if (await _isLikelyOnline()) {
       try {
-        await _speakCloud(value, deliveryLanguage);
+        await _speakCloud(text, deliveryLanguage);
         return;
       } catch (e) {
         debugPrint('Cloud TTS unavailable; falling back to device TTS: $e');
       }
     }
-
+    if (generation != _generation) return;
     try {
-      await _speakNative(value, deliveryLanguage);
+      await _speakNative(text, deliveryLanguage);
     } catch (e) {
       _speaking = false;
       debugPrint('Native TTS unavailable: $e');
@@ -171,8 +170,57 @@ class ResilientTtsProvider implements TtsProvider {
     }
   }
 
+  /// Speaks contiguous language chunks rather than switching TTS locale per word.
+  Future<void> speakSegments(
+    List<CaptionSegment> segments, {
+    String fallbackLanguage = 'English',
+  }) async {
+    final usable = segments.where((segment) => segment.text.trim().isNotEmpty).toList();
+    if (usable.isEmpty) return;
+    await initialize();
+    await stop();
+    final generation = _generation;
+    _speaking = true;
+    try {
+      for (final segment in usable) {
+        if (generation != _generation) return;
+        final language = segment.language.trim().isEmpty ? fallbackLanguage : segment.language;
+        final deliveryLanguage = _deliveryLanguage(language, segment.text);
+        await _speakChunk(segment.text.trim(), deliveryLanguage, generation: generation);
+      }
+    } finally {
+      if (generation == _generation) _speaking = false;
+    }
+  }
+
+  @override
+  Future<void> speak(String text, {String language = 'English'}) async {
+    final value = text.trim();
+    if (value.isEmpty) return;
+    final segments = MixedTranscriptParser.parse(
+      value,
+      fallbackLanguage: language,
+    );
+    if (segments.length > 1) {
+      await speakSegments(segments, fallbackLanguage: language);
+      return;
+    }
+
+    await initialize();
+    await stop();
+    final generation = _generation;
+    _speaking = true;
+    try {
+      final deliveryLanguage = _deliveryLanguage(language, value);
+      await _speakChunk(value, deliveryLanguage, generation: generation);
+    } finally {
+      if (generation == _generation) _speaking = false;
+    }
+  }
+
   @override
   Future<void> stop() async {
+    _generation++;
     try {
       await _player.stop();
     } catch (_) {}
@@ -187,6 +235,7 @@ class ResilientTtsProvider implements TtsProvider {
 
   @override
   void dispose() {
+    _generation++;
     unawaited(_player.dispose());
     unawaited(_native.stop());
   }
@@ -208,6 +257,7 @@ class SpeechProvider extends ChangeNotifier {
   StreamSubscription<ModelDownloadProgress>? _downloadSubscription;
   final Map<String, ModelDownloadProgress> _downloadProgress = {};
   bool _isDownloading = false;
+  int _speechGeneration = 0;
 
   SpeechProvider() {
     _sttProvider = EnhancedSpeechProvider();
@@ -310,9 +360,12 @@ class SpeechProvider extends ChangeNotifier {
   }
 
   Future<void> switchLanguage(String language) async {
+    _speechGeneration++;
+    await _ttsProvider.stop();
     await _sttProvider.switchLanguage(language);
     _currentLanguage = language;
     _currentMode = _sttProvider.currentMode;
+    _isSpeaking = false;
     notifyListeners();
   }
 
@@ -346,6 +399,7 @@ class SpeechProvider extends ChangeNotifier {
   Future<void> speak(String text, {String language = 'English'}) async {
     final value = text.trim();
     if (value.isEmpty) return;
+    final generation = ++_speechGeneration;
     final wasListening = _sttProvider.isListening;
     final resumeLanguage = _currentLanguage;
     if (wasListening) {
@@ -359,6 +413,7 @@ class SpeechProvider extends ChangeNotifier {
     try {
       await _ttsProvider.speak(value, language: language);
     } finally {
+      if (generation != _speechGeneration) return;
       _isSpeaking = false;
       notifyListeners();
       if (wasListening) await startListening(language: resumeLanguage);
@@ -366,6 +421,7 @@ class SpeechProvider extends ChangeNotifier {
   }
 
   Future<void> stopSpeaking() async {
+    _speechGeneration++;
     await _ttsProvider.stop();
     _isSpeaking = false;
     notifyListeners();
@@ -373,9 +429,12 @@ class SpeechProvider extends ChangeNotifier {
 
   void detectLanguage(String text) {
     final urduScriptRegex = RegExp(r'[\u0600-\u06FF]');
+    final devanagariRegex = RegExp(r'[\u0900-\u097F]');
     final romanUrduWords = ['kya', 'hai', 'mein', 'tum', 'aap', 'ho', 'se', 'ko', 'ka', 'ki', 'ke'];
     if (urduScriptRegex.hasMatch(text)) {
       _detectedLanguage = const LanguageResult(language: 'Urdu', confidence: 0.9, script: 'Arabic');
+    } else if (devanagariRegex.hasMatch(text)) {
+      _detectedLanguage = const LanguageResult(language: 'Unknown', confidence: 0.5, script: 'Devanagari');
     } else if (romanUrduWords.any((w) => text.toLowerCase().split(RegExp(r'\s+')).contains(w))) {
       _detectedLanguage = const LanguageResult(language: 'Roman Urdu', confidence: 0.7, script: 'Latin');
     } else {
@@ -386,6 +445,7 @@ class SpeechProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _speechGeneration++;
     _sttSubscription?.cancel();
     _downloadSubscription?.cancel();
     _sttProvider.dispose();
