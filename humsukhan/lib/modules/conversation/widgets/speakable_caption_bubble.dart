@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/mixed_transcript_parser.dart';
 import '../theme/app_theme.dart';
 
 class SpeakableCaptionBubble extends StatelessWidget {
@@ -16,6 +17,23 @@ class SpeakableCaptionBubble extends StatelessWidget {
     this.isHighContrast = false,
   });
 
+  TextSpan _captionSpan(BuildContext context, List<CaptionSegment> segments, Color color) {
+    final children = <TextSpan>[];
+    for (final segment in segments) {
+      final mark = segment.isRtl ? '\u200F' : '\u200E';
+      children.add(TextSpan(text: '$mark${segment.text}$mark '));
+    }
+    return TextSpan(
+      style: TextStyle(
+        fontSize: textSize,
+        color: color,
+        fontWeight: caption.isPartial ? FontWeight.normal : FontWeight.w500,
+        fontStyle: caption.isPartial ? FontStyle.italic : FontStyle.normal,
+      ),
+      children: children,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final speech = context.watch<SpeechProvider>();
@@ -27,6 +45,9 @@ class SpeakableCaptionBubble extends StatelessWidget {
     final textColor = isHighContrast ? Colors.white : theme.colorScheme.onSurface;
     final canSpeak = caption.text.trim().isNotEmpty;
     final isThisMessageSpeaking = speech.isSpeaking && speech.lastSpokenText == caption.text;
+    final segments = caption.segments.isNotEmpty
+        ? caption.segments
+        : MixedTranscriptParser.parse(caption.text, fallbackLanguage: caption.language);
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
@@ -62,15 +83,10 @@ class SpeakableCaptionBubble extends StatelessWidget {
                     ),
                     border: isHighContrast ? Border.all(color: Colors.white) : null,
                   ),
-                  child: Text(
-                    caption.text,
+                  child: Text.rich(
+                    _captionSpan(context, segments, textColor),
+                    textDirection: TextDirection.ltr,
                     softWrap: true,
-                    style: TextStyle(
-                      fontSize: textSize,
-                      color: textColor,
-                      fontWeight: caption.isPartial ? FontWeight.normal : FontWeight.w500,
-                      fontStyle: caption.isPartial ? FontStyle.italic : FontStyle.normal,
-                    ),
                   ),
                 ),
               ),
