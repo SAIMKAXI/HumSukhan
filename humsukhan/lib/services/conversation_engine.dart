@@ -22,6 +22,7 @@ class ConversationPauseOptions {
   static const Duration fast = Duration(milliseconds: 1200);
   static const Duration natural = Duration(milliseconds: 1700);
   static const Duration patient = Duration(milliseconds: 2500);
+  static const Duration manual = Duration.zero;
 }
 
 /// Deterministic orchestration for Conversational Mode.
@@ -59,8 +60,8 @@ class ConversationEngine extends ChangeNotifier {
   String get errorMessage => _errorMessage ?? '';
   String get latestTranscript => _latestTranscript;
   bool get isListening => speech.isListening;
-  bool get isBusy => _state == ConversationEngineState.startingMic ||
-      _state == ConversationEngineState.processingFinal;
+  bool get isManualPauseMode => _pauseThreshold == Duration.zero;
+  bool get isBusy => _state == ConversationEngineState.startingMic || _state == ConversationEngineState.processingFinal;
 
   String get statusLabel {
     switch (_state) {
@@ -87,15 +88,23 @@ class ConversationEngine extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final value = prefs.getInt(_pausePreferenceKey);
-      if (value == null || value <= 0) return;
-      _pauseThreshold = Duration(milliseconds: value.clamp(800, 4000));
+      if (value == null) return;
+      if (value == 0) {
+        _pauseThreshold = ConversationPauseOptions.manual;
+      } else {
+        _pauseThreshold = Duration(milliseconds: value.clamp(800, 4000));
+      }
       notifyListeners();
     } catch (_) {}
   }
 
   Future<void> setPauseThreshold(Duration duration) async {
-    final clamped = Duration(milliseconds: duration.inMilliseconds.clamp(800, 4000));
+    final clamped = duration == Duration.zero
+        ? ConversationPauseOptions.manual
+        : Duration(milliseconds: duration.inMilliseconds.clamp(800, 4000));
     _pauseThreshold = clamped;
+    _silenceTimer?.cancel();
+    _silenceTimer = null;
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -258,7 +267,7 @@ class ConversationEngine extends ChangeNotifier {
   }
 
   void _restartSilenceTimer() {
-    if (!_speechStarted || _turnStopping) return;
+    if (!_speechStarted || _turnStopping || isManualPauseMode) return;
     _silenceTimer?.cancel();
     _state = ConversationEngineState.waitingForTurnEnd;
     _silenceTimer = Timer(_pauseThreshold, () {
