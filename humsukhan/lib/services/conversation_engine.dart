@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../providers/conversation_provider.dart';
 import '../providers/speech_provider.dart';
+import 'stt/enhanced_stt.dart';
 
 enum ConversationEngineState {
   idle,
