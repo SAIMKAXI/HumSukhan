@@ -1,19 +1,7 @@
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("dev.flutter.flutter-gradle-plugin")
 }
-
-val signingProperties = Properties()
-val signingPropertiesFile = rootProject.file("key.properties")
-if (signingPropertiesFile.exists()) {
-    signingPropertiesFile.inputStream().use(signingProperties::load)
-}
-
-fun signingValue(propertyName: String, envName: String): String? =
-    signingProperties.getProperty(propertyName)?.takeIf { it.isNotBlank() }
-        ?: System.getenv(envName)?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "com.humsukhan.humsukhan"
@@ -34,30 +22,9 @@ android {
         versionName = flutter.versionName
     }
 
-    signingConfigs {
-        create("release") {
-            val storeFilePath = signingValue("storeFile", "HUMSUKHAN_KEYSTORE_FILE")
-            val storePasswordValue = signingValue("storePassword", "HUMSUKHAN_KEYSTORE_PASSWORD")
-            val keyAliasValue = signingValue("keyAlias", "HUMSUKHAN_KEY_ALIAS")
-            val keyPasswordValue = signingValue("keyPassword", "HUMSUKHAN_KEY_PASSWORD")
-
-            if (storeFilePath == null || storePasswordValue == null || keyAliasValue == null || keyPasswordValue == null) {
-                throw GradleException(
-                    "Release signing is not configured. Provide key.properties (storeFile, storePassword, keyAlias, keyPassword) " +
-                        "or HUMSUKHAN_KEYSTORE_FILE/HUMSUKHAN_KEYSTORE_PASSWORD/HUMSUKHAN_KEY_ALIAS/HUMSUKHAN_KEY_PASSWORD."
-                )
-            }
-
-            storeFile = file(storeFilePath)
-            storePassword = storePasswordValue
-            keyAlias = keyAliasValue
-            keyPassword = keyPasswordValue
-        }
-    }
-
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
