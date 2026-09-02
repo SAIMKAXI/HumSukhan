@@ -41,7 +41,9 @@ void main() {
         fallbackLanguage: 'Roman Urdu',
       );
 
-      expect(result.single.script, CaptionScript.latin);
+      // Explicit Roman Urdu fallback is represented distinctly from generic Latin.
+      // This prevents downstream rendering/TTS from reclassifying Roman Urdu as English.
+      expect(result.single.script, CaptionScript.romanUrdu);
       expect(result.single.language, 'Roman Urdu');
     });
 
