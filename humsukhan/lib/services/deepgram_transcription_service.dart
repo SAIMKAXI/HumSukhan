@@ -25,19 +25,29 @@ class DeepgramTranscriptResult {
   });
 }
 
-/// Low-latency Deepgram streaming STT used by Conversational Auto mode.
+/// Persistent low-latency Deepgram streaming STT.
+///
+/// The WebSocket is kept alive between microphone turns so every turn does not
+/// pay token + TLS/WebSocket setup latency. Stopping the microphone first stops
+/// new audio, then explicitly finalizes the current stream and waits for the
+/// server's final packet before the socket is cleaned up.
 class DeepgramTranscriptionService {
   static DeepgramTranscriptionService? _instance;
-  static DeepgramTranscriptionService get instance => _instance ??= DeepgramTranscriptionService._();
+  static DeepgramTranscriptionService get instance =>
+      _instance ??= DeepgramTranscriptionService._();
   DeepgramTranscriptionService._();
 
   final AudioRecorder _recorder = AudioRecorder();
-  final StreamController<DeepgramTranscriptResult> _controller = StreamController.broadcast();
+  final StreamController<DeepgramTranscriptResult> _controller =
+      StreamController.broadcast();
 
   WebSocket? _socket;
   StreamSubscription<dynamic>? _socketSubscription;
   StreamSubscription<Uint8List>? _audioSubscription;
+  Completer<void>? _finalizationCompleter;
+
   bool _recording = false;
+  bool _sessionReady = false;
   String _language = 'multi';
   String _finalBuffer = '';
   String _lastFinalTranscript = '';
@@ -45,20 +55,84 @@ class DeepgramTranscriptionService {
 
   Stream<DeepgramTranscriptResult> get onResult => _controller.stream;
   bool get isRecording => _recording;
+  bool get isSessionReady => _sessionReady && _socket?.readyState == WebSocket.open;
   String? get lastStartError => _lastStartError;
   String get lastFinalTranscript => _lastFinalTranscript;
+
+  Future<bool> _ensureSession(String language) async {
+    final client = SupabaseService.instance.client;
+    if (client == null || client.auth.currentSession == null) {
+      _lastStartError = 'Authenticated Supabase session is unavailable.';
+      return false;
+    }
+
+    final normalized = _normalizeLanguage(language);
+    if (isSessionReady && normalized == _language) return true;
+
+    await _closeSocketOnly();
+    _language = normalized;
+
+    final tokenResponse = await client.functions
+        .invoke('deepgram-token')
+        .timeout(const Duration(seconds: 5));
+    final rawData = tokenResponse.data;
+    if (rawData is! Map) {
+      _lastStartError = 'Deepgram token service returned an invalid response.';
+      return false;
+    }
+    final tokenData = Map<String, dynamic>.from(rawData);
+    final token = tokenData['accessToken']?.toString();
+    if (token == null || token.isEmpty) {
+      _lastStartError = 'Deepgram token service returned no access token.';
+      return false;
+    }
+
+    final query = <String, String>{
+      'model': 'nova-3',
+      'language': _language,
+      'encoding': 'linear16',
+      'sample_rate': '16000',
+      'channels': '1',
+      'interim_results': 'true',
+      'smart_format': 'true',
+      'punctuate': 'true',
+      'endpointing': _language == 'multi' ? '250' : '350',
+      'utterance_end_ms': '1200',
+      'vad_events': 'true',
+    };
+
+    final uri = Uri.parse('wss://api.deepgram.com/v1/listen')
+        .replace(queryParameters: query);
+    _socket = await WebSocket.connect(
+      uri.toString(),
+      headers: {'Authorization': 'Bearer $token'},
+    ).timeout(const Duration(seconds: 6));
+
+    _sessionReady = true;
+    _finalBuffer = '';
+    _socketSubscription = _socket!.listen(
+      _handleSocketMessage,
+      onError: (Object error) {
+        _sessionReady = false;
+        _lastStartError = 'Deepgram streaming connection failed.';
+        debugPrint('Deepgram WebSocket error: $error');
+      },
+      onDone: () {
+        _sessionReady = false;
+        if (_recording) {
+          _lastStartError = 'Deepgram streaming connection closed unexpectedly.';
+          debugPrint(_lastStartError);
+        }
+      },
+      cancelOnError: false,
+    );
+    return true;
+  }
 
   Future<bool> start({String language = 'auto'}) async {
     if (_recording) return true;
     _lastStartError = null;
     _lastFinalTranscript = '';
-
-    final client = SupabaseService.instance.client;
-    if (client == null || client.auth.currentSession == null) {
-      _lastStartError = 'Authenticated Supabase session is unavailable.';
-      debugPrint('Deepgram streaming unavailable: $_lastStartError');
-      return false;
-    }
 
     try {
       final permissionStatus = await Permission.microphone.status;
@@ -72,61 +146,15 @@ class DeepgramTranscriptionService {
         }
       }
       if (!await _recorder.hasPermission()) {
-        _lastStartError = 'Android granted microphone permission, but the recorder cannot access the microphone.';
+        _lastStartError =
+            'Android granted microphone permission, but the recorder cannot access the microphone.';
         return false;
       }
 
-      final tokenResponse = await client.functions
-          .invoke('deepgram-token')
-          .timeout(const Duration(seconds: 5));
-      final rawData = tokenResponse.data;
-      if (rawData is! Map) {
-        _lastStartError = 'Deepgram token service returned an invalid response.';
-        return false;
-      }
-      final tokenData = Map<String, dynamic>.from(rawData);
-      final token = tokenData['accessToken']?.toString();
-      if (token == null || token.isEmpty) {
-        _lastStartError = 'Deepgram token service returned no access token.';
-        return false;
-      }
-
-      _language = _normalizeLanguage(language);
-      final query = <String, String>{
-        'model': 'nova-3',
-        'language': _language,
-        'encoding': 'linear16',
-        'sample_rate': '16000',
-        'channels': '1',
-        'interim_results': 'true',
-        'smart_format': 'true',
-        'punctuate': 'true',
-        'endpointing': _language == 'multi' ? '100' : '300',
-        'utterance_end_ms': '1000',
-        'vad_events': 'true',
-      };
-      final uri = Uri.parse('wss://api.deepgram.com/v1/listen').replace(queryParameters: query);
-      _socket = await WebSocket.connect(
-        uri.toString(),
-        headers: {'Authorization': 'Bearer $token'},
-      ).timeout(const Duration(seconds: 6));
+      if (!await _ensureSession(language)) return false;
 
       _finalBuffer = '';
-      _socketSubscription = _socket!.listen(
-        _handleSocketMessage,
-        onError: (Object error) {
-          _lastStartError = 'Deepgram streaming connection failed.';
-          debugPrint('Deepgram WebSocket error: $error');
-        },
-        onDone: () {
-          if (_recording) {
-            _lastStartError = 'Deepgram streaming connection closed unexpectedly.';
-            debugPrint(_lastStartError);
-          }
-        },
-        cancelOnError: false,
-      );
-
+      _lastFinalTranscript = '';
       final stream = await _recorder.startStream(const RecordConfig(
         encoder: AudioEncoder.pcm16bits,
         sampleRate: 16000,
@@ -159,6 +187,9 @@ class DeepgramTranscriptionService {
       case 'ur':
       case 'roman urdu':
         return 'ur';
+      case 'hindi':
+      case 'hi':
+        return 'hi';
       case 'english':
       case 'en':
       case 'en-us':
@@ -176,49 +207,53 @@ class DeepgramTranscriptionService {
     if (message is! String) return;
     try {
       final data = jsonDecode(message);
-      if (data is! Map) return;
-      if (data['type'] == 'Results') {
-        final channel = data['channel'];
-        if (channel is! Map) return;
-        final alternatives = channel['alternatives'];
-        if (alternatives is! List || alternatives.isEmpty || alternatives.first is! Map) return;
-        final alternative = Map<String, dynamic>.from(alternatives.first as Map);
-        final text = alternative['transcript']?.toString().trim() ?? '';
-        if (text.isEmpty) return;
-        final confidence = (alternative['confidence'] as num?)?.toDouble() ?? 0.0;
-        final isFinal = data['is_final'] == true;
-        final speechFinal = data['speech_final'] == true;
-        final language = alternative['detected_language']?.toString() ?? _language;
+      if (data is! Map || data['type'] != 'Results') return;
+      final channel = data['channel'];
+      if (channel is! Map) return;
+      final alternatives = channel['alternatives'];
+      if (alternatives is! List ||
+          alternatives.isEmpty ||
+          alternatives.first is! Map) {
+        return;
+      }
 
-        if (isFinal) {
-          _finalBuffer = _finalBuffer.isEmpty ? text : '$_finalBuffer $text';
-        }
+      final alternative = Map<String, dynamic>.from(alternatives.first as Map);
+      final text = alternative['transcript']?.toString().trim() ?? '';
+      if (text.isEmpty) return;
+      final confidence = (alternative['confidence'] as num?)?.toDouble() ?? 0.0;
+      final isFinal = data['is_final'] == true;
+      final speechFinal = data['speech_final'] == true;
+      final language = alternative['detected_language']?.toString() ?? _language;
 
-        // Deepgram's speech_final result is the utterance boundary. Emit only
-        // the accumulated utterance for that packet; emitting the raw packet
-        // and the accumulated packet creates two visible final captions.
-        if (speechFinal) {
-          final complete = _finalBuffer.trim().isNotEmpty ? _finalBuffer.trim() : text;
-          _lastFinalTranscript = complete;
-          _controller.add(DeepgramTranscriptResult(
-            transcript: complete,
-            language: _displayLanguage(language),
-            confidence: confidence,
-            isFinal: true,
-            speechFinal: true,
-          ));
-          _finalBuffer = '';
-          return;
-        }
+      if (isFinal) {
+        _finalBuffer = _finalBuffer.isEmpty ? text : '$_finalBuffer $text';
+      }
 
+      if (speechFinal) {
+        final complete = _finalBuffer.trim().isNotEmpty
+            ? _finalBuffer.trim()
+            : text;
+        _lastFinalTranscript = complete;
         _controller.add(DeepgramTranscriptResult(
-          transcript: text,
+          transcript: complete,
           language: _displayLanguage(language),
           confidence: confidence,
-          isFinal: isFinal,
-          speechFinal: false,
+          isFinal: true,
+          speechFinal: true,
         ));
+        _finalBuffer = '';
+        _finalizationCompleter?.complete();
+        _finalizationCompleter = null;
+        return;
       }
+
+      _controller.add(DeepgramTranscriptResult(
+        transcript: text,
+        language: _displayLanguage(language),
+        confidence: confidence,
+        isFinal: isFinal,
+        speechFinal: false,
+      ));
     } catch (e) {
       debugPrint('Deepgram result parse failed: $e');
     }
@@ -227,39 +262,65 @@ class DeepgramTranscriptionService {
   String _displayLanguage(String value) {
     final v = value.toLowerCase();
     if (v.startsWith('ur')) return 'Urdu';
+    if (v.startsWith('hi')) return 'Hindi';
     if (v.startsWith('en')) return 'English';
     if (v == 'multi') return 'Auto';
     return value;
   }
 
   Future<void> stop() async {
-    if (!_recording && _socket == null) return;
+    if (!_recording && !isSessionReady) return;
+
     _recording = false;
+    await _audioSubscription?.cancel();
+    _audioSubscription = null;
     try {
-      if (_socket?.readyState == WebSocket.open) {
-        _socket!.add(jsonEncode({'type': 'Finalize'}));
-        await Future<void>.delayed(const Duration(milliseconds: 400));
-      }
-      if (_lastFinalTranscript.trim().isEmpty && _finalBuffer.trim().isNotEmpty) {
-        _lastFinalTranscript = _finalBuffer.trim();
-      }
+      await _recorder.stop();
     } catch (_) {}
-    await _cleanup();
+
+    if (_socket?.readyState == WebSocket.open) {
+      _finalizationCompleter = Completer<void>();
+      try {
+        _socket!.add(jsonEncode({'type': 'Finalize'}));
+        await _finalizationCompleter!.future.timeout(
+          const Duration(milliseconds: 1800),
+        );
+      } catch (_) {
+        if (_finalBuffer.trim().isNotEmpty &&
+            _lastFinalTranscript.trim().isEmpty) {
+          _lastFinalTranscript = _finalBuffer.trim();
+        }
+      } finally {
+        _finalizationCompleter = null;
+      }
+    }
+  }
+
+  Future<void> _closeSocketOnly() async {
+    _sessionReady = false;
+    await _socketSubscription?.cancel();
+    _socketSubscription = null;
+    try {
+      await _socket?.close(WebSocketStatus.normalClosure, 'session reset');
+    } catch (_) {}
+    _socket = null;
   }
 
   Future<void> _cleanup() async {
     _recording = false;
     await _audioSubscription?.cancel();
     _audioSubscription = null;
-    await _socketSubscription?.cancel();
-    _socketSubscription = null;
-    try { await _recorder.stop(); } catch (_) {}
-    try { await _socket?.close(WebSocketStatus.normalClosure, 'client stopped'); } catch (_) {}
-    _socket = null;
+    try {
+      await _recorder.stop();
+    } catch (_) {}
+    await _closeSocketOnly();
     _finalBuffer = '';
+    _finalizationCompleter = null;
   }
 
   Future<void> cancel() async => _cleanup();
+
+  Future<void> closeSession() async => _cleanup();
 
   void dispose() {
     unawaited(_cleanup());
