@@ -33,6 +33,9 @@ class EnhancedSpeechProvider {
   StreamSubscription<SherpaSTTResult>? _sherpaSubscription;
   StreamSubscription<DeepgramTranscriptResult>? _deepgramSubscription;
   Timer? _platformRestartTimer;
+  Timer? _interimDebounce;
+  String _pendingInterimText = '';
+  String _pendingInterimLanguage = 'English';
 
   Stream<SpeechResultEvent> get onResult => _controller.stream;
   bool get isListening => _listening;
@@ -137,6 +140,29 @@ class EnhancedSpeechProvider {
     ));
   }
 
+  void _queueDebouncedInterim(String text, String language) {
+    _pendingInterimText = text;
+    _pendingInterimLanguage = language;
+    _interimDebounce?.cancel();
+    _interimDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!_listening || _deepgramStreaming == false) return;
+      final pending = _pendingInterimText.trim();
+      if (pending.isEmpty) return;
+      _emitResult(
+        pending,
+        isFinal: false,
+        language: _pendingInterimLanguage,
+        mode: STTMode.platform,
+      );
+    });
+  }
+
+  void _cancelInterimDebounce() {
+    _interimDebounce?.cancel();
+    _interimDebounce = null;
+    _pendingInterimText = '';
+  }
+
   void _schedulePlatformRestart({Duration delay = const Duration(milliseconds: 200)}) {
     if (!_listening || _currentMode != STTMode.platform || _deepgramStreaming) return;
     if (_platformRestartTimer?.isActive == true || _platformRestartInFlight) return;
@@ -177,6 +203,7 @@ class EnhancedSpeechProvider {
     }
     _lastStartError = null;
     _lastEmittedDeepgramFinal = '';
+    _cancelInterimDebounce();
     _currentLanguage = language;
     if (!_forceOfflineMode) {
       _currentMode = STTMode.platform;
@@ -197,12 +224,15 @@ class EnhancedSpeechProvider {
               ? _detectLanguage(text, fallback: language)
               : result.language;
           if (result.speechFinal) {
+            _cancelInterimDebounce();
             if (text == _lastEmittedDeepgramFinal) return;
             _lastEmittedDeepgramFinal = text;
             _emitResult(text, isFinal: true, language: detected, mode: STTMode.platform);
+          } else if (!result.isFinal) {
+            // Deepgram can emit many interim packets per second. Keep the
+            // streaming transport untouched, but publish to Flutter at 4 Hz.
+            _queueDebouncedInterim(text, detected);
           }
-          // Keep interim text inside the provider so callers that want live
-          // drafts can use it without turning it into a committed caption.
         });
 
         final started = await _deepgram.start(language: language);
@@ -315,12 +345,11 @@ class EnhancedSpeechProvider {
     _platformRestartTimer?.cancel();
     _platformRestartTimer = null;
     _platformRestartInFlight = false;
+    _cancelInterimDebounce();
     await _sherpaSubscription?.cancel();
     _sherpaSubscription = null;
 
     if (_deepgramStreaming) {
-      // Deepgram.stop() deliberately keeps its result listener and socket alive
-      // while finalizing this turn. This prevents the common final-word race.
       await _deepgram.stop();
       final flushed = _deepgram.lastFinalTranscript.trim();
       if (flushed.isNotEmpty && flushed != _lastEmittedDeepgramFinal) {
@@ -440,6 +469,7 @@ class EnhancedSpeechProvider {
 
   void dispose() {
     _platformRestartTimer?.cancel();
+    _interimDebounce?.cancel();
     _sherpaSubscription?.cancel();
     _deepgramSubscription?.cancel();
     _platformSTT.cancel();
