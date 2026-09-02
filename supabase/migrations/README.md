@@ -1,0 +1,1 @@
+Professional insights schema is migrated to bullet summaries. Vocabulary and themes are retired; folder deletion preserves sessions by moving them to General.
