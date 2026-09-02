@@ -17,91 +17,40 @@ class EverydayScreen extends StatefulWidget {
 class _EverydayScreenState extends State<EverydayScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  StreamSubscription? _speechSubscription;
-  bool _speakerActionInFlight = false;
-  int _speakerTurnToken = 0;
+  late final ConversationEngine _engine;
 
   @override
   void initState() {
     super.initState();
+    _engine = ConversationEngine(
+      speech: context.read<SpeechProvider>(),
+      conversation: context.read<ConversationProvider>(),
+    )..addListener(_onEngineChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _initSpeech());
+  }
+
+  void _onEngineChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _initSpeech() async {
     final speech = context.read<SpeechProvider>();
     await speech.initialize(preferredLanguage: 'Auto');
-    // TTS initialization is already part of SpeechProvider initialization;
-    // explicitly re-warm it here so entering Conversational Mode, rather than
-    // the first caption tap, owns the native TTS startup cost.
     unawaited(speech.warmUpTts());
-    _speechSubscription = speech.onResult.listen((result) {
-      if (!mounted || result.text.trim().isEmpty) return;
-      final conv = context.read<ConversationProvider>();
-      if (!conv.isSpeakerTurnActive) return;
-      conv.updateSpeakerTurn(result.text, language: result.language);
-      if (result.isFinal) speech.detectLanguage(result.text);
-      _scrollToBottom();
-    });
   }
 
-  Future<void> _startConversation() async {
-    final conv = context.read<ConversationProvider>();
-    final speech = context.read<SpeechProvider>();
-    conv.startConversation();
-    unawaited(speech.warmUpTts());
-    if (mounted) setState(() {});
+  void _startConversation() {
+    _engine.startConversation();
+    _scrollToBottom();
   }
 
-  Future<void> _toggleSpeakerListening() async {
-    if (!mounted || _speakerActionInFlight) return;
-    final conv = context.read<ConversationProvider>();
-    if (conv.state != ConversationState.active) return;
-
-    final speech = context.read<SpeechProvider>();
-    _speakerActionInFlight = true;
-    final token = ++_speakerTurnToken;
-
-    try {
-      if (speech.isListening) {
-        await speech.stopListening();
-        if (!mounted || token != _speakerTurnToken) return;
-        conv.commitSpeakerTurn();
-        _scrollToBottom();
-        return;
-      }
-
-      conv.beginSpeakerTurn(language: 'Auto');
-      if (mounted) setState(() {});
-
-      // Auto mode uses the low-latency Deepgram streaming recognizer. It
-      // explicitly requests/validates microphone access and has a platform
-      // speech fallback if the cloud stream cannot be established.
-      await speech.startListening(language: 'Auto');
-
-      if (!speech.isListening) {
-        final reason = speech.sttProvider.lastStartError;
-        conv.commitSpeakerTurn();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(reason ?? 'Live speech recognition could not be started.'),
-              duration: const Duration(seconds: 4),
-            ),
-          );
-        }
-      }
-    } finally {
-      _speakerActionInFlight = false;
-      if (mounted) setState(() {});
-    }
+  void _toggleSpeakerListening() {
+    if (_engine.isBusy) return;
+    _engine.toggleListening();
   }
 
-  Future<void> _stop() async {
-    _speakerTurnToken++;
-    _speakerActionInFlight = true;
-    await context.read<SpeechProvider>().stopListening();
-    if (mounted) context.read<ConversationProvider>().stopConversation();
-    _speakerActionInFlight = false;
+  void _stop() {
+    _engine.stopAndEndConversation();
   }
 
   void _scrollToBottom() {
@@ -118,8 +67,9 @@ class _EverydayScreenState extends State<EverydayScreen> {
 
   @override
   void dispose() {
-    _speakerTurnToken++;
-    _speechSubscription?.cancel();
+    _engine
+      ..removeListener(_onEngineChanged)
+      ..dispose();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -144,7 +94,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
               padding: const EdgeInsets.only(right: 12),
               child: Center(
                 child: StatusIndicator(
-                  label: conv.isListening ? 'Speaker talking' : 'Waiting for speaker',
+                  label: _engine.statusLabel,
                   color: theme.colorScheme.primary,
                   isActive: conv.isListening,
                   icon: conv.isListening ? Icons.mic : Icons.mic_none,
@@ -176,12 +126,10 @@ class _EverydayScreenState extends State<EverydayScreen> {
                   child: QuickReplyChip(
                     reply: reply,
                     isHighContrast: settings.isHighContrast,
-                    onTap: conv.isListening
-                        ? null
-                        : () {
-                            conv.addOwnCaption(reply.text);
-                            _scrollToBottom();
-                          },
+                    onTap: conv.isListening || _engine.isBusy ? null : () {
+                      conv.addOwnCaption(reply.text);
+                      _scrollToBottom();
+                    },
                   ),
                 )).toList(),
               ),
@@ -203,7 +151,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                         constraints: const BoxConstraints(maxHeight: 120),
                         child: TextField(
                           controller: _textController,
-                          enabled: !conv.isListening,
+                          enabled: !conv.isListening && !_engine.isBusy,
                           minLines: 1,
                           maxLines: 4,
                           textInputAction: TextInputAction.newline,
@@ -228,17 +176,21 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     IconButton.filled(
                       tooltip: 'Speak response',
                       icon: Icon(speech.isSpeaking ? Icons.stop : Icons.volume_up),
-                      onPressed: conv.isListening || _textController.text.trim().isEmpty
+                      onPressed: conv.isListening || _engine.isBusy || _textController.text.trim().isEmpty
                           ? null
-                          : () => speech.isSpeaking
-                              ? speech.stopSpeaking()
-                              : speech.speak(_textController.text.trim(), language: 'Auto'),
+                          : () async {
+                              if (speech.isSpeaking) {
+                                await speech.stopSpeaking();
+                              } else {
+                                await speech.speak(_textController.text.trim(), language: 'Auto');
+                              }
+                            },
                     ),
                     const SizedBox(width: 2),
                     IconButton.filled(
                       tooltip: 'Send response',
                       icon: const Icon(Icons.send),
-                      onPressed: conv.isListening || _textController.text.trim().isEmpty
+                      onPressed: conv.isListening || _engine.isBusy || _textController.text.trim().isEmpty
                           ? null
                           : () => _sendTypedText(_textController.text),
                     ),
@@ -260,7 +212,8 @@ class _EverydayScreenState extends State<EverydayScreen> {
   }
 
   Widget _buildSpeakerControls(BuildContext context, ConversationProvider conv, SettingsProvider settings, ThemeData theme) {
-    final busy = _speakerActionInFlight;
+    final busy = _engine.isBusy;
+    final listening = conv.isListening;
     return Material(
       color: theme.colorScheme.primary.withValues(alpha: .06),
       child: Padding(
@@ -270,15 +223,11 @@ class _EverydayScreenState extends State<EverydayScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(conv.isListening ? Icons.record_voice_over : Icons.mic_none, color: theme.colorScheme.primary),
+                Icon(listening ? Icons.record_voice_over : Icons.mic_none, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    busy
-                        ? 'Starting speech recognition…'
-                        : conv.isListening
-                            ? 'Tap the microphone to stop'
-                            : 'Tap the microphone to start speaker captions',
+                    _engine.statusLabel,
                     style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                     textAlign: TextAlign.center,
                   ),
@@ -288,7 +237,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
             const SizedBox(height: 10),
             Semantics(
               button: true,
-              label: conv.isListening ? 'Stop speaker microphone' : 'Start speaker microphone',
+              label: listening ? 'Stop speaker microphone' : 'Start speaker microphone',
               child: InkResponse(
                 radius: 52,
                 onTap: busy ? null : _toggleSpeakerListening,
@@ -300,10 +249,10 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     shape: BoxShape.circle,
                     color: busy
                         ? theme.colorScheme.surfaceContainerHighest
-                        : conv.isListening
+                        : listening
                             ? theme.colorScheme.error
                             : theme.colorScheme.primary,
-                    boxShadow: conv.isListening
+                    boxShadow: listening
                         ? [BoxShadow(color: theme.colorScheme.error.withValues(alpha: .25), blurRadius: 16, spreadRadius: 2)]
                         : [],
                   ),
@@ -314,7 +263,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                           child: CircularProgressIndicator(strokeWidth: 3, color: theme.colorScheme.primary),
                         )
                       : Icon(
-                          conv.isListening ? Icons.mic : Icons.mic_none,
+                          listening ? Icons.mic : Icons.mic_none,
                           color: theme.colorScheme.onPrimary,
                           size: 36,
                         ),
@@ -322,7 +271,33 @@ class _EverydayScreenState extends State<EverydayScreen> {
               ),
             ),
             const SizedBox(height: 6),
-            Text('Bilingual speaker captions', style: theme.textTheme.labelLarge),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Bilingual speaker captions', style: theme.textTheme.labelLarge),
+                const SizedBox(width: 8),
+                PopupMenuButton<int>(
+                  tooltip: 'Pause before ending utterance',
+                  initialValue: _engine.pauseThreshold.inMilliseconds,
+                  onSelected: (value) => _engine.setPauseThreshold(Duration(milliseconds: value)),
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(value: 1200, child: Text('Short pause · 1.2 s')),
+                    PopupMenuItem(value: 1700, child: Text('Natural pause · 1.7 s')),
+                    PopupMenuItem(value: 2500, child: Text('Patient pause · 2.5 s')),
+                  ],
+                  icon: Icon(Icons.more_time, size: 20, color: theme.colorScheme.primary),
+                ),
+              ],
+            ),
+            if (_engine.state == ConversationEngineState.waitingForTurnEnd)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Pause detected — speak again to continue',
+                  style: theme.textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              ),
           ],
         ),
       ),
