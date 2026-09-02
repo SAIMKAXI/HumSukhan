@@ -375,6 +375,17 @@ class SpeechProvider extends ChangeNotifier {
 
   Stream<SpeechResultEvent> get onResult => _sttProvider.onResult;
 
+  /// Returns the internal processing language for a transcript without changing
+  /// the public detected-language result used by the UI.
+  String processingLanguageForText(String text, {String fallback = 'English'}) {
+    if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'Hindi';
+    if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'Urdu';
+    const romanUrduWords = ['kya', 'hai', 'mein', 'tum', 'aap', 'ho', 'se', 'ko', 'ka', 'ki', 'ke'];
+    final words = text.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
+    if (romanUrduWords.any(words.contains)) return 'Roman Urdu';
+    return fallback;
+  }
+
   Future<void> speak(String text, {String language = 'English'}) async {
     final value = text.trim();
     if (value.isEmpty) return;
@@ -390,7 +401,10 @@ class SpeechProvider extends ChangeNotifier {
     _lastSpokenText = value;
     notifyListeners();
     try {
-      await _ttsProvider.speak(value, language: language);
+      await _ttsProvider.speak(
+        value,
+        language: processingLanguageForText(value, fallback: language),
+      );
     } finally {
       if (runId != _speechRunId) return;
       _isSpeaking = false;
