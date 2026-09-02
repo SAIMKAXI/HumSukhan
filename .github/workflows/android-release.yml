@@ -3,14 +3,8 @@ name: HumSukhan Android Release
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-      - 'humsukhan/pubspec.yaml'
-      - 'humsukhan/lib/**'
-      - 'humsukhan/test/**'
-      - 'humsukhan/android/**'
-      - '.github/workflows/**'
+    tags:
+      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -51,7 +45,9 @@ jobs:
         shell: bash
         run: |
           VERSION=$(sed -n 's/^version: *//p' pubspec.yaml | head -1 | cut -d+ -f1)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
           test -n "$VERSION" || { echo 'ERROR: Could not read app version.'; exit 1; }
+          test "$VERSION" = "$TAG_VERSION" || { echo "ERROR: tag $TAG_VERSION does not match pubspec version $VERSION"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Check Supabase build configuration
         env:
