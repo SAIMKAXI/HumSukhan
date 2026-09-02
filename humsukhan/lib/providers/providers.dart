@@ -7,3 +7,4 @@ export 'speech_provider.dart';
 export 'quick_reply_provider.dart';
 export 'connectivity_provider.dart';
 export 'auth_provider.dart';
+export '../services/conversation_engine.dart';

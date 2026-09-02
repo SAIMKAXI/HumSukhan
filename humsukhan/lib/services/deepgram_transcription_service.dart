@@ -33,13 +33,11 @@ class DeepgramTranscriptResult {
 /// server's final packet before the socket is cleaned up.
 class DeepgramTranscriptionService {
   static DeepgramTranscriptionService? _instance;
-  static DeepgramTranscriptionService get instance =>
-      _instance ??= DeepgramTranscriptionService._();
+  static DeepgramTranscriptionService get instance => _instance ??= DeepgramTranscriptionService._();
   DeepgramTranscriptionService._();
 
   final AudioRecorder _recorder = AudioRecorder();
-  final StreamController<DeepgramTranscriptResult> _controller =
-      StreamController.broadcast();
+  final StreamController<DeepgramTranscriptResult> _controller = StreamController.broadcast();
 
   WebSocket? _socket;
   StreamSubscription<dynamic>? _socketSubscription;
@@ -74,9 +72,7 @@ class DeepgramTranscriptionService {
     await _closeSocketOnly();
     _language = normalized;
 
-    final tokenResponse = await client.functions
-        .invoke('deepgram-token')
-        .timeout(const Duration(seconds: 5));
+    final tokenResponse = await client.functions.invoke('deepgram-token').timeout(const Duration(seconds: 5));
     final rawData = tokenResponse.data;
     if (rawData is! Map) {
       _lastStartError = 'Deepgram token service returned an invalid response.';
@@ -89,9 +85,6 @@ class DeepgramTranscriptionService {
       return false;
     }
 
-    // Deepgram endpointing is expressed in milliseconds. Keep the value low
-    // enough for responsive conversation while leaving a short silence window
-    // for natural pauses. `multi` is the supported Nova-3 code-switching mode.
     final endpointingMs = _language == 'multi' ? '300' : '350';
     final query = <String, String>{
       'model': 'nova-3',
@@ -107,8 +100,7 @@ class DeepgramTranscriptionService {
       'vad_events': 'true',
     };
 
-    final uri = Uri.parse('wss://api.deepgram.com/v1/listen')
-        .replace(queryParameters: query);
+    final uri = Uri.parse('wss://api.deepgram.com/v1/listen').replace(queryParameters: query);
     _socket = await WebSocket.connect(
       uri.toString(),
       headers: {'Authorization': 'Bearer $token'},
@@ -154,8 +146,7 @@ class DeepgramTranscriptionService {
         }
       }
       if (!await _recorder.hasPermission()) {
-        _lastStartError =
-            'Android granted microphone permission, but the recorder cannot access the microphone.';
+        _lastStartError = 'Android granted microphone permission, but the recorder cannot access the microphone.';
         return false;
       }
 
@@ -196,19 +187,21 @@ class DeepgramTranscriptionService {
       case 'ur':
       case 'roman urdu':
         return 'ur';
-      case 'hindi':
-      case 'hi':
-        return 'hi';
       case 'english':
       case 'en':
       case 'en-us':
+        return 'en-US';
+      case 'hindi':
+      case 'hi':
+        // Hindi is not a separate product route. Treat an accidental Hindi
+        // preference as English so Auto/EN/UR remain the only supported modes.
         return 'en-US';
       case 'auto':
       case 'multi':
       case 'mixed':
         return 'multi';
       default:
-        return language;
+        return 'en-US';
     }
   }
 
@@ -220,11 +213,7 @@ class DeepgramTranscriptionService {
       final channel = data['channel'];
       if (channel is! Map) return;
       final alternatives = channel['alternatives'];
-      if (alternatives is! List ||
-          alternatives.isEmpty ||
-          alternatives.first is! Map) {
-        return;
-      }
+      if (alternatives is! List || alternatives.isEmpty || alternatives.first is! Map) return;
 
       final alternative = Map<String, dynamic>.from(alternatives.first as Map);
       final text = alternative['transcript']?.toString().trim() ?? '';
@@ -237,9 +226,7 @@ class DeepgramTranscriptionService {
 
       _firstTranscriptAt ??= DateTime.now();
       if (_turnStartedAt != null) {
-        debugPrint(
-          'Speech latency: first transcript ${DateTime.now().difference(_turnStartedAt!).inMilliseconds}ms after microphone start',
-        );
+        debugPrint('Speech latency: first transcript ${DateTime.now().difference(_turnStartedAt!).inMilliseconds}ms after microphone start');
       }
 
       if (isFinal) {
@@ -247,9 +234,7 @@ class DeepgramTranscriptionService {
       }
 
       if (speechFinal) {
-        final complete = _finalBuffer.trim().isNotEmpty
-            ? _finalBuffer.trim()
-            : text;
+        final complete = _finalBuffer.trim().isNotEmpty ? _finalBuffer.trim() : text;
         _lastFinalTranscript = complete;
         _controller.add(DeepgramTranscriptResult(
           transcript: complete,
@@ -259,9 +244,7 @@ class DeepgramTranscriptionService {
           speechFinal: true,
         ));
         if (_turnStartedAt != null) {
-          debugPrint(
-            'Speech latency: speech_final ${DateTime.now().difference(_turnStartedAt!).inMilliseconds}ms after microphone start',
-          );
+          debugPrint('Speech latency: speech_final ${DateTime.now().difference(_turnStartedAt!).inMilliseconds}ms after microphone start');
         }
         _finalBuffer = '';
         _finalizationCompleter?.complete();
@@ -284,14 +267,15 @@ class DeepgramTranscriptionService {
   String _displayLanguage(String value, String text) {
     final v = value.toLowerCase();
     if (v.startsWith('ur')) return 'Urdu';
-    if (v.startsWith('hi')) return 'Hindi';
+    // Deliberately do not expose Hindi as a product language. Auto-detected
+    // Devanagari is treated as the English fallback route.
+    if (v.startsWith('hi')) return 'English';
     if (v.startsWith('en')) return 'English';
     if (v == 'multi') {
       if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'Urdu';
-      if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'Hindi';
       return 'Auto';
     }
-    return value;
+    return 'English';
   }
 
   Future<void> stop() async {
@@ -307,23 +291,16 @@ class DeepgramTranscriptionService {
     if (_socket?.readyState == WebSocket.open) {
       _finalizationCompleter = Completer<void>();
       try {
-        // Finalize is the supported Deepgram flush mechanism. Keep the socket
-        // open and listener alive so late final packets can still be consumed.
         _socket!.add(jsonEncode({'type': 'Finalize'}));
-        await _finalizationCompleter!.future.timeout(
-          const Duration(milliseconds: 1400),
-        );
+        await _finalizationCompleter!.future.timeout(const Duration(milliseconds: 1400));
       } catch (_) {
-        if (_finalBuffer.trim().isNotEmpty &&
-            _lastFinalTranscript.trim().isEmpty) {
+        if (_finalBuffer.trim().isNotEmpty && _lastFinalTranscript.trim().isEmpty) {
           _lastFinalTranscript = _finalBuffer.trim();
         }
       } finally {
         _finalizationCompleter = null;
         if (_turnStartedAt != null && _lastFinalTranscript.trim().isNotEmpty) {
-          debugPrint(
-            'Speech latency: final transcript ready in ${DateTime.now().difference(_turnStartedAt!).inMilliseconds}ms',
-          );
+          debugPrint('Speech latency: final transcript ready in ${DateTime.now().difference(_turnStartedAt!).inMilliseconds}ms');
         }
       }
     }
@@ -352,7 +329,6 @@ class DeepgramTranscriptionService {
   }
 
   Future<void> cancel() async => _cleanup();
-
   Future<void> closeSession() async => _cleanup();
 
   void dispose() {
