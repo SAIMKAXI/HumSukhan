@@ -1,4 +1,4 @@
-import '../../models/models.dart';
+import '../../../models/models.dart';
 
 /// Normalizes a transcript into contiguous script/language segments.
 ///
@@ -19,8 +19,8 @@ class MixedTranscriptParser {
     final romanUrduFallback = fallbackLanguage.trim().toLowerCase() == 'roman urdu';
     final pieces = value.split(RegExp(r'(\s+)'));
     final segments = <CaptionSegment>[];
-    CaptionScript currentScript = CaptionScript.other;
-    String currentLanguage = fallbackLanguage;
+    var currentScript = CaptionScript.other;
+    var currentLanguage = fallbackLanguage;
     final buffer = StringBuffer();
 
     CaptionScript effectiveScript(CaptionScript script) =>
