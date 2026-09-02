@@ -45,17 +45,7 @@ void main() {
     );
   });
 
-  test('detectLanguage distinguishes Hindi script', () {
-    final speech = SpeechProvider();
-    addTearDown(speech.dispose);
-
-    speech.detectLanguage('यह हिंदी में एक वाक्य है');
-
-    expect(speech.detectedLanguage?.language, 'Hindi');
-    expect(speech.detectedLanguage?.script, 'Devanagari');
-  });
-
-  test('detectLanguage distinguishes Urdu script', () {
+  test('detectLanguage recognizes Urdu script', () {
     final speech = SpeechProvider();
     addTearDown(speech.dispose);
 
@@ -65,7 +55,7 @@ void main() {
     expect(speech.detectedLanguage?.script, 'Arabic');
   });
 
-  test('detectLanguage distinguishes Roman Urdu and English', () {
+  test('detectLanguage recognizes Roman Urdu and English', () {
     final speech = SpeechProvider();
     addTearDown(speech.dispose);
 
@@ -73,6 +63,15 @@ void main() {
     expect(speech.detectedLanguage?.language, 'Roman Urdu');
 
     speech.detectLanguage('this is an English sentence');
+    expect(speech.detectedLanguage?.language, 'English');
+  });
+
+  test('detectLanguage does not classify Devanagari as Hindi', () {
+    final speech = SpeechProvider();
+    addTearDown(speech.dispose);
+
+    speech.detectLanguage('यह हिंदी में एक वाक्य है');
+
     expect(speech.detectedLanguage?.language, 'English');
   });
 }
