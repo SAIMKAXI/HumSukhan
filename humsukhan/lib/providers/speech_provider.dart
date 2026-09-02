@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -86,11 +85,10 @@ class ResilientTtsProvider implements TtsProvider {
           if (raw is! Map) continue;
           final locale = raw['locale']?.toString() ?? '';
           if (locale.toLowerCase().startsWith(prefix)) {
-            final voice = <String, String>{
+            await _native.setVoice(<String, String>{
               'name': raw['name']?.toString() ?? '',
               'locale': locale,
-            };
-            await _native.setVoice(voice);
+            });
             return true;
           }
         }
@@ -125,22 +123,14 @@ class ResilientTtsProvider implements TtsProvider {
     );
     await _player.stop();
     _speaking = true;
+    final completion = _player.onPlayerStateChanged.firstWhere(
+      (state) => state == PlayerState.completed || state == PlayerState.stopped,
+    );
     try {
-      final completion = _player.onPlayerComplete.first;
       await _player.play(BytesSource(Uint8List.fromList(result.audioBytes)));
-      await completion.timeout(const Duration(seconds: 45));
+      await completion.timeout(const Duration(seconds: 30));
     } finally {
       _speaking = false;
-    }
-  }
-
-  Future<bool> _isLikelyOnline() async {
-    try {
-      final result = await InternetAddress.lookup('api.deepgram.com')
-          .timeout(const Duration(seconds: 2));
-      return result.isNotEmpty;
-    } catch (_) {
-      return false;
     }
   }
 
@@ -153,13 +143,11 @@ class ResilientTtsProvider implements TtsProvider {
     final deliveryLanguage = _deliveryLanguage(language, value);
     await stop();
 
-    if (await _isLikelyOnline()) {
-      try {
-        await _speakCloud(value, deliveryLanguage);
-        return;
-      } catch (e) {
-        debugPrint('Cloud TTS unavailable; falling back to device TTS: $e');
-      }
+    try {
+      await _speakCloud(value, deliveryLanguage);
+      return;
+    } catch (e) {
+      debugPrint('Cloud TTS unavailable; falling back to device TTS: $e');
     }
 
     try {
@@ -208,6 +196,7 @@ class SpeechProvider extends ChangeNotifier {
   StreamSubscription<ModelDownloadProgress>? _downloadSubscription;
   final Map<String, ModelDownloadProgress> _downloadProgress = {};
   bool _isDownloading = false;
+  int _speechRunId = 0;
 
   SpeechProvider() {
     _sttProvider = EnhancedSpeechProvider();
@@ -346,6 +335,7 @@ class SpeechProvider extends ChangeNotifier {
   Future<void> speak(String text, {String language = 'English'}) async {
     final value = text.trim();
     if (value.isEmpty) return;
+    final runId = ++_speechRunId;
     final wasListening = _sttProvider.isListening;
     final resumeLanguage = _currentLanguage;
     if (wasListening) {
@@ -359,6 +349,7 @@ class SpeechProvider extends ChangeNotifier {
     try {
       await _ttsProvider.speak(value, language: language);
     } finally {
+      if (runId != _speechRunId) return;
       _isSpeaking = false;
       notifyListeners();
       if (wasListening) await startListening(language: resumeLanguage);
@@ -366,6 +357,7 @@ class SpeechProvider extends ChangeNotifier {
   }
 
   Future<void> stopSpeaking() async {
+    ++_speechRunId;
     await _ttsProvider.stop();
     _isSpeaking = false;
     notifyListeners();
@@ -386,6 +378,7 @@ class SpeechProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _speechRunId++;
     _sttSubscription?.cancel();
     _downloadSubscription?.cancel();
     _sttProvider.dispose();
