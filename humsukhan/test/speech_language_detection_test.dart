@@ -1,8 +1,34 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:humsukhan/providers/speech_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+
+  setUpAll(() {
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('xyz.luan/audioplayers.global'),
+      (call) async => null,
+    );
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('flutter_tts'),
+      (call) async => null,
+    );
+  });
+
+  tearDownAll(() {
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('xyz.luan/audioplayers.global'),
+      null,
+    );
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('flutter_tts'),
+      null,
+    );
+  });
 
   test('detectLanguage distinguishes Hindi script', () {
     final speech = SpeechProvider();
