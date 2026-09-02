@@ -1,0 +1,3 @@
+HumSukhan 2.3.0 release candidate
+
+Speech lifecycle hardening, account safety improvements, RLS and indexing cleanup, and production Android release signing.
