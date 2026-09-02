@@ -284,6 +284,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     PopupMenuItem(value: 1200, child: Text('Short pause · 1.2 s')),
                     PopupMenuItem(value: 1700, child: Text('Natural pause · 1.7 s')),
                     PopupMenuItem(value: 2500, child: Text('Patient pause · 2.5 s')),
+                    PopupMenuItem(value: 0, child: Text('Manual only · no auto-stop')),
                   ],
                   icon: Icon(Icons.more_time, size: 20, color: theme.colorScheme.primary),
                 ),
@@ -294,6 +295,15 @@ class _EverydayScreenState extends State<EverydayScreen> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   'Pause detected — speak again to continue',
+                  style: theme.textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            if (_engine.isManualPauseMode)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Manual mode — tap the microphone to end the utterance',
                   style: theme.textTheme.bodySmall,
                   textAlign: TextAlign.center,
                 ),
