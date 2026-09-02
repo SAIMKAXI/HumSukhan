@@ -5,6 +5,7 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'vosk_stt.dart';
 import 'model_manager.dart';
 import '../deepgram_transcription_service.dart';
+import '../supabase_service.dart';
 
 export 'vosk_stt.dart' show STTMode;
 
@@ -20,7 +21,8 @@ class EnhancedSpeechProvider {
   bool _platformAvailable = false;
   bool _sherpaAvailable = false;
   bool _platformRestartInFlight = false;
-  bool _deepgramAutoMode = false;
+  bool _deepgramStreaming = false;
+  bool _forceOfflineMode = false;
   STTMode _currentMode = STTMode.none;
   String _currentLanguage = 'English';
   String _platformLocale = 'en-US';
@@ -34,7 +36,7 @@ class EnhancedSpeechProvider {
 
   Stream<SpeechResultEvent> get onResult => _controller.stream;
   bool get isListening => _listening;
-  bool get isAvailable => _platformAvailable || _sherpaAvailable;
+  bool get isAvailable => _platformAvailable || _sherpaAvailable || SupabaseService.instance.isAuthenticated;
   STTMode get currentMode => _currentMode;
   String get currentLanguage => _currentLanguage;
   bool get isSherpaAvailable => _sherpaAvailable;
@@ -64,7 +66,7 @@ class EnhancedSpeechProvider {
         onStatus: _onPlatformStatus,
         onError: (error) {
           debugPrint('Platform STT error: ${error.errorMsg}');
-          if (_listening && _currentMode == STTMode.platform && !_deepgramAutoMode) {
+          if (_listening && _currentMode == STTMode.platform && !_deepgramStreaming) {
             _schedulePlatformRestart(delay: const Duration(milliseconds: 500));
           }
         },
@@ -79,22 +81,28 @@ class EnhancedSpeechProvider {
   }
 
   void _updateModeForLanguage(String language) {
-    if (language.toLowerCase() == 'auto') {
-      _currentMode = STTMode.platform;
-      return;
-    }
-    if (_sherpaAvailable && _modelManager.isModelReady(language)) {
-      final model = _modelManager.getBestModel(language);
-      _currentMode = model?.isStreaming == true ? STTMode.sherpaStreaming : STTMode.sherpaBatch;
-    } else if (_platformAvailable) {
-      _currentMode = STTMode.platform;
-    } else {
-      _currentMode = STTMode.none;
+    if (_forceOfflineMode) return;
+    _currentMode = STTMode.platform;
+  }
+
+  bool _supportsDeepgramStreaming(String language) {
+    switch (language.toLowerCase().trim()) {
+      case 'auto':
+      case 'english':
+      case 'en':
+      case 'urdu':
+      case 'ur':
+      case 'roman urdu':
+      case 'hindi':
+      case 'hi':
+        return true;
+      default:
+        return false;
     }
   }
 
   void _onPlatformStatus(String status) {
-    if (!_listening || _currentMode != STTMode.platform || _deepgramAutoMode) return;
+    if (!_listening || _currentMode != STTMode.platform || _deepgramStreaming) return;
     if (status == 'notListening' || status == 'done') {
       final pending = _platformLastText.trim();
       if (pending.isNotEmpty && pending != _lastEmittedPlatformText) {
@@ -107,7 +115,7 @@ class EnhancedSpeechProvider {
         _lastEmittedPlatformText = pending;
       }
       _platformLastText = '';
-      _schedulePlatformRestart(delay: const Duration(milliseconds: 350));
+      _schedulePlatformRestart(delay: const Duration(milliseconds: 200));
     }
   }
 
@@ -118,23 +126,23 @@ class EnhancedSpeechProvider {
     required STTMode mode,
   }) {
     final value = text.trim();
-    if (value.isEmpty) return;
+    if (value.isEmpty || _controller.isClosed) return;
     _controller.add(SpeechResultEvent(
       text: value,
       isFinal: isFinal,
-      confidence: 0.9,
+      confidence: isFinal ? 0.9 : 0.7,
       language: language,
       isLive: true,
       mode: mode,
     ));
   }
 
-  void _schedulePlatformRestart({Duration delay = const Duration(milliseconds: 350)}) {
-    if (!_listening || _currentMode != STTMode.platform || _deepgramAutoMode) return;
+  void _schedulePlatformRestart({Duration delay = const Duration(milliseconds: 200)}) {
+    if (!_listening || _currentMode != STTMode.platform || _deepgramStreaming) return;
     if (_platformRestartTimer?.isActive == true || _platformRestartInFlight) return;
     _platformRestartTimer = Timer(delay, () async {
       _platformRestartTimer = null;
-      if (!_listening || _currentMode != STTMode.platform || _platformRestartInFlight || _deepgramAutoMode) return;
+      if (!_listening || _currentMode != STTMode.platform || _platformRestartInFlight || _deepgramStreaming) return;
       _platformRestartInFlight = true;
       try {
         await _platformSTT.listen(
@@ -149,7 +157,7 @@ class EnhancedSpeechProvider {
         );
       } catch (e) {
         debugPrint('Platform STT restart failed: $e');
-        if (_listening && _currentMode == STTMode.platform && !_deepgramAutoMode) {
+        if (_listening && _currentMode == STTMode.platform && !_deepgramStreaming) {
           _platformRestartTimer = Timer(const Duration(seconds: 1), () {
             _platformRestartTimer = null;
             _schedulePlatformRestart(delay: Duration.zero);
@@ -170,75 +178,84 @@ class EnhancedSpeechProvider {
     _lastStartError = null;
     _lastEmittedDeepgramFinal = '';
     _currentLanguage = language;
-    _updateModeForLanguage(language);
+    if (!_forceOfflineMode) {
+      _currentMode = STTMode.platform;
+    }
     _listening = true;
     _platformLastText = '';
     _lastEmittedPlatformText = '';
-    _deepgramAutoMode = language.toLowerCase() == 'auto';
+    _deepgramStreaming = false;
 
     try {
-      if (_deepgramAutoMode) {
+      if (!_forceOfflineMode && _supportsDeepgramStreaming(language)) {
         await _deepgramSubscription?.cancel();
         _deepgramSubscription = _deepgram.onResult.listen((result) {
           if (!_listening) return;
-          // Interim results are intentionally hidden from Conversation Mode.
-          // Only a speech-final utterance becomes user-visible text.
-          if (!result.speechFinal) return;
-          final detected = result.language == 'Auto'
-              ? _detectLanguage(result.transcript, fallback: 'English')
-              : result.language;
           final text = result.transcript.trim();
-          if (text.isEmpty || text == _lastEmittedDeepgramFinal) return;
-          _lastEmittedDeepgramFinal = text;
-          _emitResult(text, isFinal: true, language: detected, mode: STTMode.platform);
+          if (text.isEmpty) return;
+          final detected = result.language == 'Auto'
+              ? _detectLanguage(text, fallback: language)
+              : result.language;
+          if (result.speechFinal) {
+            if (text == _lastEmittedDeepgramFinal) return;
+            _lastEmittedDeepgramFinal = text;
+            _emitResult(text, isFinal: true, language: detected, mode: STTMode.platform);
+          }
+          // Keep interim text inside the provider so callers that want live
+          // drafts can use it without turning it into a committed caption.
         });
 
-        final started = await _deepgram.start(language: 'auto');
-        if (started) return;
+        final started = await _deepgram.start(language: language);
+        if (started) {
+          _deepgramStreaming = true;
+          return;
+        }
 
         await _deepgramSubscription?.cancel();
         _deepgramSubscription = null;
-        _deepgramAutoMode = false;
-        if (_platformAvailable) {
-          _currentMode = STTMode.platform;
-          try {
-            await _startPlatformListening('Auto');
-            if (_platformSTT.isListening) return;
-          } catch (e) {
-            _lastStartError = 'Android speech recognition could not start: $e';
-          }
-        }
-        _listening = false;
-        _lastStartError ??= 'Live speech recognition could not start.';
-        return;
+        _lastStartError = _deepgram.lastStartError;
       }
 
-      switch (_currentMode) {
-        case STTMode.sherpaStreaming:
-          await _startSherpaStreaming(language);
-          break;
-        case STTMode.sherpaBatch:
-          await _startSherpaBatch(language);
-          break;
-        case STTMode.platform:
-          await _startPlatformListening(language);
-          break;
-        case STTMode.none:
-        case STTMode.demo:
-          _listening = false;
-          _lastStartError = 'Speech recognition is unavailable for $language.';
-          break;
+      if (_forceOfflineMode) {
+        switch (_currentMode) {
+          case STTMode.sherpaStreaming:
+            await _startSherpaStreaming(language);
+            return;
+          case STTMode.sherpaBatch:
+            await _startSherpaBatch(language);
+            return;
+          default:
+            break;
+        }
       }
+
+      if (_platformAvailable) {
+        _currentMode = STTMode.platform;
+        await _startPlatformListening(language);
+        if (_platformSTT.isListening) return;
+      }
+
+      if (!_forceOfflineMode && _sherpaAvailable && _modelManager.isModelReady(language)) {
+        final model = _modelManager.getBestModel(language);
+        if (model?.isStreaming == true) {
+          _currentMode = STTMode.sherpaStreaming;
+          await _startSherpaStreaming(language);
+          if (_sherpaSTT.isListening) return;
+        }
+      }
+
+      _listening = false;
+      _lastStartError ??= 'Live speech recognition could not start.';
     } catch (e) {
       _lastStartError = 'Speech recognition could not start: $e';
       _listening = false;
-      _deepgramAutoMode = false;
+      _deepgramStreaming = false;
       debugPrint('Failed to start listening: $e');
     }
   }
 
   Future<void> _startSherpaStreaming(String language) async {
-    _sherpaSubscription?.cancel();
+    await _sherpaSubscription?.cancel();
     _sherpaSubscription = _sherpaSTT.onResult.listen((result) {
       _controller.add(SpeechResultEvent(
         text: result.text,
@@ -253,7 +270,7 @@ class EnhancedSpeechProvider {
   }
 
   Future<void> _startSherpaBatch(String language) async {
-    _sherpaSubscription?.cancel();
+    await _sherpaSubscription?.cancel();
     _sherpaSubscription = _sherpaSTT.onResult.listen((result) {
       _controller.add(SpeechResultEvent(
         text: result.text,
@@ -285,26 +302,25 @@ class EnhancedSpeechProvider {
     final text = result.recognizedWords.trim();
     if (text.isEmpty) return;
     _platformLastText = text;
-    if (result.finalResult) _lastEmittedPlatformText = text;
     _emitResult(
       text,
       isFinal: result.finalResult,
       language: _detectLanguage(text, fallback: _currentLanguage),
       mode: STTMode.platform,
     );
+    if (result.finalResult) _lastEmittedPlatformText = text;
   }
 
   Future<void> stopListening() async {
-    final useDeepgram = _deepgramAutoMode;
     _platformRestartTimer?.cancel();
     _platformRestartTimer = null;
     _platformRestartInFlight = false;
-    _sherpaSubscription?.cancel();
+    await _sherpaSubscription?.cancel();
     _sherpaSubscription = null;
 
-    if (useDeepgram) {
-      // Keep the logical listening state alive while Deepgram flushes its final
-      // speech_final packet. The caller can then commit exactly one bubble.
+    if (_deepgramStreaming) {
+      // Deepgram.stop() deliberately keeps its result listener and socket alive
+      // while finalizing this turn. This prevents the common final-word race.
       await _deepgram.stop();
       final flushed = _deepgram.lastFinalTranscript.trim();
       if (flushed.isNotEmpty && flushed != _lastEmittedDeepgramFinal) {
@@ -317,9 +333,7 @@ class EnhancedSpeechProvider {
         );
       }
       _listening = false;
-      _deepgramAutoMode = false;
-      await _deepgramSubscription?.cancel();
-      _deepgramSubscription = null;
+      _deepgramStreaming = false;
       return;
     }
 
@@ -327,7 +341,9 @@ class EnhancedSpeechProvider {
     _platformLastText = '';
     _lastEmittedPlatformText = '';
     if (_currentMode == STTMode.platform) {
-      await _platformSTT.stop();
+      try {
+        await _platformSTT.stop();
+      } catch (_) {}
     } else if (_currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch) {
       await _sherpaSTT.stopListening();
     }
@@ -337,6 +353,7 @@ class EnhancedSpeechProvider {
     final wasListening = _listening;
     if (wasListening) await stopListening();
     _currentMode = mode;
+    _forceOfflineMode = mode == STTMode.sherpaStreaming || mode == STTMode.sherpaBatch;
     _currentLanguage = language;
     if (wasListening) await startListening(language: language);
   }
@@ -345,17 +362,21 @@ class EnhancedSpeechProvider {
     final wasListening = _listening;
     if (wasListening) await stopListening();
     _currentLanguage = language;
-    _currentMode = STTMode.none;
-    try {
-      final sherpaLanguage = language.toLowerCase() == 'auto'
-          ? (_modelManager.isModelReady('Urdu') ? 'Urdu' : 'English')
-          : language;
-      _sherpaAvailable = await _sherpaSTT.switchLanguage(sherpaLanguage);
-    } catch (_) {
-      _sherpaAvailable = false;
-    }
-    _updateModeForLanguage(language);
-    if (!wasListening && _currentMode == STTMode.none && _platformAvailable) {
+    if (_forceOfflineMode) {
+      _currentMode = STTMode.none;
+      try {
+        final sherpaLanguage = language.toLowerCase() == 'auto'
+            ? (_modelManager.isModelReady('Urdu') ? 'Urdu' : 'English')
+            : language;
+        _sherpaAvailable = await _sherpaSTT.switchLanguage(sherpaLanguage);
+      } catch (_) {
+        _sherpaAvailable = false;
+      }
+      if (_sherpaAvailable) {
+        final model = _modelManager.getBestModel(language);
+        _currentMode = model?.isStreaming == true ? STTMode.sherpaStreaming : STTMode.sherpaBatch;
+      }
+    } else {
       _currentMode = STTMode.platform;
     }
     if (wasListening) await startListening(language: language);
@@ -366,7 +387,11 @@ class EnhancedSpeechProvider {
     if (success) {
       final sherpaLanguage = language.toLowerCase() == 'auto' ? 'Urdu' : language;
       _sherpaAvailable = await _sherpaSTT.initialize(language: sherpaLanguage);
-      _updateModeForLanguage(language);
+      if (_forceOfflineMode) {
+        _currentMode = _modelManager.getBestModel(language)?.isStreaming == true
+            ? STTMode.sherpaStreaming
+            : STTMode.sherpaBatch;
+      }
     }
     return success;
   }
@@ -390,6 +415,7 @@ class EnhancedSpeechProvider {
     switch (language.toLowerCase()) {
       case 'urdu':
       case 'roman urdu': return 'ur-PK';
+      case 'hindi': return 'hi-IN';
       case 'auto': return 'en-US';
       default: return 'en-US';
     }
@@ -397,6 +423,7 @@ class EnhancedSpeechProvider {
 
   String _detectLanguage(String text, {String fallback = 'English'}) {
     if (text.trim().isEmpty) return fallback;
+    if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'Hindi';
     if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'Urdu';
     final normalized = text.toLowerCase().replaceAll(RegExp(r"[^a-z0-9\s']"), ' ');
     final tokens = normalized.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
@@ -408,7 +435,7 @@ class EnhancedSpeechProvider {
     };
     final romanMatches = tokens.intersection(romanUrduWords).length;
     if (romanMatches >= 2 || (romanMatches == 1 && tokens.length <= 5)) return 'Roman Urdu';
-    return 'English';
+    return fallback == 'Auto' ? 'English' : fallback;
   }
 
   void dispose() {
@@ -416,7 +443,7 @@ class EnhancedSpeechProvider {
     _sherpaSubscription?.cancel();
     _deepgramSubscription?.cancel();
     _platformSTT.cancel();
-    _deepgram.cancel();
+    _deepgram.closeSession();
     _sherpaSTT.dispose();
     _controller.close();
     _modelManager.dispose();
