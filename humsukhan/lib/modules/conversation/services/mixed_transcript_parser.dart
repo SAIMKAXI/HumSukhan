@@ -2,8 +2,8 @@ import '../../models/models.dart';
 
 /// Normalizes a transcript into contiguous script/language segments.
 ///
-/// This deliberately does not translate or transliterate Devanagari. A script
-/// signal is metadata; the user's selected language policy remains authoritative.
+/// Script metadata never rewrites transcript text. In particular, Devanagari
+/// is preserved and never silently transliterated into Urdu.
 class MixedTranscriptParser {
   static final _arabic = RegExp(r'[\u0600-\u06FF]');
   static final _devanagari = RegExp(r'[\u0900-\u097F]');
@@ -16,21 +16,26 @@ class MixedTranscriptParser {
     final value = rawText.trim();
     if (value.isEmpty) return const [];
 
+    final romanUrduFallback = fallbackLanguage.trim().toLowerCase() == 'roman urdu';
     final pieces = value.split(RegExp(r'(\s+)'));
     final segments = <CaptionSegment>[];
-    var currentScript = CaptionScript.other;
-    var currentLanguage = fallbackLanguage;
+    CaptionScript currentScript = CaptionScript.other;
+    String currentLanguage = fallbackLanguage;
     final buffer = StringBuffer();
 
+    CaptionScript effectiveScript(CaptionScript script) =>
+        romanUrduFallback && script == CaptionScript.latin
+            ? CaptionScript.romanUrdu
+            : script;
+
     void flush() {
-      final text = buffer.toString();
-      if (text.trim().isEmpty) {
+      final text = buffer.toString().trim();
+      if (text.isEmpty) {
         buffer.clear();
         return;
       }
-      final normalized = text.trim();
       final segment = CaptionSegment(
-        text: normalized,
+        text: text,
         language: currentLanguage,
         script: currentScript,
       );
@@ -39,7 +44,7 @@ class MixedTranscriptParser {
           segments.last.language == segment.language) {
         final previous = segments.removeLast();
         segments.add(CaptionSegment(
-          text: '${previous.text} $normalized',
+          text: '${previous.text} $text',
           language: segment.language,
           script: segment.script,
         ));
@@ -51,18 +56,14 @@ class MixedTranscriptParser {
 
     for (final piece in pieces) {
       if (piece.trim().isEmpty) continue;
-      final script = classifyScript(piece);
+      final script = effectiveScript(classifyScript(piece));
       if (currentScript != CaptionScript.other &&
           script != CaptionScript.other &&
           script != currentScript) {
         flush();
-      }
-      if (currentScript == CaptionScript.other) {
         currentScript = script;
         currentLanguage = _languageForScript(script, fallbackLanguage);
-      }
-      if (script != CaptionScript.other && script != currentScript) {
-        flush();
+      } else if (currentScript == CaptionScript.other) {
         currentScript = script;
         currentLanguage = _languageForScript(script, fallbackLanguage);
       }
@@ -84,13 +85,13 @@ class MixedTranscriptParser {
     switch (script) {
       case CaptionScript.arabic:
         return 'Urdu';
+      case CaptionScript.romanUrdu:
+        return 'Roman Urdu';
       case CaptionScript.latin:
         return fallback.toLowerCase() == 'urdu' ? 'English' : fallback;
       case CaptionScript.devanagari:
       case CaptionScript.other:
         return fallback;
-      case CaptionScript.romanUrdu:
-        return 'Roman Urdu';
     }
   }
 
