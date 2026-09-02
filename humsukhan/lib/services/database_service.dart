@@ -28,7 +28,7 @@ class DatabaseService {
     try {
       final userId = _supabase.userId; if (userId.isEmpty) return;
       await _supabase.client!.from('sessions').upsert({'id': session.id, 'user_id': userId, 'title': session.title, 'type': session.type.index, 'folder_id': session.folderId, 'caption_language': session.captionLanguage, 'retention_days': session.retentionDays, 'created_at': session.createdAt.toIso8601String(), 'expires_at': session.expiresAt.toIso8601String(), 'status': session.status.index, 'transcript_text': session.transcriptText});
-      if (session.captions.isNotEmpty) await _supabase.client!.from('captions').upsert(session.captions.map((c) => {'id': c.id, 'session_id': session.id, 'user_id': userId, 'text': c.text, 'speaker': c.speaker, 'timestamp': c.timestamp.toIso8601String(), 'language': c.language, 'is_partial': c.isPartial, 'is_own': c.isOwn}).toList());
+      if (session.captions.isNotEmpty) await _supabase.client!.from('captions').upsert(session.captions.map((c) => {'id': c.id, 'session_id': session.id, 'user_id': userId, 'text': c.text, 'speaker': c.speaker, 'timestamp': c.timestamp.toIso8601String(), 'language': c.language, 'is_partial': c.isPartial, 'is_own': c.isOwn, 'segments': c.segments.map((s) => s.toJson()).toList()}).toList());
     } catch (e) { debugPrint('Session upsert error: $e'); }
   }
   Future<List<ProfessionalSession>> fetchSessions() async {
@@ -39,7 +39,11 @@ class DatabaseService {
       final sessions = <ProfessionalSession>[];
       for (final row in data) {
         final captionsData = await _supabase.client!.from('captions').select().eq('session_id', row['id']).order('timestamp');
-        final captions = captionsData.map((c) => Caption(id: c['id'], text: c['text'] ?? '', speaker: c['speaker'] ?? 'Speaker 1', timestamp: DateTime.parse(c['timestamp']), language: c['language'] ?? 'English', isPartial: c['is_partial'] ?? false, isOwn: c['is_own'] ?? false)).toList();
+        final captions = captionsData.map((c) {
+          final rawSegments = c['segments'];
+          final segments = rawSegments is List ? rawSegments.whereType<Map>().map((x) => CaptionSegment.fromJson(Map<String, dynamic>.from(x))).toList() : <CaptionSegment>[];
+          return Caption(id: c['id'], text: c['text'] ?? '', speaker: c['speaker'] ?? 'Speaker 1', timestamp: DateTime.parse(c['timestamp']), language: c['language'] ?? 'English', isPartial: c['is_partial'] ?? false, isOwn: c['is_own'] ?? false, segments: segments);
+        }).toList();
         sessions.add(ProfessionalSession(id: row['id'], title: row['title'] ?? '', type: SessionType.values[row['type'] ?? 0], folderId: row['folder_id'], captionLanguage: row['caption_language'] ?? 'English', retentionDays: row['retention_days'] ?? 7, createdAt: DateTime.parse(row['created_at']), expiresAt: DateTime.parse(row['expires_at']), status: SessionStatus.values[row['status'] ?? 1], captions: captions, transcriptText: row['transcript_text']));
       }
       return sessions;
@@ -69,7 +73,7 @@ class DatabaseService {
       final data = await _supabase.client!.from('insights').select().eq('session_id', sessionId).maybeSingle();
       if (data == null) return null;
       final raw = data['summary_bullets'];
-      final bullets = raw is List ? raw.map((e) => e.toString()).toList() : ((data['summary']?.toString().trim().isEmpty ?? true) ? <String>[] : [data['summary'].toString().trim()]);
+      final bullets = raw is List ? raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList() : ((data['summary']?.toString().trim().isEmpty ?? true) ? <String>[] : [data['summary'].toString().trim()]);
       return ProfessionalInsight(id: data['id'], sessionId: data['session_id'], summary: data['summary'] ?? '', summaryBullets: bullets, actionItems: List<String>.from(data['action_items'] ?? []), deadlines: List<String>.from(data['deadlines'] ?? []), mentionedPeople: List<String>.from(data['mentioned_people'] ?? []), generatedAt: DateTime.parse(data['generated_at']), isAvailable: data['is_available'] ?? false);
     } catch (e) { debugPrint('Insight fetch error: $e'); return null; }
   }
