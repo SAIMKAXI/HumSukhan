@@ -37,7 +37,9 @@ class EnvironmentalProvider extends ChangeNotifier {
 
   void setSettingsProvider(SettingsProvider settings) => _settingsProvider = settings;
 
-  bool get monitoringEnabled => _monitoringState == 'ACTIVE' || _monitoringState == 'STARTING';
+  // STARTING/STOPPING are transitional states only. The product must never
+  // advertise monitoring as active until the microphone pipeline reports ACTIVE.
+  bool get monitoringEnabled => _monitoringState == 'ACTIVE';
   String get monitoringState => _monitoringState;
   bool get isStarting => _monitoringState == 'STARTING';
   bool get isStopping => _monitoringState == 'STOPPING';
@@ -173,8 +175,14 @@ class EnvironmentalProvider extends ChangeNotifier {
 
     if (Platform.isAndroid) {
       final started = await _bridge.start();
-      if (!started) {
-        _monitoringState = 'ERROR';
+      if (started) {
+        _monitoringState = _bridge.state;
+        if (_monitoringState != 'ACTIVE') {
+          _monitoringState = 'ERROR';
+          _errorMessage = 'The environmental monitoring service did not confirm an active microphone pipeline.';
+        }
+      } else {
+        _monitoringState = _bridge.state == 'ERROR' ? 'ERROR' : 'ERROR';
         _errorMessage = 'The environmental monitoring service could not start. Check microphone permission and try again.';
       }
       notifyListeners();
