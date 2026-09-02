@@ -408,11 +408,8 @@ class SpeechProvider extends ChangeNotifier {
 
   void detectLanguage(String text) {
     final urduScriptRegex = RegExp(r'[\u0600-\u06FF]');
-    final hindiScriptRegex = RegExp(r'[\u0900-\u097F]');
     final romanUrduWords = ['kya', 'hai', 'mein', 'tum', 'aap', 'ho', 'se', 'ko', 'ka', 'ki', 'ke'];
-    if (hindiScriptRegex.hasMatch(text)) {
-      _detectedLanguage = const LanguageResult(language: 'Hindi', confidence: 0.9, script: 'Devanagari');
-    } else if (urduScriptRegex.hasMatch(text)) {
+    if (urduScriptRegex.hasMatch(text)) {
       _detectedLanguage = const LanguageResult(language: 'Urdu', confidence: 0.9, script: 'Arabic');
     } else if (romanUrduWords.any((w) => text.toLowerCase().split(RegExp(r'\s+')).contains(w))) {
       _detectedLanguage = const LanguageResult(language: 'Roman Urdu', confidence: 0.7, script: 'Latin');
