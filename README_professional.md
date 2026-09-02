@@ -1,0 +1,1 @@
+Professional Mode fixes are implemented on branch fix/professional-mode-intelligence.
