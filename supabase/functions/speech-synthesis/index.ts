@@ -30,9 +30,15 @@ function corsJson(body: unknown, status = 200) {
 
 function detectProvider(language: string, text: string): "soniox" | "deepgram" {
   const normalized = language.toLowerCase().trim();
-  if (normalized === "urdu" || normalized === "roman urdu") return "soniox";
-  if (normalized === "auto" && /[\u0600-\u06ff]/u.test(text)) return "soniox";
+  if (normalized === "urdu" || normalized === "roman urdu" || normalized === "hindi") return "soniox";
+  if (normalized === "auto" && /[\u0600-\u06ff\u0900-\u097f]/u.test(text)) return "soniox";
   return "deepgram";
+}
+
+function detectSonioxLanguage(language: string, text: string): string {
+  const normalized = language.toLowerCase().trim();
+  if (normalized === "hindi" || normalized === "hi" || /[\u0900-\u097f]/u.test(text)) return "hi";
+  return "ur";
 }
 
 async function synthesizeDeepgram(text: string) {
@@ -66,9 +72,10 @@ async function synthesizeDeepgram(text: string) {
   throw new Error(`Deepgram TTS failed (${lastStatus})`);
 }
 
-async function synthesizeSoniox(text: string) {
+async function synthesizeSoniox(text: string, language: string) {
   if (SONIOX_KEYS.length === 0) throw new Error("Soniox TTS is not configured");
   let lastStatus = 502;
+  const sonioxLanguage = detectSonioxLanguage(language, text);
   for (let attempt = 0; attempt < SONIOX_KEYS.length; attempt += 1) {
     const index = (sonioxCursor + attempt) % SONIOX_KEYS.length;
     const key = SONIOX_KEYS[index];
@@ -80,7 +87,7 @@ async function synthesizeSoniox(text: string) {
       },
       body: JSON.stringify({
         model: "tts-rt-v2",
-        language: "ur",
+        language: sonioxLanguage,
         voice: "Daniel",
         audio_format: "mp3",
         text,
@@ -127,7 +134,7 @@ Deno.serve(async (req) => {
 
     const provider = detectProvider(language, text);
     const result = provider === "soniox"
-      ? await synthesizeSoniox(text)
+      ? await synthesizeSoniox(text, language)
       : await synthesizeDeepgram(text);
 
     return corsJson({
