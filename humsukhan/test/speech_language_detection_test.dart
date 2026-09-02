@@ -9,9 +9,20 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
   setUpAll(() {
+    Future<dynamic> audioPlayerHandler(MethodCall call) async {
+      // audioplayers creates each AudioPlayer through the per-player channel.
+      // The language-detection tests do not exercise real audio playback, so
+      // the platform calls can safely be no-ops in the VM test environment.
+      return null;
+    }
+
     messenger.setMockMethodCallHandler(
       const MethodChannel('xyz.luan/audioplayers.global'),
-      (call) async => null,
+      audioPlayerHandler,
+    );
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('xyz.luan/audioplayers'),
+      audioPlayerHandler,
     );
     messenger.setMockMethodCallHandler(
       const MethodChannel('flutter_tts'),
@@ -22,6 +33,10 @@ void main() {
   tearDownAll(() {
     messenger.setMockMethodCallHandler(
       const MethodChannel('xyz.luan/audioplayers.global'),
+      null,
+    );
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('xyz.luan/audioplayers'),
       null,
     );
     messenger.setMockMethodCallHandler(
