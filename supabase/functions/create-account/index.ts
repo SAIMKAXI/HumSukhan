@@ -7,6 +7,8 @@ const corsHeaders = {
   'Content-Type': 'application/json',
 }
 
+const strongEightCharPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8}$/
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -26,8 +28,11 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Email and password are required.' }, { status: 400, headers: corsHeaders })
     }
 
-    if (password.length !== 8) {
-      return Response.json({ error: 'Password must be exactly 8 characters.' }, { status: 400, headers: corsHeaders })
+    if (!strongEightCharPassword.test(password)) {
+      return Response.json(
+        { error: 'Password must be exactly 8 characters and contain uppercase, lowercase, number, and special character.' },
+        { status: 400, headers: corsHeaders },
+      )
     }
 
     const adminKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -44,30 +49,22 @@ Deno.serve(async (req) => {
     if (listError) throw listError
 
     const existing = existingUsers.users.find((user) => user.email?.toLowerCase() === email)
-
-    let user
     if (existing) {
-      const { data, error } = await admin.auth.admin.updateUserById(existing.id, {
-        password,
-        email_confirm: true,
-        user_metadata: {
-          ...(existing.user_metadata ?? {}),
-          ...(name ? { name } : {}),
-        },
-      })
-      if (error) throw error
-      user = data.user
-    } else {
-      const { data, error } = await admin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: name ? { name } : undefined,
-      })
-      if (error) throw error
-      user = data.user
+      return Response.json(
+        { error: 'An account with this email already exists. Please sign in or reset your password.' },
+        { status: 409, headers: corsHeaders },
+      )
     }
 
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: name ? { name } : undefined,
+    })
+    if (error) throw error
+
+    const user = data.user
     if (!user) {
       return Response.json({ error: 'Account creation failed.' }, { status: 500, headers: corsHeaders })
     }
