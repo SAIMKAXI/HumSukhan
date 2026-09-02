@@ -23,6 +23,7 @@ class ResilientTtsProvider implements TtsProvider {
   final AudioPlayer _player = AudioPlayer();
   bool _speaking = false;
   bool _initialized = false;
+  int _speakGeneration = 0;
 
   @override
   Future<bool> initialize() async {
@@ -140,16 +141,20 @@ class ResilientTtsProvider implements TtsProvider {
     if (value.isEmpty) return;
     await initialize();
 
+    final generation = ++_speakGeneration;
     final deliveryLanguage = _deliveryLanguage(language, value);
-    await stop();
+    await _stopPlaybackOnly();
 
     try {
       await _speakCloud(value, deliveryLanguage);
+      if (generation != _speakGeneration) return;
       return;
     } catch (e) {
+      if (generation != _speakGeneration) return;
       debugPrint('Cloud TTS unavailable; falling back to device TTS: $e');
     }
 
+    if (generation != _speakGeneration) return;
     try {
       await _speakNative(value, deliveryLanguage);
     } catch (e) {
@@ -159,8 +164,7 @@ class ResilientTtsProvider implements TtsProvider {
     }
   }
 
-  @override
-  Future<void> stop() async {
+  Future<void> _stopPlaybackOnly() async {
     try {
       await _player.stop();
     } catch (_) {}
@@ -171,10 +175,17 @@ class ResilientTtsProvider implements TtsProvider {
   }
 
   @override
+  Future<void> stop() async {
+    ++_speakGeneration;
+    await _stopPlaybackOnly();
+  }
+
+  @override
   bool get isSpeaking => _speaking;
 
   @override
   void dispose() {
+    ++_speakGeneration;
     unawaited(_player.dispose());
     unawaited(_native.stop());
   }
@@ -258,7 +269,7 @@ class SpeechProvider extends ChangeNotifier {
   }
 
   Future<void> startListening({String language = 'English'}) async {
-    _sttSubscription?.cancel();
+    await _sttSubscription?.cancel();
     _sttSubscription = _sttProvider.onResult.listen((result) {
       _currentMode = result.mode;
       if (result.isFinal && result.text.trim().isNotEmpty) detectLanguage(result.text);

@@ -194,14 +194,9 @@ class DeepgramTranscriptionService {
           _finalBuffer = _finalBuffer.isEmpty ? text : '$_finalBuffer $text';
         }
 
-        _controller.add(DeepgramTranscriptResult(
-          transcript: text,
-          language: _displayLanguage(language),
-          confidence: confidence,
-          isFinal: isFinal,
-          speechFinal: speechFinal,
-        ));
-
+        // Deepgram's speech_final result is the utterance boundary. Emit only
+        // the accumulated utterance for that packet; emitting the raw packet
+        // and the accumulated packet creates two visible final captions.
         if (speechFinal) {
           final complete = _finalBuffer.trim().isNotEmpty ? _finalBuffer.trim() : text;
           _lastFinalTranscript = complete;
@@ -213,7 +208,16 @@ class DeepgramTranscriptionService {
             speechFinal: true,
           ));
           _finalBuffer = '';
+          return;
         }
+
+        _controller.add(DeepgramTranscriptResult(
+          transcript: text,
+          language: _displayLanguage(language),
+          confidence: confidence,
+          isFinal: isFinal,
+          speechFinal: false,
+        ));
       }
     } catch (e) {
       debugPrint('Deepgram result parse failed: $e');
@@ -235,6 +239,9 @@ class DeepgramTranscriptionService {
       if (_socket?.readyState == WebSocket.open) {
         _socket!.add(jsonEncode({'type': 'Finalize'}));
         await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+      if (_lastFinalTranscript.trim().isEmpty && _finalBuffer.trim().isNotEmpty) {
+        _lastFinalTranscript = _finalBuffer.trim();
       }
     } catch (_) {}
     await _cleanup();
