@@ -7,66 +7,28 @@ class CaptionSegment {
   final String text;
   final String language;
   final CaptionScript script;
-
-  const CaptionSegment({
-    required this.text,
-    required this.language,
-    required this.script,
-  });
-
+  const CaptionSegment({required this.text, required this.language, required this.script});
   bool get isRtl => script == CaptionScript.arabic;
-
-  Map<String, dynamic> toJson() => {
-        'text': text,
-        'language': language,
-        'script': script.name,
-      };
-
+  Map<String, dynamic> toJson() => {'text': text, 'language': language, 'script': script.name};
   factory CaptionSegment.fromJson(Map<String, dynamic> json) {
     final rawScript = json['script']?.toString();
     CaptionScript script = CaptionScript.other;
     for (final value in CaptionScript.values) {
-      if (value.name == rawScript) {
-        script = value;
-        break;
-      }
+      if (value.name == rawScript) { script = value; break; }
     }
-    if (script == CaptionScript.other &&
-        json['language']?.toString().toLowerCase() == 'urdu') {
+    if (script == CaptionScript.other && json['language']?.toString().toLowerCase() == 'urdu') {
       script = CaptionScript.arabic;
     } else if (script == CaptionScript.other && rawScript == null) {
       script = CaptionScript.latin;
     }
-    return CaptionSegment(
-      text: json['text']?.toString() ?? '',
-      language: json['language']?.toString() ?? 'English',
-      script: script,
-    );
+    return CaptionSegment(text: json['text']?.toString() ?? '', language: json['language']?.toString() ?? 'English', script: script);
   }
 }
 
 class UserProfile {
-  final String id;
-  final String name;
-  final String avatarEmoji;
-  final String? avatarData;
-  final String preferredLanguage;
-  final String tutorName;
-  final DateTime createdAt;
-
-  UserProfile({String? id, this.name = 'User', this.avatarEmoji = '👤', this.avatarData, this.preferredLanguage = 'English', this.tutorName = 'Sam', DateTime? createdAt})
-      : id = id ?? _uuid.v4(), createdAt = createdAt ?? DateTime.now();
-
-  UserProfile copyWith({String? name, String? avatarEmoji, String? avatarData, String? preferredLanguage, String? tutorName}) => UserProfile(
-        id: id,
-        name: name ?? this.name,
-        avatarEmoji: avatarEmoji ?? this.avatarEmoji,
-        avatarData: avatarData ?? this.avatarData,
-        preferredLanguage: preferredLanguage ?? this.preferredLanguage,
-        tutorName: tutorName ?? this.tutorName,
-        createdAt: createdAt,
-      );
-
+  final String id; final String name; final String avatarEmoji; final String? avatarData; final String preferredLanguage; final String tutorName; final DateTime createdAt;
+  UserProfile({String? id, this.name = 'User', this.avatarEmoji = '👤', this.avatarData, this.preferredLanguage = 'English', this.tutorName = 'Sam', DateTime? createdAt}) : id = id ?? _uuid.v4(), createdAt = createdAt ?? DateTime.now();
+  UserProfile copyWith({String? name, String? avatarEmoji, String? avatarData, String? preferredLanguage, String? tutorName}) => UserProfile(id: id, name: name ?? this.name, avatarEmoji: avatarEmoji ?? this.avatarEmoji, avatarData: avatarData ?? this.avatarData, preferredLanguage: preferredLanguage ?? this.preferredLanguage, tutorName: tutorName ?? this.tutorName, createdAt: createdAt);
   Map<String, dynamic> toJson() => {'id': id, 'name': name, 'avatarEmoji': avatarEmoji, 'avatarData': avatarData, 'preferredLanguage': preferredLanguage, 'tutorName': tutorName, 'createdAt': createdAt.toIso8601String()};
   factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(id: json['id'], name: json['name'] ?? 'User', avatarEmoji: json['avatarEmoji'] ?? '👤', avatarData: json['avatarData'], preferredLanguage: json['preferredLanguage'] ?? 'English', tutorName: json['tutorName'] ?? 'Sam', createdAt: DateTime.parse(json['createdAt']));
 }
@@ -75,17 +37,13 @@ enum ConversationState { idle, starting, active, stopping, saveDecision }
 enum SaveAction { deleteNow, save }
 
 class Caption {
-  final String id; final String text; final String speaker; final DateTime timestamp; final String language; final bool isPartial; final bool isOwn;
-  final List<CaptionSegment> segments;
-  Caption({String? id, required this.text, this.speaker = 'Speaker 1', DateTime? timestamp, this.language = 'English', this.isPartial = false, this.isOwn = false, List<CaptionSegment>? segments})
-      : id = id ?? _uuid.v4(), timestamp = timestamp ?? DateTime.now(), segments = List.unmodifiable(segments ?? const []);
+  final String id; final String text; final String speaker; final DateTime timestamp; final String language; final bool isPartial; final bool isOwn; final List<CaptionSegment> segments;
+  Caption({String? id, required this.text, this.speaker = 'Speaker 1', DateTime? timestamp, this.language = 'English', this.isPartial = false, this.isOwn = false, List<CaptionSegment>? segments}) : id = id ?? _uuid.v4(), timestamp = timestamp ?? DateTime.now(), segments = List.unmodifiable(segments ?? const []);
   Caption copyWith({String? text, bool? isPartial, String? speaker, String? language, List<CaptionSegment>? segments}) => Caption(id: id, text: text ?? this.text, speaker: speaker ?? this.speaker, timestamp: timestamp, language: language ?? this.language, isPartial: isPartial ?? this.isPartial, isOwn: isOwn, segments: segments ?? this.segments);
   Map<String, dynamic> toJson() => {'id': id, 'text': text, 'speaker': speaker, 'timestamp': timestamp.toIso8601String(), 'language': language, 'isPartial': isPartial, 'isOwn': isOwn, 'segments': segments.map((s) => s.toJson()).toList()};
   factory Caption.fromJson(Map<String, dynamic> json) {
     final rawSegments = json['segments'];
-    final segments = rawSegments is List
-        ? rawSegments.whereType<Map>().map((item) => CaptionSegment.fromJson(Map<String, dynamic>.from(item))).where((s) => s.text.trim().isNotEmpty).toList()
-        : <CaptionSegment>[];
+    final segments = rawSegments is List ? rawSegments.whereType<Map>().map((item) => CaptionSegment.fromJson(Map<String, dynamic>.from(item))).where((s) => s.text.trim().isNotEmpty).toList() : <CaptionSegment>[];
     return Caption(id: json['id'], text: json['text'] ?? '', speaker: json['speaker'] ?? 'Speaker 1', timestamp: DateTime.parse(json['timestamp']), language: json['language'] ?? 'English', isPartial: json['isPartial'] ?? false, isOwn: json['isOwn'] ?? false, segments: segments);
   }
 }
@@ -118,10 +76,15 @@ class Folder {
 }
 
 class ProfessionalInsight {
-  final String id; final String sessionId; final String summary; final List<String> vocabulary; final List<String> themes; final List<String> actionItems; final List<String> deadlines; final List<String> mentionedPeople; final DateTime generatedAt; final bool isAvailable;
-  ProfessionalInsight({String? id, required this.sessionId, this.summary = '', List<String>? vocabulary, List<String>? themes, List<String>? actionItems, List<String>? deadlines, List<String>? mentionedPeople, DateTime? generatedAt, this.isAvailable = false}) : id = id ?? _uuid.v4(), vocabulary = vocabulary ?? [], themes = themes ?? [], actionItems = actionItems ?? [], deadlines = deadlines ?? [], mentionedPeople = mentionedPeople ?? [], generatedAt = generatedAt ?? DateTime.now();
-  Map<String, dynamic> toJson() => {'id': id, 'sessionId': sessionId, 'summary': summary, 'vocabulary': vocabulary, 'themes': themes, 'actionItems': actionItems, 'deadlines': deadlines, 'mentionedPeople': mentionedPeople, 'generatedAt': generatedAt.toIso8601String(), 'isAvailable': isAvailable};
-  factory ProfessionalInsight.fromJson(Map<String, dynamic> json) => ProfessionalInsight(id: json['id'], sessionId: json['sessionId'], summary: json['summary'] ?? '', vocabulary: List<String>.from(json['vocabulary'] ?? []), themes: List<String>.from(json['themes'] ?? []), actionItems: List<String>.from(json['actionItems'] ?? []), deadlines: List<String>.from(json['deadlines'] ?? []), mentionedPeople: List<String>.from(json['mentionedPeople'] ?? []), generatedAt: DateTime.parse(json['generatedAt']), isAvailable: json['isAvailable'] ?? false);
+  final String id; final String sessionId; final String summary; final List<String> summaryBullets; final List<String> actionItems; final List<String> deadlines; final List<String> mentionedPeople; final DateTime generatedAt; final bool isAvailable;
+  ProfessionalInsight({String? id, required this.sessionId, this.summary = '', List<String>? summaryBullets, List<String>? actionItems, List<String>? deadlines, List<String>? mentionedPeople, DateTime? generatedAt, this.isAvailable = false}) : id = id ?? _uuid.v4(), summaryBullets = summaryBullets ?? const [], actionItems = actionItems ?? [], deadlines = deadlines ?? [], mentionedPeople = mentionedPeople ?? [], generatedAt = generatedAt ?? DateTime.now();
+  Map<String, dynamic> toJson() => {'id': id, 'sessionId': sessionId, 'summary': summary, 'summaryBullets': summaryBullets, 'actionItems': actionItems, 'deadlines': deadlines, 'mentionedPeople': mentionedPeople, 'generatedAt': generatedAt.toIso8601String(), 'isAvailable': isAvailable};
+  factory ProfessionalInsight.fromJson(Map<String, dynamic> json) {
+    final legacy = json['summary']?.toString() ?? '';
+    final raw = json['summaryBullets'];
+    final bullets = raw is List ? raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList() : (legacy.trim().isEmpty ? <String>[] : [legacy.trim()]);
+    return ProfessionalInsight(id: json['id'], sessionId: json['sessionId'], summary: legacy, summaryBullets: bullets, actionItems: List<String>.from(json['actionItems'] ?? []), deadlines: List<String>.from(json['deadlines'] ?? []), mentionedPeople: List<String>.from(json['mentionedPeople'] ?? []), generatedAt: DateTime.parse(json['generatedAt']), isAvailable: json['isAvailable'] ?? false);
+  }
 }
 
 class SoundEvent {
