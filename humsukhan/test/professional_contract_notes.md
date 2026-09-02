@@ -1,0 +1,1 @@
+Professional Mode contract: language selection is a recognition hint, not a transcript filter. Auto uses cloud multilingual recognition; English and Urdu modes preserve mixed content; Roman Urdu normalizes accidental Devanagari to Latin. AI results are bullet summaries plus action/deadline/people data. Folder deletion preserves sessions in General.
