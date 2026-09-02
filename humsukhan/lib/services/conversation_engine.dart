@@ -3,15 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/models.dart';
 import '../providers/conversation_provider.dart';
 import '../providers/speech_provider.dart';
 
-/// Deterministic lifecycle for Conversational Mode.
-///
-/// This controller deliberately sits above the existing STT/TTS providers so
-/// their tested fallbacks remain intact. It serializes mic commands, treats
-/// silence as a turn-end candidate only after speech has actually started, and
-/// lets the speech provider flush the Deepgram stream before committing a turn.
 enum ConversationEngineState {
   idle,
   startingMic,
@@ -29,16 +24,19 @@ class ConversationPauseOptions {
   static const Duration patient = Duration(milliseconds: 2500);
 }
 
+/// Deterministic orchestration for Conversational Mode.
+///
+/// Existing STT/TTS implementations remain underneath this controller. The
+/// engine serializes mic operations, starts the silence timer only after speech
+/// begins, and commits only after the speech provider has flushed its current
+/// stream.
 class ConversationEngine extends ChangeNotifier {
   static const _pausePreferenceKey = 'conversationPauseMs';
 
   final SpeechProvider speech;
   final ConversationProvider conversation;
 
-  ConversationEngine({
-    required this.speech,
-    required this.conversation,
-  }) {
+  ConversationEngine({required this.speech, required this.conversation}) {
     _subscription = speech.onResult.listen(_handleSpeechResult);
     unawaited(_loadPausePreference());
   }
@@ -50,7 +48,7 @@ class ConversationEngine extends ChangeNotifier {
   Duration get pauseThreshold => _pauseThreshold;
 
   Timer? _silenceTimer;
-  StreamSubscription<dynamic>? _subscription;
+  StreamSubscription<SpeechResultEvent>? _subscription;
   Future<void> _commandTail = Future<void>.value();
   bool _speechStarted = false;
   bool _turnStopping = false;
@@ -60,6 +58,9 @@ class ConversationEngine extends ChangeNotifier {
 
   String get errorMessage => _errorMessage ?? '';
   String get latestTranscript => _latestTranscript;
+  bool get isListening => speech.isListening;
+  bool get isBusy => _state == ConversationEngineState.startingMic ||
+      _state == ConversationEngineState.processingFinal;
 
   String get statusLabel {
     switch (_state) {
@@ -72,7 +73,7 @@ class ConversationEngine extends ChangeNotifier {
       case ConversationEngineState.speechActive:
         return 'Listening — speaker talking';
       case ConversationEngineState.waitingForTurnEnd:
-        return 'Waiting for the speaker to continue…';
+        return 'Pause detected — speak again to continue';
       case ConversationEngineState.processingFinal:
         return 'Finishing the sentence…';
       case ConversationEngineState.speaking:
@@ -82,10 +83,6 @@ class ConversationEngine extends ChangeNotifier {
     }
   }
 
-  bool get isListening => speech.isListening;
-  bool get isBusy => _state == ConversationEngineState.startingMic ||
-      _state == ConversationEngineState.processingFinal;
-
   Future<void> _loadPausePreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -93,9 +90,7 @@ class ConversationEngine extends ChangeNotifier {
       if (value == null || value <= 0) return;
       _pauseThreshold = Duration(milliseconds: value.clamp(800, 4000));
       notifyListeners();
-    } catch (_) {
-      // The default remains usable even if local preferences are unavailable.
-    }
+    } catch (_) {}
   }
 
   Future<void> setPauseThreshold(Duration duration) async {
@@ -124,20 +119,20 @@ class ConversationEngine extends ChangeNotifier {
   }
 
   void toggleListening() {
-    if (speech.isListening || _state == ConversationEngineState.speechActive || _state == ConversationEngineState.waitingForTurnEnd || _state == ConversationEngineState.listening) {
+    if (speech.isListening ||
+        _state == ConversationEngineState.speechActive ||
+        _state == ConversationEngineState.waitingForTurnEnd ||
+        _state == ConversationEngineState.listening) {
       stopListening();
     } else {
       startListening();
     }
   }
 
-  void startListening() {
-    _enqueue(_startListening);
-  }
+  void startListening() => _enqueue(_startListening);
 
   Future<void> _startListening() async {
-    if (conversation.state != ConversationState.active) return;
-    if (speech.isListening || _turnStopping) return;
+    if (conversation.state != ConversationState.active || speech.isListening || _turnStopping) return;
 
     _cancelSilenceTimer();
     final generation = ++_turnGeneration;
@@ -164,9 +159,7 @@ class ConversationEngine extends ChangeNotifier {
     notifyListeners();
   }
 
-  void stopListening() {
-    _enqueue(_stopListening);
-  }
+  void stopListening() => _enqueue(_stopListening);
 
   Future<void> _stopListening() async {
     if (_turnStopping) return;
@@ -179,9 +172,12 @@ class ConversationEngine extends ChangeNotifier {
     try {
       await speech.stopListening();
       if (generation != _turnGeneration) return;
-      // SpeechProvider waits for the Deepgram flush and exposes the final
-      // transcript before returning, so this commit is deterministic.
+
       _latestTranscript = speech.latestFinalText.trim();
+      if (_latestTranscript.isNotEmpty) {
+        final language = speech.detectedLanguage?.language ?? 'English';
+        conversation.updateSpeakerTurn(_latestTranscript, language: language);
+      }
       conversation.commitSpeakerTurn();
       _speechStarted = false;
       _state = ConversationEngineState.idle;
@@ -197,9 +193,7 @@ class ConversationEngine extends ChangeNotifier {
     }
   }
 
-  void speakLastUtterance() {
-    _enqueue(_speakLastUtterance);
-  }
+  void speakLastUtterance() => _enqueue(_speakLastUtterance);
 
   Future<void> _speakLastUtterance() async {
     if (conversation.state != ConversationState.active) return;
@@ -253,8 +247,6 @@ class ConversationEngine extends ChangeNotifier {
       _state = ConversationEngineState.speechActive;
     }
 
-    // Every meaningful transcript packet proves that the user is still
-    // participating in this turn. A short pause therefore never commits it.
     _restartSilenceTimer();
     notifyListeners();
   }
@@ -271,8 +263,6 @@ class ConversationEngine extends ChangeNotifier {
     _state = ConversationEngineState.waitingForTurnEnd;
     _silenceTimer = Timer(_pauseThreshold, () {
       if (!_speechStarted || _turnStopping || !speech.isListening) return;
-      // The timer is only a turn-end candidate. The queued stop performs the
-      // actual recorder shutdown and waits for Deepgram finalization.
       stopListening();
     });
   }
