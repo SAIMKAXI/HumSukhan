@@ -15,7 +15,7 @@ class EnvironmentalMonitoringBridge {
 
   String _state = 'OFF';
   String get state => _state;
-  bool get isActive => _state == 'ACTIVE' || _state == 'STARTING';
+  bool get isActive => _state == 'ACTIVE';
 
   Future<void> initialize({required void Function(String state, Map<String, dynamic>? event) onChange}) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
@@ -55,8 +55,22 @@ class EnvironmentalMonitoringBridge {
     if (!Platform.isAndroid && !Platform.isIOS) return false;
     try {
       final result = await _channel.invokeMethod<bool>('start');
-      _state = result == true ? 'STARTING' : _state;
-      return result == true;
+      if (result != true) return false;
+
+      // The native command only means the foreground service was requested.
+      // Treat monitoring as started only after the background audio pipeline
+      // reports ACTIVE (or ERROR). This prevents a false-positive UI state.
+      for (var attempt = 0; attempt < 40; attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        try {
+          final state = await _channel.invokeMethod<String>('getState');
+          if (state != null) _state = state;
+        } catch (_) {}
+        if (_state == 'ACTIVE') return true;
+        if (_state == 'ERROR' || _state == 'OFF') return false;
+      }
+      debugPrint('Environmental monitoring start timed out in STARTING state');
+      return false;
     } on PlatformException catch (e) {
       debugPrint('Environmental bridge start error: ${e.code} ${e.message}');
       return false;
@@ -67,7 +81,9 @@ class EnvironmentalMonitoringBridge {
     if (!Platform.isAndroid && !Platform.isIOS) return false;
     try {
       final result = await _channel.invokeMethod<bool>('stop');
-      _state = 'STOPPING';
+      if (result == true) {
+        _state = 'STOPPING';
+      }
       return result == true;
     } catch (e) {
       debugPrint('Environmental bridge stop error: $e');
