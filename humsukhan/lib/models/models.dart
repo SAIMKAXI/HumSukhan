@@ -1,6 +1,41 @@
 import 'package:uuid/uuid.dart';
 const _uuid = Uuid();
 
+enum CaptionScript { latin, arabic, devanagari, other }
+
+class CaptionSegment {
+  final String text;
+  final String language;
+  final CaptionScript script;
+
+  const CaptionSegment({
+    required this.text,
+    required this.language,
+    required this.script,
+  });
+
+  bool get isRtl => script == CaptionScript.arabic;
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'language': language,
+        'script': script.name,
+      };
+
+  factory CaptionSegment.fromJson(Map<String, dynamic> json) {
+    final rawScript = json['script']?.toString();
+    final script = CaptionScript.values.where((value) => value.name == rawScript).firstOrNull ??
+        (json['language']?.toString().toLowerCase() == 'urdu'
+            ? CaptionScript.arabic
+            : CaptionScript.latin);
+    return CaptionSegment(
+      text: json['text']?.toString() ?? '',
+      language: json['language']?.toString() ?? 'English',
+      script: script,
+    );
+  }
+}
+
 class UserProfile {
   final String id;
   final String name;
@@ -32,10 +67,18 @@ enum SaveAction { deleteNow, save }
 
 class Caption {
   final String id; final String text; final String speaker; final DateTime timestamp; final String language; final bool isPartial; final bool isOwn;
-  Caption({String? id, required this.text, this.speaker = 'Speaker 1', DateTime? timestamp, this.language = 'English', this.isPartial = false, this.isOwn = false}) : id = id ?? _uuid.v4(), timestamp = timestamp ?? DateTime.now();
-  Caption copyWith({String? text, bool? isPartial, String? speaker}) => Caption(id: id, text: text ?? this.text, speaker: speaker ?? this.speaker, timestamp: timestamp, language: language, isPartial: isPartial ?? this.isPartial, isOwn: isOwn);
-  Map<String, dynamic> toJson() => {'id': id, 'text': text, 'speaker': speaker, 'timestamp': timestamp.toIso8601String(), 'language': language, 'isPartial': isPartial, 'isOwn': isOwn};
-  factory Caption.fromJson(Map<String, dynamic> json) => Caption(id: json['id'], text: json['text'] ?? '', speaker: json['speaker'] ?? 'Speaker 1', timestamp: DateTime.parse(json['timestamp']), language: json['language'] ?? 'English', isPartial: json['isPartial'] ?? false, isOwn: json['isOwn'] ?? false);
+  final List<CaptionSegment> segments;
+  Caption({String? id, required this.text, this.speaker = 'Speaker 1', DateTime? timestamp, this.language = 'English', this.isPartial = false, this.isOwn = false, List<CaptionSegment>? segments})
+      : id = id ?? _uuid.v4(), timestamp = timestamp ?? DateTime.now(), segments = List.unmodifiable(segments ?? const []);
+  Caption copyWith({String? text, bool? isPartial, String? speaker, String? language, List<CaptionSegment>? segments}) => Caption(id: id, text: text ?? this.text, speaker: speaker ?? this.speaker, timestamp: timestamp, language: language ?? this.language, isPartial: isPartial ?? this.isPartial, isOwn: isOwn, segments: segments ?? this.segments);
+  Map<String, dynamic> toJson() => {'id': id, 'text': text, 'speaker': speaker, 'timestamp': timestamp.toIso8601String(), 'language': language, 'isPartial': isPartial, 'isOwn': isOwn, 'segments': segments.map((s) => s.toJson()).toList()};
+  factory Caption.fromJson(Map<String, dynamic> json) {
+    final rawSegments = json['segments'];
+    final segments = rawSegments is List
+        ? rawSegments.whereType<Map>().map((item) => CaptionSegment.fromJson(Map<String, dynamic>.from(item))).where((s) => s.text.trim().isNotEmpty).toList()
+        : <CaptionSegment>[];
+    return Caption(id: json['id'], text: json['text'] ?? '', speaker: json['speaker'] ?? 'Speaker 1', timestamp: DateTime.parse(json['timestamp']), language: json['language'] ?? 'English', isPartial: json['isPartial'] ?? false, isOwn: json['isOwn'] ?? false, segments: segments);
+  }
 }
 
 class QuickReply {
