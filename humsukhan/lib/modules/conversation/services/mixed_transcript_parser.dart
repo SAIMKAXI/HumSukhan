@@ -1,4 +1,4 @@
-import '../models/models.dart';
+import '../../models/models.dart';
 
 /// Normalizes a transcript into contiguous script/language segments.
 ///
@@ -89,6 +89,8 @@ class MixedTranscriptParser {
       case CaptionScript.devanagari:
       case CaptionScript.other:
         return fallback;
+      case CaptionScript.romanUrdu:
+        return 'Roman Urdu';
     }
   }
 
