@@ -37,6 +37,9 @@ class ResilientTtsProvider implements TtsProvider {
       await _native.setSpeechRate(0.5);
       await _native.setVolume(1.0);
       await _native.setPitch(1.0);
+      // Touch the native voice catalog during warm-up so locale lookup and the
+      // platform TTS engine are ready before the first user-triggered Speak.
+      try { await _native.getVoices; } catch (_) {}
       _native.setStartHandler(() => _speaking = true);
       _native.setCompletionHandler(() => _speaking = false);
       _native.setCancelHandler(() => _speaking = false);
@@ -48,6 +51,8 @@ class ResilientTtsProvider implements TtsProvider {
       return false;
     }
   }
+
+  Future<bool> warmUp() => initialize();
 
   String _deliveryLanguage(String language, String text) {
     final normalized = language.toLowerCase().trim();
@@ -225,12 +230,13 @@ class ResilientTtsProvider implements TtsProvider {
 /// Speech provider with hybrid STT support and model management.
 class SpeechProvider extends ChangeNotifier {
   late final EnhancedSpeechProvider _sttProvider;
-  late final TtsProvider _ttsProvider;
+  late final ResilientTtsProvider _ttsProvider;
   late final ModelManager _modelManager;
 
   bool _isInitialized = false;
   bool _isSpeaking = false;
   String _lastSpokenText = '';
+  String _latestFinalText = '';
   LanguageResult? _detectedLanguage;
   STTMode _currentMode = STTMode.none;
   String _currentLanguage = 'English';
@@ -251,6 +257,7 @@ class SpeechProvider extends ChangeNotifier {
   bool get isSpeaking => _isSpeaking;
   bool get isListening => _sttProvider.isListening;
   String get lastSpokenText => _lastSpokenText;
+  String get latestFinalText => _latestFinalText;
   LanguageResult? get detectedLanguage => _detectedLanguage;
   STTMode get currentMode => _currentMode;
   String get currentLanguage => _currentLanguage;
@@ -299,11 +306,18 @@ class SpeechProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> warmUpTts() async {
+    await _ttsProvider.warmUp();
+  }
+
   Future<void> startListening({String language = 'English'}) async {
     await _sttSubscription?.cancel();
     _sttSubscription = _sttProvider.onResult.listen((result) {
       _currentMode = result.mode;
-      if (result.isFinal && result.text.trim().isNotEmpty) detectLanguage(result.text);
+      if (result.isFinal && result.text.trim().isNotEmpty) {
+        _latestFinalText = result.text.trim();
+        detectLanguage(result.text);
+      }
       notifyListeners();
     });
     await _sttProvider.startListening(language: language);

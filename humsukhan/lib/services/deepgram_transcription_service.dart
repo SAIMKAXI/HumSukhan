@@ -52,6 +52,8 @@ class DeepgramTranscriptionService {
   String _finalBuffer = '';
   String _lastFinalTranscript = '';
   String? _lastStartError;
+  DateTime? _turnStartedAt;
+  DateTime? _firstTranscriptAt;
 
   Stream<DeepgramTranscriptResult> get onResult => _controller.stream;
   bool get isRecording => _recording;
@@ -87,6 +89,10 @@ class DeepgramTranscriptionService {
       return false;
     }
 
+    // Deepgram endpointing is expressed in milliseconds. Keep the value low
+    // enough for responsive conversation while leaving a short silence window
+    // for natural pauses. `multi` is the supported Nova-3 code-switching mode.
+    final endpointingMs = _language == 'multi' ? '300' : '350';
     final query = <String, String>{
       'model': 'nova-3',
       'language': _language,
@@ -96,8 +102,8 @@ class DeepgramTranscriptionService {
       'interim_results': 'true',
       'smart_format': 'true',
       'punctuate': 'true',
-      'endpointing': _language == 'multi' ? '250' : '350',
-      'utterance_end_ms': '1200',
+      'endpointing': endpointingMs,
+      'utterance_end_ms': '1000',
       'vad_events': 'true',
     };
 
@@ -133,6 +139,8 @@ class DeepgramTranscriptionService {
     if (_recording) return true;
     _lastStartError = null;
     _lastFinalTranscript = '';
+    _turnStartedAt = DateTime.now();
+    _firstTranscriptAt = null;
 
     try {
       final permissionStatus = await Permission.microphone.status;
@@ -161,6 +169,7 @@ class DeepgramTranscriptionService {
         numChannels: 1,
       ));
       _recording = true;
+      debugPrint('Speech latency: microphone stream started at $_turnStartedAt');
       _audioSubscription = stream.listen(
         (data) {
           if (_recording && _socket?.readyState == WebSocket.open) {
@@ -223,7 +232,15 @@ class DeepgramTranscriptionService {
       final confidence = (alternative['confidence'] as num?)?.toDouble() ?? 0.0;
       final isFinal = data['is_final'] == true;
       final speechFinal = data['speech_final'] == true;
-      final language = alternative['detected_language']?.toString() ?? _language;
+      final rawLanguage = alternative['detected_language']?.toString();
+      final language = rawLanguage == null || rawLanguage.isEmpty ? _language : rawLanguage;
+
+      _firstTranscriptAt ??= DateTime.now();
+      if (_turnStartedAt != null) {
+        debugPrint(
+          'Speech latency: first transcript ${DateTime.now().difference(_turnStartedAt!).inMilliseconds}ms after microphone start',
+        );
+      }
 
       if (isFinal) {
         _finalBuffer = _finalBuffer.isEmpty ? text : '$_finalBuffer $text';
@@ -236,11 +253,16 @@ class DeepgramTranscriptionService {
         _lastFinalTranscript = complete;
         _controller.add(DeepgramTranscriptResult(
           transcript: complete,
-          language: _displayLanguage(language),
+          language: _displayLanguage(language, complete),
           confidence: confidence,
           isFinal: true,
           speechFinal: true,
         ));
+        if (_turnStartedAt != null) {
+          debugPrint(
+            'Speech latency: speech_final ${DateTime.now().difference(_turnStartedAt!).inMilliseconds}ms after microphone start',
+          );
+        }
         _finalBuffer = '';
         _finalizationCompleter?.complete();
         _finalizationCompleter = null;
@@ -249,7 +271,7 @@ class DeepgramTranscriptionService {
 
       _controller.add(DeepgramTranscriptResult(
         transcript: text,
-        language: _displayLanguage(language),
+        language: _displayLanguage(language, text),
         confidence: confidence,
         isFinal: isFinal,
         speechFinal: false,
@@ -259,12 +281,16 @@ class DeepgramTranscriptionService {
     }
   }
 
-  String _displayLanguage(String value) {
+  String _displayLanguage(String value, String text) {
     final v = value.toLowerCase();
     if (v.startsWith('ur')) return 'Urdu';
     if (v.startsWith('hi')) return 'Hindi';
     if (v.startsWith('en')) return 'English';
-    if (v == 'multi') return 'Auto';
+    if (v == 'multi') {
+      if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'Urdu';
+      if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'Hindi';
+      return 'Auto';
+    }
     return value;
   }
 
@@ -281,9 +307,11 @@ class DeepgramTranscriptionService {
     if (_socket?.readyState == WebSocket.open) {
       _finalizationCompleter = Completer<void>();
       try {
+        // Finalize is the supported Deepgram flush mechanism. Keep the socket
+        // open and listener alive so late final packets can still be consumed.
         _socket!.add(jsonEncode({'type': 'Finalize'}));
         await _finalizationCompleter!.future.timeout(
-          const Duration(milliseconds: 1800),
+          const Duration(milliseconds: 1400),
         );
       } catch (_) {
         if (_finalBuffer.trim().isNotEmpty &&
@@ -292,6 +320,11 @@ class DeepgramTranscriptionService {
         }
       } finally {
         _finalizationCompleter = null;
+        if (_turnStartedAt != null && _lastFinalTranscript.trim().isNotEmpty) {
+          debugPrint(
+            'Speech latency: final transcript ready in ${DateTime.now().difference(_turnStartedAt!).inMilliseconds}ms',
+          );
+        }
       }
     }
   }
