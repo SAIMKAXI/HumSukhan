@@ -17,7 +17,7 @@ class SpeakableCaptionBubble extends StatelessWidget {
     this.isHighContrast = false,
   });
 
-  TextSpan _captionSpan(BuildContext context, List<CaptionSegment> segments, Color color) {
+  TextSpan _captionSpan(List<CaptionSegment> segments, Color color) {
     final children = <TextSpan>[];
     for (final segment in segments) {
       final mark = segment.isRtl ? '\u200F' : '\u200E';
@@ -84,7 +84,7 @@ class SpeakableCaptionBubble extends StatelessWidget {
                     border: isHighContrast ? Border.all(color: Colors.white) : null,
                   ),
                   child: Text.rich(
-                    _captionSpan(context, segments, textColor),
+                    _captionSpan(segments, textColor),
                     textDirection: TextDirection.ltr,
                     softWrap: true,
                   ),
