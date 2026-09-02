@@ -24,10 +24,19 @@ class CaptionSegment {
 
   factory CaptionSegment.fromJson(Map<String, dynamic> json) {
     final rawScript = json['script']?.toString();
-    final script = CaptionScript.values.where((value) => value.name == rawScript).firstOrNull ??
-        (json['language']?.toString().toLowerCase() == 'urdu'
-            ? CaptionScript.arabic
-            : CaptionScript.latin);
+    CaptionScript script = CaptionScript.other;
+    for (final value in CaptionScript.values) {
+      if (value.name == rawScript) {
+        script = value;
+        break;
+      }
+    }
+    if (script == CaptionScript.other &&
+        json['language']?.toString().toLowerCase() == 'urdu') {
+      script = CaptionScript.arabic;
+    } else if (script == CaptionScript.other && rawScript == null) {
+      script = CaptionScript.latin;
+    }
     return CaptionSegment(
       text: json['text']?.toString() ?? '',
       language: json['language']?.toString() ?? 'English',
