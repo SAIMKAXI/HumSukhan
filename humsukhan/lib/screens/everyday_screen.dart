@@ -30,19 +30,25 @@ class _EverydayScreenState extends State<EverydayScreen> {
   Future<void> _initSpeech() async {
     final speech = context.read<SpeechProvider>();
     await speech.initialize(preferredLanguage: 'Auto');
+    // TTS initialization is already part of SpeechProvider initialization;
+    // explicitly re-warm it here so entering Conversational Mode, rather than
+    // the first caption tap, owns the native TTS startup cost.
+    unawaited(speech.warmUpTts());
     _speechSubscription = speech.onResult.listen((result) {
       if (!mounted || result.text.trim().isEmpty) return;
       final conv = context.read<ConversationProvider>();
       if (!conv.isSpeakerTurnActive) return;
       conv.updateSpeakerTurn(result.text, language: result.language);
-      speech.detectLanguage(result.text);
+      if (result.isFinal) speech.detectLanguage(result.text);
       _scrollToBottom();
     });
   }
 
   Future<void> _startConversation() async {
     final conv = context.read<ConversationProvider>();
+    final speech = context.read<SpeechProvider>();
     conv.startConversation();
+    unawaited(speech.warmUpTts());
     if (mounted) setState(() {});
   }
 
