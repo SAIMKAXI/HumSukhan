@@ -21,14 +21,18 @@ abstract class TtsProvider {
 class ResilientTtsProvider implements TtsProvider {
   final FlutterTts _native = FlutterTts();
   final AudioPlayer _player = AudioPlayer();
+  final Map<String, Uint8List> _cloudCache = <String, Uint8List>{};
   bool _speaking = false;
   bool _initialized = false;
   int _speakGeneration = 0;
+  static const int _maxCloudCacheEntries = 12;
 
   @override
   Future<bool> initialize() async {
     if (_initialized) return true;
     try {
+      // Keep the device TTS engine warm. Local playback is the lowest-latency
+      // path and avoids a network round-trip for English/Urdu/Hindi voices.
       await _native.awaitSpeakCompletion(true);
       await _native.setSpeechRate(0.5);
       await _native.setVolume(1.0);
@@ -47,6 +51,7 @@ class ResilientTtsProvider implements TtsProvider {
 
   String _deliveryLanguage(String language, String text) {
     final normalized = language.toLowerCase().trim();
+    if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'hindi';
     if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'urdu';
     const romanUrdu = {
       'aap', 'ap', 'aapko', 'aapki', 'aapke', 'aapka', 'kya', 'kyun', 'hai', 'hain',
@@ -60,15 +65,23 @@ class ResilientTtsProvider implements TtsProvider {
         .where((word) => word.isNotEmpty);
     if (words.any(romanUrdu.contains)) return 'urdu';
     if (normalized == 'urdu' || normalized == 'roman urdu') return 'urdu';
+    if (normalized == 'hindi' || normalized == 'hi') return 'hindi';
     return 'english';
   }
 
-  Future<bool> _setNativeLocale(String deliveryLanguage) async {
-    final candidates = deliveryLanguage == 'urdu'
-        ? const ['ur-PK', 'ur-IN']
-        : const ['en-US', 'en-GB', 'en-IN'];
+  List<String> _nativeLocaleCandidates(String deliveryLanguage) {
+    switch (deliveryLanguage) {
+      case 'urdu':
+        return const ['ur-PK', 'ur-IN'];
+      case 'hindi':
+        return const ['hi-IN'];
+      default:
+        return const ['en-US', 'en-GB', 'en-IN'];
+    }
+  }
 
-    for (final locale in candidates) {
+  Future<bool> _setNativeLocale(String deliveryLanguage) async {
+    for (final locale in _nativeLocaleCandidates(deliveryLanguage)) {
       try {
         final available = await _native.isLanguageAvailable(locale);
         if (available == true || available.toString().toLowerCase() == 'true') {
@@ -81,7 +94,11 @@ class ResilientTtsProvider implements TtsProvider {
     try {
       final voices = await _native.getVoices;
       if (voices is List) {
-        final prefix = deliveryLanguage == 'urdu' ? 'ur' : 'en';
+        final prefix = deliveryLanguage == 'urdu'
+            ? 'ur'
+            : deliveryLanguage == 'hindi'
+                ? 'hi'
+                : 'en';
         for (final raw in voices) {
           if (raw is! Map) continue;
           final locale = raw['locale']?.toString() ?? '';
@@ -95,7 +112,6 @@ class ResilientTtsProvider implements TtsProvider {
         }
       }
     } catch (_) {}
-
     return false;
   }
 
@@ -103,14 +119,14 @@ class ResilientTtsProvider implements TtsProvider {
     final ready = await _setNativeLocale(deliveryLanguage);
     if (!ready) {
       throw StateError(
-        'No installed ${deliveryLanguage == 'urdu' ? 'Urdu' : 'English'} device voice is available',
+        'No installed ${deliveryLanguage[0].toUpperCase()}${deliveryLanguage.substring(1)} device voice is available',
       );
     }
     _speaking = true;
     try {
       await _native.speak(text);
       while (_speaking) {
-        await Future<void>.delayed(const Duration(milliseconds: 75));
+        await Future<void>.delayed(const Duration(milliseconds: 40));
       }
     } finally {
       _speaking = false;
@@ -118,17 +134,27 @@ class ResilientTtsProvider implements TtsProvider {
   }
 
   Future<void> _speakCloud(String text, String deliveryLanguage) async {
-    final result = await CloudTtsService.instance.synthesize(
-      text: text,
-      language: deliveryLanguage,
-    );
+    final key = '$deliveryLanguage|${text.trim()}';
+    Uint8List? bytes = _cloudCache[key];
+    if (bytes == null) {
+      final result = await CloudTtsService.instance.synthesize(
+        text: text,
+        language: deliveryLanguage,
+      );
+      bytes = Uint8List.fromList(result.audioBytes);
+      if (_cloudCache.length >= _maxCloudCacheEntries) {
+        _cloudCache.remove(_cloudCache.keys.first);
+      }
+      _cloudCache[key] = bytes;
+    }
+
     await _player.stop();
     _speaking = true;
     final completion = _player.onPlayerStateChanged.firstWhere(
       (state) => state == PlayerState.completed || state == PlayerState.stopped,
     );
     try {
-      await _player.play(BytesSource(Uint8List.fromList(result.audioBytes)));
+      await _player.play(BytesSource(bytes));
       await completion.timeout(const Duration(seconds: 30));
     } finally {
       _speaking = false;
@@ -145,21 +171,25 @@ class ResilientTtsProvider implements TtsProvider {
     final deliveryLanguage = _deliveryLanguage(language, value);
     await _stopPlaybackOnly();
 
+    // Local Android/iOS TTS is intentionally first. Network TTS is used only
+    // when the device lacks the requested language/voice, which removes the
+    // common cloud round-trip from the normal English Speak-button path.
     try {
-      await _speakCloud(value, deliveryLanguage);
+      await _speakNative(value, deliveryLanguage);
       if (generation != _speakGeneration) return;
       return;
     } catch (e) {
       if (generation != _speakGeneration) return;
-      debugPrint('Cloud TTS unavailable; falling back to device TTS: $e');
+      debugPrint('Native TTS unavailable; falling back to cloud TTS: $e');
     }
 
     if (generation != _speakGeneration) return;
     try {
-      await _speakNative(value, deliveryLanguage);
+      await _speakCloud(value, deliveryLanguage);
+      if (generation != _speakGeneration) return;
     } catch (e) {
-      _speaking = false;
-      debugPrint('Native TTS unavailable: $e');
+      if (generation != _speakGeneration) return;
+      debugPrint('Cloud TTS unavailable: $e');
       rethrow;
     }
   }
@@ -186,6 +216,7 @@ class ResilientTtsProvider implements TtsProvider {
   @override
   void dispose() {
     ++_speakGeneration;
+    _cloudCache.clear();
     unawaited(_player.dispose());
     unawaited(_native.stop());
   }
@@ -246,9 +277,9 @@ class SpeechProvider extends ChangeNotifier {
     switch (_currentMode) {
       case STTMode.sherpaStreaming: return 'Real-time offline speech recognition using Sherpa-ONNX. No internet required.';
       case STTMode.sherpaBatch: return 'Offline speech recognition using Sherpa-ONNX. Short processing delay.';
-      case STTMode.platform: return 'Online speech recognition using the configured online transcription service.';
+      case STTMode.platform: return 'Online speech recognition using the configured streaming transcription service.';
       case STTMode.demo: return 'Demo mode with simulated captions. No actual speech recognition.';
-      case STTMode.none: return 'Speech recognition unavailable. Please download a language model.';
+      case STTMode.none: return 'Speech recognition unavailable. Please check microphone access or download a language model for offline use.';
     }
   }
 
@@ -324,8 +355,10 @@ class SpeechProvider extends ChangeNotifier {
   Future<bool> downloadOfflineModel(String language) async {
     final success = await _modelManager.downloadModel(language);
     if (success) {
-      await _sttProvider.initialize(preferredLanguage: language);
-      _currentMode = _sttProvider.currentMode;
+      if (_currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch) {
+        await _sttProvider.switchLanguage(language);
+        _currentMode = _sttProvider.currentMode;
+      }
       notifyListeners();
     }
     return success;
@@ -334,7 +367,6 @@ class SpeechProvider extends ChangeNotifier {
   Future<bool> deleteModel(String language) async {
     final success = await _modelManager.deleteModel(language);
     if (success) {
-      await _sttProvider.initialize(preferredLanguage: _currentLanguage);
       _currentMode = _sttProvider.currentMode;
       notifyListeners();
     }
@@ -376,8 +408,11 @@ class SpeechProvider extends ChangeNotifier {
 
   void detectLanguage(String text) {
     final urduScriptRegex = RegExp(r'[\u0600-\u06FF]');
+    final hindiScriptRegex = RegExp(r'[\u0900-\u097F]');
     final romanUrduWords = ['kya', 'hai', 'mein', 'tum', 'aap', 'ho', 'se', 'ko', 'ka', 'ki', 'ke'];
-    if (urduScriptRegex.hasMatch(text)) {
+    if (hindiScriptRegex.hasMatch(text)) {
+      _detectedLanguage = const LanguageResult(language: 'Hindi', confidence: 0.9, script: 'Devanagari');
+    } else if (urduScriptRegex.hasMatch(text)) {
       _detectedLanguage = const LanguageResult(language: 'Urdu', confidence: 0.9, script: 'Arabic');
     } else if (romanUrduWords.any((w) => text.toLowerCase().split(RegExp(r'\s+')).contains(w))) {
       _detectedLanguage = const LanguageResult(language: 'Roman Urdu', confidence: 0.7, script: 'Latin');
