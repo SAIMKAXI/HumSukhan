@@ -61,6 +61,34 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun registerEnvironmentalReceiver() {
+        if (receiverRegistered) return
+        val filter = IntentFilter(EnvironmentalMonitoringState.ACTION_STATE)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(environmentalReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(environmentalReceiver, filter)
+            }
+            receiverRegistered = true
+        } catch (e: Exception) {
+            receiverRegistered = false
+            e.printStackTrace()
+        }
+    }
+
+    private fun unregisterEnvironmentalReceiver() {
+        if (!receiverRegistered) return
+        try {
+            unregisterReceiver(environmentalReceiver)
+        } catch (e: IllegalArgumentException) {
+            e.printStackTrace()
+        } finally {
+            receiverRegistered = false
+        }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == ENV_PERMISSION_REQUEST) {
