@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
@@ -76,25 +75,11 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
       await _tts.setSpeechRate(0.5);
       await _tts.setVolume(1.0);
       await _tts.setPitch(1.0);
-      try {
-        await _tts.getVoices;
-      } catch (_) {}
-      _tts.setStartHandler(() {
-        _speaking = true;
-        notifyListeners();
-      });
-      _tts.setCompletionHandler(() {
-        _speaking = false;
-        notifyListeners();
-      });
-      _tts.setCancelHandler(() {
-        _speaking = false;
-        notifyListeners();
-      });
-      _tts.setErrorHandler((_) {
-        _speaking = false;
-        notifyListeners();
-      });
+      try { await _tts.getVoices; } catch (_) {}
+      _tts.setStartHandler(() { _speaking = true; notifyListeners(); });
+      _tts.setCompletionHandler(() { _speaking = false; notifyListeners(); });
+      _tts.setCancelHandler(() { _speaking = false; notifyListeners(); });
+      _tts.setErrorHandler((_) { _speaking = false; notifyListeners(); });
       _initialized = true;
       notifyListeners();
     } catch (e) {
@@ -117,7 +102,6 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
     _detected = null;
     await _bilingualSubscription?.cancel();
     _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
-
     final started = await _bilingual.start(mode: _language);
     if (!started) {
       _listening = false;
@@ -134,43 +118,15 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
   void _handleResult(EverydayBilingualResult result) {
     final safe = EverydayLanguagePolicy.sanitizeHindi(result.text).trim();
     if (safe.isEmpty) return;
-    final output = _language == 'English'
-        ? EverydayLanguagePolicy.toEnglishMode(safe)
-        : EverydayLanguagePolicy.withBidiIsolation(safe);
+    final output = _language == 'English' ? EverydayLanguagePolicy.toEnglishMode(safe) : EverydayLanguagePolicy.withBidiIsolation(safe);
     if (output.trim().isEmpty) return;
-
     final hasUrdu = EverydayLanguagePolicy.containsUrduScript(safe);
     final hasEnglish = EverydayLanguagePolicy.containsLatin(safe);
     final hasRomanUrdu = !hasUrdu && RomanUrduDetector.isRomanUrdu(safe);
-    final language = hasUrdu && hasEnglish
-        ? 'Auto'
-        : hasUrdu
-            ? 'Urdu'
-            : hasRomanUrdu
-                ? 'Roman Urdu'
-                : 'English';
-    _detected = LanguageResult(
-      language: language,
-      confidence: result.confidence,
-      script: hasUrdu && hasEnglish
-          ? 'Mixed'
-          : hasUrdu
-              ? 'Urdu'
-              : hasRomanUrdu
-                  ? 'Latin'
-                  : 'Latin',
-    );
+    final language = hasUrdu && hasEnglish ? 'Auto' : hasUrdu ? 'Urdu' : hasRomanUrdu ? 'Roman Urdu' : 'English';
+    _detected = LanguageResult(language: language, confidence: result.confidence, script: hasUrdu && hasEnglish ? 'Mixed' : 'Latin');
     if (result.isFinal) _latestFinal = output;
-    if (!_results.isClosed) {
-      _results.add(SpeechResultEvent(
-        text: output,
-        isFinal: result.isFinal,
-        confidence: result.confidence,
-        language: language,
-        isLive: true,
-        mode: STTMode.platform,
-      ));
-    }
+    if (!_results.isClosed) _results.add(SpeechResultEvent(text: output, isFinal: result.isFinal, confidence: result.confidence, language: language, isLive: true, mode: STTMode.platform));
     notifyListeners();
   }
 
@@ -210,18 +166,8 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
     final hasUrdu = EverydayLanguagePolicy.containsUrduScript(safe);
     final hasEnglish = EverydayLanguagePolicy.containsLatin(safe);
     final hasRomanUrdu = !hasUrdu && RomanUrduDetector.isRomanUrdu(safe);
-    final language = hasUrdu && hasEnglish
-        ? 'Auto'
-        : hasUrdu
-            ? 'Urdu'
-            : hasRomanUrdu
-                ? 'Roman Urdu'
-                : 'English';
-    _detected = LanguageResult(
-      language: language,
-      confidence: hasUrdu && hasEnglish ? 0.85 : 0.9,
-      script: hasUrdu && hasEnglish ? 'Mixed' : 'Latin',
-    );
+    final language = hasUrdu && hasEnglish ? 'Auto' : hasUrdu ? 'Urdu' : hasRomanUrdu ? 'Roman Urdu' : 'English';
+    _detected = LanguageResult(language: language, confidence: hasUrdu && hasEnglish ? 0.85 : 0.9, script: hasUrdu && hasEnglish ? 'Mixed' : 'Latin');
     notifyListeners();
   }
 
@@ -235,29 +181,17 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
     _lastSpoken = safe;
     _speaking = true;
     notifyListeners();
-
     try {
       final requested = _normalizeLanguage(language);
-      if (requested == 'English') {
-        await _speakEnglishMode(safe, generation);
-      } else {
-        for (final segment in _splitForSpeech(safe)) {
-          if (generation != _speechGeneration) return;
-          await _speakSegment(segment.text, segment.language, generation);
-        }
-      }
+      if (requested == 'English') await _speakEnglishMode(safe, generation);
+      else for (final segment in _splitForSpeech(safe)) { if (generation != _speechGeneration) return; await _speakSegment(segment.text, segment.language, generation); }
     } finally {
-      if (generation == _speechGeneration) {
-        _speaking = false;
-        notifyListeners();
-      }
+      if (generation == _speechGeneration) { _speaking = false; notifyListeners(); }
     }
   }
 
   Future<void> _speakEnglishMode(String text, int generation) async {
     final converted = EverydayLanguagePolicy.toEnglishMode(text);
-    // English-mode output still preserves Roman Urdu. Send identifiable Roman
-    // Urdu runs through the Urdu voice rather than mispronouncing them as English.
     for (final segment in _splitForSpeech(converted)) {
       if (generation != _speechGeneration) return;
       await _speakSegment(segment.text, segment.language, generation);
@@ -269,13 +203,7 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
     final result = <_SpeechSegment>[];
     var current = 'english';
     var buffer = <String>[];
-    void flush() {
-      if (buffer.isNotEmpty) {
-        result.add(_SpeechSegment(buffer.join(' '), current));
-        buffer = <String>[];
-      }
-    }
-
+    void flush() { if (buffer.isNotEmpty) { result.add(_SpeechSegment(buffer.join(' '), current)); buffer = <String>[]; } }
     for (var i = 0; i < tokens.length; i++) {
       final token = tokens[i];
       if (token.isEmpty) continue;
@@ -285,22 +213,16 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
         buffer.add(token);
         continue;
       }
-
       final pair = i + 1 < tokens.length ? '${token} ${tokens[i + 1]}' : token;
-      final startsRomanRun = RomanUrduDetector.isRomanUrdu(pair);
-      if (startsRomanRun) {
+      if (RomanUrduDetector.isRomanUrdu(pair)) {
         if (current != 'urdu' && buffer.isNotEmpty) flush();
         current = 'urdu';
         buffer.add(token);
         continue;
       }
-
       if (current == 'urdu') {
         final previous = buffer.isEmpty ? token : '${buffer.last} $token';
-        if (RomanUrduDetector.isRomanUrdu(previous)) {
-          buffer.add(token);
-          continue;
-        }
+        if (RomanUrduDetector.isRomanUrdu(previous)) { buffer.add(token); continue; }
         flush();
         current = 'english';
       }
@@ -313,18 +235,12 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
   Future<void> _speakSegment(String text, String language, int generation) async {
     if (text.trim().isEmpty || generation != _speechGeneration) return;
     final normalized = language.toLowerCase();
-    final locales = normalized == 'urdu'
-        ? const ['ur-PK', 'ur-IN']
-        : const ['en-US', 'en-GB', 'en-IN'];
+    final locales = normalized == 'urdu' ? const ['ur-PK', 'ur-IN'] : const ['en-US', 'en-GB', 'en-IN'];
     var configured = false;
     for (final locale in locales) {
       try {
         final available = await _tts.isLanguageAvailable(locale);
-        if (available == true || available.toString().toLowerCase() == 'true') {
-          await _tts.setLanguage(locale);
-          configured = true;
-          break;
-        }
+        if (available == true || available.toString().toLowerCase() == 'true') { await _tts.setLanguage(locale); configured = true; break; }
       } catch (_) {}
     }
     if (generation != _speechGeneration) return;
@@ -332,55 +248,26 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
       try {
         await _tts.speak(text);
         var waited = 0;
-        while (_speaking && generation == _speechGeneration && waited < 20000) {
-          await Future<void>.delayed(const Duration(milliseconds: 40));
-          waited += 40;
-        }
+        while (_speaking && generation == _speechGeneration && waited < 20000) { await Future<void>.delayed(const Duration(milliseconds: 40)); waited += 40; }
         if (generation != _speechGeneration) return;
         if (_speaking) throw StateError('Device TTS timed out.');
         return;
-      } catch (e) {
-        debugPrint('Everyday native TTS failed ($normalized): $e');
-      }
+      } catch (e) { debugPrint('Everyday native TTS failed ($normalized): $e'); }
     }
-
-    final result = await CloudTtsService.instance.synthesize(
-      text: text,
-      language: normalized == 'urdu' ? 'urdu' : 'english',
-    );
+    final result = await CloudTtsService.instance.synthesize(text: text, language: normalized == 'urdu' ? 'urdu' : 'english');
     if (generation != _speechGeneration) return;
-    final completion = _cloudPlayer.onPlayerStateChanged.firstWhere(
-      (state) => state == PlayerState.completed || state == PlayerState.stopped,
-    );
+    final completion = _cloudPlayer.onPlayerStateChanged.firstWhere((state) => state == PlayerState.completed || state == PlayerState.stopped);
     await _cloudPlayer.play(BytesSource(Uint8List.fromList(result.audioBytes)));
     await completion.timeout(const Duration(seconds: 30));
   }
 
-  Future<void> _stopPlaybackOnly({bool invalidate = true}) async {
-    if (invalidate) ++_speechGeneration;
-    try { await _cloudPlayer.stop(); } catch (_) {}
-    try { await _tts.stop(); } catch (_) {}
-    _speaking = false;
-  }
+  Future<void> _stopPlaybackOnly({bool invalidate = true}) async { if (invalidate) ++_speechGeneration; try { await _cloudPlayer.stop(); } catch (_) {} try { await _tts.stop(); } catch (_) {} _speaking = false; }
 
   @override
-  Future<void> stopSpeaking() async {
-    await _stopPlaybackOnly();
-    notifyListeners();
-  }
+  Future<void> stopSpeaking() async { await _stopPlaybackOnly(); notifyListeners(); }
 
   String _normalizeLanguage(String language) {
-    switch (language.toLowerCase().trim()) {
-      case 'english':
-      case 'en':
-        return 'English';
-      case 'urdu':
-      case 'ur':
-      case 'roman urdu':
-        return 'Urdu';
-      default:
-        return 'Auto';
-    }
+    switch (language.toLowerCase().trim()) { case 'english': case 'en': return 'English'; case 'urdu': case 'ur': case 'roman urdu': return 'Urdu'; default: return 'Auto'; }
   }
 
   @override
@@ -396,21 +283,13 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
   }
 }
 
-final class _SpeechSegment {
-  const _SpeechSegment(this.text, this.language);
-
-  final String text;
-  final String language;
-}
+final class _SpeechSegment { const _SpeechSegment(this.text, this.language); final String text; final String language; }
 
 class _StatusSpeechProvider extends EnhancedSpeechProvider {
   final EverydaySpeechProvider owner;
   _StatusSpeechProvider(this.owner);
-  @override
-  bool get isListening => owner.isListening;
-  @override
-  String? get lastStartError => owner.lastStartError;
+  @override bool get isListening => owner.isListening;
+  @override String? get lastStartError => owner.lastStartError;
 }
 
-/// Preserve the existing `SpeechProvider()` constructor name for all consumers.
 class SpeechProvider extends EverydaySpeechProvider {}
