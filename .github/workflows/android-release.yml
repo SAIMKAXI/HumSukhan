@@ -2,6 +2,11 @@ name: HumSukhan Android Release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create/publish (for example v2.3.5)'
+        required: true
+        type: string
   push:
     tags:
       - 'v*.*.*'
@@ -22,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -46,14 +53,30 @@ jobs:
       - name: Tests
         run: flutter test
 
-      - name: Read app version
-        id: version
+      - name: Resolve release tag
+        id: release
         shell: bash
         run: |
-          VERSION=$(sed -n 's/^version: *//p' pubspec.yaml | head -1 | cut -d+ -f1)
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          test -n "$VERSION" || { echo 'ERROR: Could not read app version.'; exit 1; }
-          test "$VERSION" = "$TAG_VERSION" || { echo "ERROR: tag $TAG_VERSION does not match pubspec version $VERSION"; exit 1; }
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "ERROR: Invalid release tag: $TAG"
+            exit 1
+          }
+
+          VERSION="${TAG#v}"
+          PUBSPEC_VERSION=$(sed -n 's/^version: *//p' pubspec.yaml | head -1 | cut -d+ -f1)
+          test -n "$PUBSPEC_VERSION" || { echo 'ERROR: Could not read app version.'; exit 1; }
+          test "$PUBSPEC_VERSION" = "$VERSION" || {
+            echo "ERROR: release tag $TAG does not match pubspec version $PUBSPEC_VERSION"
+            exit 1
+          }
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Check Supabase build configuration
@@ -74,19 +97,21 @@ jobs:
         run: test -s build/app/outputs/flutter-apk/app-release.apk
 
       - name: Rename APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/HumSukhan-${{ steps.version.outputs.version }}.apk
+        run: cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/HumSukhan-${{ steps.release.outputs.version }}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HumSukhan-android-${{ steps.version.outputs.version }}
-          path: humsukhan/build/app/outputs/flutter-apk/HumSukhan-${{ steps.version.outputs.version }}.apk
+          name: HumSukhan-android-${{ steps.release.outputs.version }}
+          path: humsukhan/build/app/outputs/flutter-apk/HumSukhan-${{ steps.release.outputs.version }}.apk
           if-no-files-found: error
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: HumSukhan v${{ steps.version.outputs.version }}
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: HumSukhan v${{ steps.release.outputs.version }}
           generate_release_notes: true
-          files: humsukhan/build/app/outputs/flutter-apk/HumSukhan-${{ steps.version.outputs.version }}.apk
+          files: humsukhan/build/app/outputs/flutter-apk/HumSukhan-${{ steps.release.outputs.version }}.apk
+          fail_on_unmatched_files: true
