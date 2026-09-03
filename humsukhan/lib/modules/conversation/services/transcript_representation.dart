@@ -10,7 +10,11 @@ class PreparedTranscript {
   final List<CaptionSegment> segments;
   final String language;
 
-  const PreparedTranscript({required this.text, required this.segments, required this.language});
+  const PreparedTranscript({
+    required this.text,
+    required this.segments,
+    required this.language,
+  });
 }
 
 class TranscriptRepresentation {
@@ -22,7 +26,9 @@ class TranscriptRepresentation {
     final normalizedSelection = selection.trim().toLowerCase();
     final fallback = detectedLanguage.trim().isEmpty ? 'English' : detectedLanguage;
     var value = rawText.trim();
-    if (value.isEmpty) return const PreparedTranscript(text: '', segments: [], language: 'English');
+    if (value.isEmpty) {
+      return const PreparedTranscript(text: '', segments: [], language: 'English');
+    }
 
     // In Everyday Auto, Devanagari coming back for Urdu is normalized into
     // Urdu script before display. This is deliberately limited to the app's
@@ -147,9 +153,71 @@ class TranscriptRepresentation {
     return out.toString();
   }
 
-  /// Conservative orthographic transliteration for display. English/Latin
-  /// text is never passed through this function.
+  /// Display-oriented Urdu romanization. Common words are mapped lexically
+  /// first so the result remains natural Roman Urdu instead of raw phonetic
+  /// character-by-character output.
   static String urduToRoman(String text) {
+    const words = <String, String>{
+      'آپ': 'aap',
+      'کیسے': 'kaise',
+      'ہیں': 'hain',
+      'ہے': 'hai',
+      'کیا': 'kya',
+      'کہاں': 'kahan',
+      'میں': 'mein',
+      'مجھے': 'mujhe',
+      'میرا': 'mera',
+      'میری': 'meri',
+      'میرے': 'mere',
+      'تم': 'tum',
+      'تمہیں': 'tumhein',
+      'ہم': 'hum',
+      'ہمارا': 'hamara',
+      'اور': 'aur',
+      'سے': 'se',
+      'کو': 'ko',
+      'کا': 'ka',
+      'کی': 'ki',
+      'کے': 'ke',
+      'نہیں': 'nahi',
+      'بہت': 'bohat',
+      'ٹھیک': 'theek',
+      'اچھا': 'acha',
+      'اچھے': 'ache',
+      'آج': 'aaj',
+      'کل': 'kal',
+      'گھر': 'ghar',
+      'بات': 'baat',
+      'کر': 'kar',
+      'کرنا': 'karna',
+      'چاہیے': 'chahiye',
+    };
+
+    // Translate complete whitespace-delimited words first, while retaining
+    // surrounding punctuation. Unknown words fall back to the conservative
+    // character transliterator below.
+    final tokens = text.split(RegExp(r'(\s+)'));
+    final tokenOutput = <String>[];
+    for (final token in tokens) {
+      if (token.trim().isEmpty) {
+        tokenOutput.add(token);
+        continue;
+      }
+      final leading = token.substring(0, token.length - token.trimLeft().length);
+      final trailing = token.substring(token.trimRight().length);
+      final core = token.trim();
+      final match = RegExp(r'^([^\u0600-\u06FF]*)([\u0600-\u06FF]+)([^\u0600-\u06FF]*)$').firstMatch(core);
+      if (match != null) {
+        final mapped = words[match.group(2)!] ?? _urduCharacterMap(match.group(2)!);
+        tokenOutput.add('$leading${match.group(1)}$mapped${match.group(3)}$trailing');
+      } else {
+        tokenOutput.add('$leading${_urduCharacterMap(core)}$trailing');
+      }
+    }
+    return tokenOutput.join().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static String _urduCharacterMap(String text) {
     const map = <String, String>{
       'ا': 'a', 'آ': 'aa', 'ب': 'b', 'پ': 'p', 'ت': 't', 'ٹ': 't', 'ث': 's',
       'ج': 'j', 'چ': 'ch', 'ح': 'h', 'خ': 'kh', 'د': 'd', 'ڈ': 'd', 'ذ': 'z',
@@ -165,23 +233,6 @@ class TranscriptRepresentation {
       final char = String.fromCharCode(rune);
       out.write(map[char] ?? char);
     }
-    return _repairCommonRomanWords(out.toString());
-  }
-
-  static String _repairCommonRomanWords(String text) {
-    const replacements = <String, String>{
-      'aaap': 'aap',
-      'aap': 'aap',
-      'hain': 'hain',
-      'hai': 'hai',
-      'kaise': 'kaise',
-      'mein': 'mein',
-      'nahi': 'nahi',
-    };
-    var value = text;
-    for (final entry in replacements.entries) {
-      value = value.replaceAll(entry.key, entry.value);
-    }
-    return value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return out.toString();
   }
 }
