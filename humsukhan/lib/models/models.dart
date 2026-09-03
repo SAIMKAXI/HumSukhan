@@ -23,25 +23,3 @@ class ProfessionalInsight { final String id;final String sessionId;final String 
 class SoundEvent { final String id;final String type;final double confidence;final DateTime timestamp;final String severity;final bool dismissed;SoundEvent({String? id,required this.type,this.confidence=.8,DateTime? timestamp,this.severity='warning',this.dismissed=false}):id=id??_uuid.v4(),timestamp=timestamp??DateTime.now();SoundEvent copyWith({bool? dismissed})=>SoundEvent(id:id,type:type,confidence:confidence,timestamp:timestamp,severity:severity,dismissed:dismissed??this.dismissed);Map<String,dynamic> toJson()=>{'id':id,'type':type,'confidence':confidence,'timestamp':timestamp.toIso8601String(),'severity':severity,'dismissed':dismissed};factory SoundEvent.fromJson(Map<String,dynamic> json)=>SoundEvent(id:json['id'],type:json['type']??'Unknown',confidence:(json['confidence']??.8).toDouble(),timestamp:DateTime.parse(json['timestamp']),severity:json['severity']??'warning',dismissed:json['dismissed']??false);}
 class RetentionPolicy { final int days;final String label;const RetentionPolicy({required this.days,required this.label});static const options=[RetentionPolicy(days:1,label:'1 day'),RetentionPolicy(days:7,label:'7 days'),RetentionPolicy(days:15,label:'15 days (maximum)')];static const maxRetentionDays=15;}
 class LanguageResult { final String language;final double confidence;final String script;const LanguageResult({required this.language,required this.confidence,required this.script}); }
-
-/// Immutable event emitted by all live speech-recognition engines.
-///
-/// Keeping this in the shared model layer prevents the legacy and resilient
-/// STT providers from exposing incompatible event types to orchestration code.
-class SpeechResultEvent {
-  final String text;
-  final bool isFinal;
-  final double confidence;
-  final String language;
-  final bool isLive;
-  final dynamic mode;
-
-  const SpeechResultEvent({
-    required this.text,
-    required this.isFinal,
-    required this.confidence,
-    required this.language,
-    required this.isLive,
-    this.mode,
-  });
-}
