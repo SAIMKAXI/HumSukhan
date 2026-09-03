@@ -199,13 +199,14 @@ class TranscriptRepresentation {
     };
 
     final out = StringBuffer();
+    final urduLetterPattern = r'اآبپتٹثجچحخدڈذرڑزژسشصضطظعغفقکگلمنںوہھیےء';
     for (final token in _tokensWithWhitespace(text)) {
       if (token.trim().isEmpty) {
         out.write(token);
         continue;
       }
       final core = token.trim();
-      final match = RegExp(r'^([^\u0600-\u06FF]*)([\u0600-\u06FF]+)([^\u0600-\u06FF]*)$').firstMatch(core);
+      final match = RegExp('^([^$urduLetterPattern]*)([$urduLetterPattern]+)([^$urduLetterPattern]*)\$').firstMatch(core);
       if (match != null) {
         final mapped = words[match.group(2)!] ?? _urduCharacterMap(match.group(2)!);
         out.write(match.group(1));
