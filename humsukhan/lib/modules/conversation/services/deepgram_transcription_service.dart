@@ -25,7 +25,8 @@ class DeepgramTranscriptResult {
   });
 }
 
-/// Low-latency Deepgram streaming STT used by Conversational Auto mode.
+/// Low-latency Deepgram streaming STT used by Conversational Auto mode and
+/// mixed-language representation modes.
 class DeepgramTranscriptionService {
   static DeepgramTranscriptionService? _instance;
   static DeepgramTranscriptionService get instance => _instance ??= DeepgramTranscriptionService._();
@@ -91,6 +92,9 @@ class DeepgramTranscriptionService {
       _language = _normalizeLanguage(language);
       final query = <String, String>{
         'model': 'nova-3',
+        // Multi-language recognition is required for English preference so
+        // Urdu speech remains observable and can be represented as Roman Urdu
+        // instead of being filtered out by an English-only decoder.
         'language': _language,
         'encoding': 'linear16',
         'sample_rate': '16000',
@@ -159,7 +163,7 @@ class DeepgramTranscriptionService {
       case 'english':
       case 'en':
       case 'en-us':
-        return 'en-US';
+        return 'multi';
       case 'auto':
       case 'multi':
       case 'mixed':
@@ -222,6 +226,7 @@ class DeepgramTranscriptionService {
     final v = value.toLowerCase();
     if (v.startsWith('ur')) return 'Urdu';
     if (v.startsWith('en')) return 'English';
+    if (v.startsWith('hi')) return 'Hindi';
     if (v == 'multi') return 'Auto';
     return value;
   }
