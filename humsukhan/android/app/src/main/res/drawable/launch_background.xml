@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- HumSukhan native launch splash. Keep the app's launcher identity visible
-     before Flutter finishes bootstrapping. -->
+<!-- HumSukhan native launch splash. Keep the launcher identity visible
+     while Flutter is bootstrapping. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@android:color/white" />
-    <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/ic_launcher" />
-    </item>
+    <item
+        android:gravity="center"
+        android:drawable="@mipmap/ic_launcher" />
 </layer-list>
