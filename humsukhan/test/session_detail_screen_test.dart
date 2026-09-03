@@ -5,8 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:humsukhan/l10n/app_strings.dart';
 import 'package:humsukhan/models/models.dart';
 import 'package:humsukhan/providers/professional_provider.dart';
+import 'package:humsukhan/providers/settings_provider.dart';
 import 'package:humsukhan/screens/session_detail_screen.dart';
-import 'package:humsukhan/services/supabase_service.dart';
 
 class _FakeProfessionalProvider extends ProfessionalProvider {
   _FakeProfessionalProvider(ProfessionalSession session, ProfessionalInsight insight)
