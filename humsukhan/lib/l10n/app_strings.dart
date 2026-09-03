@@ -16,7 +16,7 @@ class AppStrings {
   // ── General ──
   String get appName => 'HumSukhan';
   String get appTagline => _isUrdu ? 'قابلِ رسائی AI معاون' : 'Accessibility-first AI Companion';
-  String get versionLabel => _isUrdu ? 'نسخہ 2.1.4 — قابلِ رسائی AI معاون' : 'Version 2.1.4 — Accessibility-first AI companion';
+  String get versionLabel => _isUrdu ? 'نسخہ 2.3.6 — قابلِ رسائی AI معاون' : 'Version 2.3.6 — Accessibility-first AI companion';
 
   // ── Navigation ──
   String get navHome => _isUrdu ? 'گھر' : 'Home';
@@ -119,8 +119,6 @@ class AppStrings {
   String get overviewTab => _isUrdu ? 'جائزہ' : 'Overview';
   String get transcriptTab => _isUrdu ? 'ٹرانسکرپٹ' : 'Transcript';
   String get summaryTab => _isUrdu ? 'خلاصہ' : 'Summary';
-  String get vocabularyTab => _isUrdu ? 'ذخیرہ الفاظ' : 'Vocabulary';
-  String get themesTab => _isUrdu ? 'موضوعات' : 'Themes';
   String get actionsTab => _isUrdu ? 'اقدامات' : 'Actions';
   String get exportAction => _isUrdu ? 'برآمد' : 'Export';
   String get deleteAction => _isUrdu ? 'حذف' : 'Delete';
@@ -135,10 +133,6 @@ class AppStrings {
   String get insightsUnavailable => _isUrdu ? 'بصیرت دستیاب نہیں' : 'Insights unavailable';
   String get insightsUnavailableDesc => _isUrdu ? 'ہم اس اجلاس کے لیے AI بصیرت تیار نہیں کر سکے۔ آپ کا اصل ٹرانسکرپٹ ابھی بھی دستیاب ہے۔' : 'We couldn\'t generate AI insights for this session. Your original transcript is still available.';
   String get viewTranscript => _isUrdu ? 'ٹرانسکرپٹ دیکھیں' : 'View Transcript';
-  String get noVocabulary => _isUrdu ? 'کوئی ذخیرہ الفاظ نہیں' : 'No vocabulary';
-  String get noVocabularyDesc => _isUrdu ? 'AI تجزیے کے بعد کلیدی اصطلاحات یہاں ظاہر ہوں گی۔' : 'Key terms will appear here after AI analysis.';
-  String get noThemes => _isUrdu ? 'کوئی موضوعات نہیں' : 'No themes';
-  String get noThemesDesc => _isUrdu ? 'AI تجزیے کے بعد موضوعات یہاں ظاہر ہوں گے۔' : 'Themes will appear here after AI analysis.';
   String get noActionItems => _isUrdu ? 'کوئی عمل کے اقدامات نہیں' : 'No action items';
   String get noActionItemsDesc => _isUrdu ? 'AI تجزیے کے بعد عمل کے اقدامات یہاں ظاہر ہوں گے۔' : 'Action items will appear here after AI analysis.';
   String get noItemsAvailable => _isUrdu ? 'کوئی اشیاء دستیاب نہیں' : 'No items available';
@@ -188,8 +182,6 @@ class AppStrings {
   String get highContrastDesc => _isUrdu ? 'بہتر نظارے کے لیے کنٹراسٹ بڑھائیں' : 'Increase contrast for better visibility';
   String get largeText => _isUrdu ? 'بڑا متن' : 'Large Text';
   String get largeTextDesc => _isUrdu ? 'مجموعی متن کا سائز بڑھائیں' : 'Increase overall text size';
-  String get simplifiedLanguage => _isUrdu ? 'سادہ زبان' : 'Simplified Language';
-  String get simplifiedLanguageDesc => _isUrdu ? 'پوری ایپ میں سادہ زبان استعمال کریں' : 'Use simpler language throughout';
   String get captionTextSize => _isUrdu ? 'کیپشن متن کا سائز' : 'Caption Text Size';
   String get alertPreferences => _isUrdu ? 'الرٹ ترجیحات' : 'Alert Preferences';
   String get hapticAlerts => _isUrdu ? 'ہیپٹک الرٹس' : 'Haptic Alerts';
@@ -213,8 +205,6 @@ class AppStrings {
   String deleteModelDesc(int sizeMB) => _isUrdu ? 'یہ ${sizeMB}MB اسٹوریج خالی کرے گا۔ آپ اسے بعد میں دوبارہ ڈاؤن لوڈ کر سکتے ہیں۔' : 'This will free up ${sizeMB}MB of storage. You can download it again later.';
   String get defaultRetention => _isUrdu ? 'ڈیفالٹ رٹینشن' : 'Default Retention';
   String get defaultRetentionPeriod => _isUrdu ? 'ڈیفالٹ رٹینشن مدت' : 'Default Retention Period';
-  String get deleteAllData => _isUrdu ? 'ڈیٹا حذف کریں' : 'Delete All Data';
-  String get deleteAllDataDesc => _isUrdu ? 'تمام محفوظ شدہ اجلاس، ٹرانسکرپٹس، اور ترتیبات کو ہٹا دیں' : 'Remove all saved sessions, transcripts, and settings';
   String get privacySection => _isUrdu ? 'رازداری' : 'Privacy';
   String get privacyNoticeText => _isUrdu ? 'HumSukhan آڈیو کو عارضی طور پر پروسیس کرتا ہے اور ریلیز کرتا ہے۔ خام آڈیو کبھی محفوظ نہیں کیا جاتا۔ محفوظ شدہ ریکارڈز صرف کیپشنز اور میٹا ڈیٹا رکھتے ہیں۔ برآمد شدہ فائلیں HumSukhan کے باہر رکھی جاتی ہیں۔' : 'HumSukhan processes audio temporarily and releases it. No raw audio is ever stored. Saved records contain captions and metadata only. Exported files are stored outside HumSukhan.';
   String get aboutSection => _isUrdu ? 'ہمارے بارے میں' : 'About';
@@ -222,10 +212,6 @@ class AppStrings {
   String get fontDesc => _isUrdu ? 'ایٹکنسن ہائپرلیجیبل — زیادہ سے زیادہ وضاحت کے لیے ڈیزائن کیا گیا' : 'Atkinson Hyperlegible — Designed for maximum legibility';
   String get maximumAllowed => _isUrdu ? 'زیادہ سے زیادہ اجازت' : 'Maximum allowed';
   String get cancel => _isUrdu ? 'منسوخ' : 'Cancel';
-  String get deleteEverything => _isUrdu ? 'سب کچھ حذف کریں' : 'Delete Everything';
-  String get deleteAllConfirm => _isUrdu ? 'سب ڈیٹا حذف کریں؟' : 'Delete All Data?';
-  String get deleteAllConfirmDesc => _isUrdu ? 'یہ تمام محفوظ شدہ اجلاس، ٹرانسکرپٹس، بصیرت، اور ترتیبات کو مستقل طور پر ہٹا دے گا۔ یہ واپس نہیں کیا جا سکتا۔' : 'This will permanently remove all saved sessions, transcripts, insights, and settings. This cannot be undone.';
-  String get allDataDeleted => _isUrdu ? 'تمام ڈیٹا حذف ہو گیا' : 'All data deleted';
   String get appLanguage => _isUrdu ? 'ایپ کی زبان' : 'App Language';
   String get syncedWithSupabase => _isUrdu ? 'Supabase کے ساتھ ہم آہنگ' : 'Synced with Supabase';
   String get notSignedIn => _isUrdu ? 'سائن اِن نہیں کیا گیا' : 'Not signed in';
@@ -233,7 +219,6 @@ class AppStrings {
   String get signInToSync => _isUrdu ? 'ڈیوائسز کے درمیان ڈیٹا ہم آہنگ کرنے کے لیے سائن اِن کریں' : 'Sign in to sync your data across devices';
   String get signOut => _isUrdu ? 'سائن آؤٹ' : 'Sign Out';
   String get signIn => _isUrdu ? 'سائن اِن' : 'Sign In';
-  String get allDataDeletedMessage => _isUrdu ? 'تمام ڈیٹا حذف ہو گیا' : 'All data deleted';
   String get days => _isUrdu ? 'دن' : 'days';
   String get ready => _isUrdu ? 'تیار' : 'Ready';
   String get notDownloadedStatus => _isUrdu ? 'ڈاؤن لوڈ نہیں کیا گیا' : 'Not downloaded';
