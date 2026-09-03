@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
@@ -45,12 +46,10 @@ class _WordToken {
 /// anything is emitted to the UI. Devanagari is therefore never a valid output.
 class EverydayBilingualSttService {
   EverydayBilingualSttService._();
-  static final EverydayBilingualSttService instance =
-      EverydayBilingualSttService._();
+  static final EverydayBilingualSttService instance = EverydayBilingualSttService._();
 
   final AudioRecorder _recorder = AudioRecorder();
-  final StreamController<EverydayBilingualResult> _controller =
-      StreamController<EverydayBilingualResult>.broadcast();
+  final StreamController<EverydayBilingualResult> _controller = StreamController<EverydayBilingualResult>.broadcast();
 
   WebSocket? _englishSocket;
   WebSocket? _urduSocket;
@@ -85,9 +84,7 @@ class EverydayBilingualSttService {
       return null;
     }
     try {
-      final response = await client.functions
-          .invoke('deepgram-token')
-          .timeout(const Duration(seconds: 5));
+      final response = await client.functions.invoke('deepgram-token').timeout(const Duration(seconds: 5));
       final data = response.data;
       if (data is! Map) {
         _lastStartError = 'Deepgram token service returned an invalid response.';
@@ -120,8 +117,7 @@ class EverydayBilingualSttService {
       'vad_events': 'true',
       'words': 'true',
     };
-    final uri = Uri.parse('wss://api.deepgram.com/v1/listen')
-        .replace(queryParameters: query);
+    final uri = Uri.parse('wss://api.deepgram.com/v1/listen').replace(queryParameters: query);
     try {
       return await WebSocket.connect(
         uri.toString(),
@@ -313,10 +309,7 @@ class EverydayBilingualSttService {
         .trim();
   }
 
-  List<_WordToken> _mergeSource(
-    List<_WordToken> old,
-    List<_WordToken> next,
-  ) {
+  List<_WordToken> _mergeSource(List<_WordToken> old, List<_WordToken> next) {
     final map = <String, _WordToken>{};
     for (final token in old) {
       map['${token.start.toStringAsFixed(3)}|${token.text.toLowerCase()}'] = token;
@@ -365,9 +358,9 @@ class EverydayBilingualSttService {
       final punctuationOnly = RegExp(r'^[,.!?;:%)\]}]+$').hasMatch(text);
       if (out.isNotEmpty && !punctuationOnly) out.write(' ');
       if (_mode != 'English' && word.source == 'Urdu') {
-        out.write('\u2067$text\u2069');
+        out.write(text);
       } else {
-        out.write('\u2066$text\u2069');
+        out.write(text);
       }
     }
     return out.toString().trim();
@@ -391,7 +384,7 @@ class EverydayBilingualSttService {
             ? _urduConfidence
             : _englishConfidence;
     _controller.add(EverydayBilingualResult(
-      text: EverydayLanguagePolicy.sanitizeHindi(text),
+      text: text,
       language: language,
       isFinal: complete,
       confidence: confidence,
