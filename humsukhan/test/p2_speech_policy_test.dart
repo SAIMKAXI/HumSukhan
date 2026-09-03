@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:humsukhan/providers/everyday_speech_provider.dart';
 import 'package:humsukhan/services/roman_urdu_detector.dart';
@@ -11,13 +10,15 @@ void main() {
     expect(RomanUrduDetector.isRomanUrdu('This is a meeting'), isFalse);
   });
 
-  test('Everyday text routing preserves Roman Urdu as Urdu speech', () {
+  test('Everyday text routing promotes Roman Urdu to Urdu processing', () {
     final provider = EverydaySpeechProvider();
     addTearDown(provider.dispose);
 
+    // Roman Urdu is normalized to Urdu script before rendering/TTS, so the
+    // downstream processing language is Urdu rather than a separate voice.
     expect(
       provider.processingLanguageForText('Aap kaise hain', fallback: 'English'),
-      'Roman Urdu',
+      'Urdu',
     );
     expect(
       provider.processingLanguageForText('Please start the meeting', fallback: 'English'),
