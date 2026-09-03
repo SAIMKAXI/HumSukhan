@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../models/models.dart';
@@ -80,7 +79,7 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showAppLanguageDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
-    showDialog<void>(context: context,builder:(ctx)=>AlertDialog(title:Text(s.appLanguage),content:Column(mainAxisSize:MainAxisSize.min,children:[RadioListTile<String>(title:Text(s.languageEnglish),value:'en',groupValue:settings.appLanguage,onChanged:(v){if(v!=null)settings.setAppLanguage(v);Navigator.pop(ctx);}),RadioListTile<String>(title:Text(s.languageUrdu),value:'ur',groupValue:settings.appLanguage,onChanged:(v){if(v!=null)settings.setAppLanguage(v);Navigator.pop(ctx);})]));
+    showDialog<void>(context: context,builder:(ctx)=>AlertDialog(title:Text(s.appLanguage),content:Column(mainAxisSize:MainAxisSize.min,children:[RadioListTile<String>(title:Text(s.languageEnglish),value:'en',groupValue:settings.appLanguage,onChanged:(v){if(v!=null)settings.setAppLanguage(v);Navigator.pop(ctx);}),RadioListTile<String>(title:Text(s.languageUrdu),value:'ur',groupValue:settings.appLanguage,onChanged:(v){if(v!=null)settings.setAppLanguage(v);Navigator.pop(ctx);})])));
   }
 
   void _showLanguageDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
