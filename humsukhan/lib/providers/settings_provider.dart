@@ -10,7 +10,6 @@ class SettingsProvider extends ChangeNotifier {
   bool _isDarkMode = false, _isHighContrast = false, _isLargeText = false;
   double _captionTextSize = 24.0;
   bool _hapticAlerts = true, _visualAlerts = true, _flashAlerts = false, _screenFlashAlerts = true;
-  bool _simplifiedLanguage = false;
   String _captionLanguage = 'English', _appLanguage = 'en';
   int _defaultRetentionDays = 7;
   bool _legacyOnboardingComplete = false, _monitoringEnabled = false;
@@ -32,7 +31,6 @@ class SettingsProvider extends ChangeNotifier {
   bool get visualAlerts => _visualAlerts;
   bool get flashAlerts => _flashAlerts;
   bool get screenFlashAlerts => _screenFlashAlerts;
-  bool get simplifiedLanguage => _simplifiedLanguage;
   String get captionLanguage => _captionLanguage;
   String get appLanguage => _appLanguage;
   int get defaultRetentionDays => _defaultRetentionDays;
@@ -55,7 +53,6 @@ class SettingsProvider extends ChangeNotifier {
         'visualAlerts': _visualAlerts,
         'flashAlerts': _flashAlerts,
         'screenFlashAlerts': _screenFlashAlerts,
-        'simplifiedLanguage': _simplifiedLanguage,
         'captionLanguage': _captionLanguage,
         'appLanguage': _appLanguage,
         'defaultRetentionDays': _defaultRetentionDays,
@@ -73,7 +70,6 @@ class SettingsProvider extends ChangeNotifier {
     _visualAlerts = data['visualAlerts'] is bool ? data['visualAlerts'] as bool : _visualAlerts;
     _flashAlerts = data['flashAlerts'] is bool ? data['flashAlerts'] as bool : _flashAlerts;
     _screenFlashAlerts = data['screenFlashAlerts'] is bool ? data['screenFlashAlerts'] as bool : _screenFlashAlerts;
-    _simplifiedLanguage = data['simplifiedLanguage'] is bool ? data['simplifiedLanguage'] as bool : _simplifiedLanguage;
     if (data['captionLanguage'] is String && const ['English', 'Roman Urdu', 'Urdu'].contains(data['captionLanguage'])) _captionLanguage = data['captionLanguage'] as String;
     if (data['appLanguage'] is String && const ['en', 'ur'].contains(data['appLanguage'])) _appLanguage = data['appLanguage'] as String;
     final retention = data['defaultRetentionDays'];
@@ -101,7 +97,8 @@ class SettingsProvider extends ChangeNotifier {
     _visualAlerts = prefs.getBool('visualAlerts') ?? true;
     _flashAlerts = prefs.getBool('flashAlerts') ?? false;
     _screenFlashAlerts = prefs.getBool('screenFlashAlerts') ?? true;
-    _simplifiedLanguage = prefs.getBool('simplifiedLanguage') ?? false;
+    // Remove the retired setting so old installs stop carrying dead product state.
+    await prefs.remove('simplifiedLanguage');
     _captionLanguage = prefs.getString('captionLanguage') ?? 'English';
     _appLanguage = prefs.getString('appLanguage') ?? 'en';
     _defaultRetentionDays = prefs.getInt('defaultRetentionDays') ?? 7;
@@ -193,7 +190,6 @@ class SettingsProvider extends ChangeNotifier {
   void toggleVisualAlerts() { _visualAlerts = !_visualAlerts; notifyListeners(); _persistChange('visualAlerts', _visualAlerts); }
   void toggleFlashAlerts() { _flashAlerts = !_flashAlerts; notifyListeners(); _persistChange('flashAlerts', _flashAlerts); }
   void toggleScreenFlashAlerts() { _screenFlashAlerts = !_screenFlashAlerts; notifyListeners(); _persistChange('screenFlashAlerts', _screenFlashAlerts); }
-  void toggleSimplifiedLanguage() { _simplifiedLanguage = !_simplifiedLanguage; notifyListeners(); _persistChange('simplifiedLanguage', _simplifiedLanguage); }
   void setCaptionLanguage(String lang) { _captionLanguage = lang; notifyListeners(); _persistChange('captionLanguage', lang); }
   void setAppLanguage(String langCode) { _appLanguage = langCode; notifyListeners(); _persistChange('appLanguage', langCode); }
   void setDefaultRetentionDays(int days) { _defaultRetentionDays = days.clamp(1, 15); notifyListeners(); _persistChange('defaultRetentionDays', _defaultRetentionDays); }
@@ -241,7 +237,6 @@ class SettingsProvider extends ChangeNotifier {
     _visualAlerts = true;
     _flashAlerts = false;
     _screenFlashAlerts = true;
-    _simplifiedLanguage = false;
     _captionLanguage = 'English';
     _appLanguage = 'en';
     _defaultRetentionDays = 7;

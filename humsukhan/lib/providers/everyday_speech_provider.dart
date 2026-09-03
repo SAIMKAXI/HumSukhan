@@ -9,6 +9,7 @@ import '../models/models.dart';
 import '../services/cloud_tts_service.dart';
 import '../services/everyday_bilingual_stt.dart';
 import '../services/everyday_language_policy.dart';
+import '../services/roman_urdu_detector.dart';
 import '../services/stt/enhanced_stt.dart';
 import 'speech_provider.dart' as legacy;
 
@@ -140,11 +141,24 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
 
     final hasUrdu = EverydayLanguagePolicy.containsUrduScript(safe);
     final hasEnglish = EverydayLanguagePolicy.containsLatin(safe);
-    final language = hasUrdu && hasEnglish ? 'Auto' : hasUrdu ? 'Urdu' : 'English';
+    final hasRomanUrdu = !hasUrdu && RomanUrduDetector.isRomanUrdu(safe);
+    final language = hasUrdu && hasEnglish
+        ? 'Auto'
+        : hasUrdu
+            ? 'Urdu'
+            : hasRomanUrdu
+                ? 'Roman Urdu'
+                : 'English';
     _detected = LanguageResult(
       language: language,
       confidence: result.confidence,
-      script: hasUrdu && hasEnglish ? 'Mixed' : hasUrdu ? 'Urdu' : 'Latin',
+      script: hasUrdu && hasEnglish
+          ? 'Mixed'
+          : hasUrdu
+              ? 'Urdu'
+              : hasRomanUrdu
+                  ? 'Latin'
+                  : 'Latin',
     );
     if (result.isFinal) _latestFinal = output;
     if (!_results.isClosed) {
@@ -184,8 +198,10 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
 
   @override
   String processingLanguageForText(String text, {String fallback = 'English'}) {
-    final safe = EverydayLanguagePolicy.sanitizeHindi(text);
-    return EverydayLanguagePolicy.containsUrduScript(safe) ? 'Urdu' : 'English';
+    final safe = EverydayLanguagePolicy.sanitizeHindi(text).trim();
+    if (EverydayLanguagePolicy.containsUrduScript(safe)) return 'Urdu';
+    if (RomanUrduDetector.isRomanUrdu(safe)) return 'Roman Urdu';
+    return fallback;
   }
 
   @override
@@ -193,11 +209,18 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
     final safe = EverydayLanguagePolicy.sanitizeHindi(text);
     final hasUrdu = EverydayLanguagePolicy.containsUrduScript(safe);
     final hasEnglish = EverydayLanguagePolicy.containsLatin(safe);
-    final language = hasUrdu && hasEnglish ? 'Auto' : hasUrdu ? 'Urdu' : 'English';
+    final hasRomanUrdu = !hasUrdu && RomanUrduDetector.isRomanUrdu(safe);
+    final language = hasUrdu && hasEnglish
+        ? 'Auto'
+        : hasUrdu
+            ? 'Urdu'
+            : hasRomanUrdu
+                ? 'Roman Urdu'
+                : 'English';
     _detected = LanguageResult(
       language: language,
       confidence: hasUrdu && hasEnglish ? 0.85 : 0.9,
-      script: hasUrdu && hasEnglish ? 'Mixed' : hasUrdu ? 'Urdu' : 'Latin',
+      script: hasUrdu && hasEnglish ? 'Mixed' : 'Latin',
     );
     notifyListeners();
   }
@@ -216,7 +239,7 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
     try {
       final requested = _normalizeLanguage(language);
       if (requested == 'English') {
-        await _speakSegment(EverydayLanguagePolicy.toEnglishMode(safe), 'English', generation);
+        await _speakEnglishMode(safe, generation);
       } else {
         for (final segment in _splitForSpeech(safe)) {
           if (generation != _speechGeneration) return;
@@ -231,6 +254,16 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
     }
   }
 
+  Future<void> _speakEnglishMode(String text, int generation) async {
+    final converted = EverydayLanguagePolicy.toEnglishMode(text);
+    // English-mode output still preserves Roman Urdu. Send identifiable Roman
+    // Urdu runs through the Urdu voice rather than mispronouncing them as English.
+    for (final segment in _splitForSpeech(converted)) {
+      if (generation != _speechGeneration) return;
+      await _speakSegment(segment.text, segment.language, generation);
+    }
+  }
+
   List<_SpeechSegment> _splitForSpeech(String text) {
     final tokens = text.split(RegExp(r'\s+'));
     final result = <_SpeechSegment>[];
@@ -242,11 +275,35 @@ class EverydaySpeechProvider extends legacy.SpeechProvider {
         buffer = <String>[];
       }
     }
-    for (final token in tokens) {
+
+    for (var i = 0; i < tokens.length; i++) {
+      final token = tokens[i];
       if (token.isEmpty) continue;
-      final next = EverydayLanguagePolicy.containsUrduScript(token) ? 'urdu' : 'english';
-      if (buffer.isNotEmpty && next != current) flush();
-      current = next;
+      if (EverydayLanguagePolicy.containsUrduScript(token)) {
+        if (current != 'urdu' && buffer.isNotEmpty) flush();
+        current = 'urdu';
+        buffer.add(token);
+        continue;
+      }
+
+      final pair = i + 1 < tokens.length ? '${token} ${tokens[i + 1]}' : token;
+      final startsRomanRun = RomanUrduDetector.isRomanUrdu(pair);
+      if (startsRomanRun) {
+        if (current != 'urdu' && buffer.isNotEmpty) flush();
+        current = 'urdu';
+        buffer.add(token);
+        continue;
+      }
+
+      if (current == 'urdu') {
+        final previous = buffer.isEmpty ? token : '${buffer.last} $token';
+        if (RomanUrduDetector.isRomanUrdu(previous)) {
+          buffer.add(token);
+          continue;
+        }
+        flush();
+        current = 'english';
+      }
       buffer.add(token);
     }
     flush();

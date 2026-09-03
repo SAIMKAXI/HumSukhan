@@ -56,9 +56,8 @@ class EnvironmentalMonitoringBridge {
         if (_state == 'ACTIVE') return true;
         if (_state == 'ERROR' || _state == 'OFF') return false;
       }
-      // A timeout must not leave a native service running while the caller
-      // considers starting an alternate in-app detector. Request native stop
-      // and wait until the persisted state confirms that shutdown completed.
+      // Never let an unresolved native transition race an in-app fallback.
+      // The caller must observe OFF before it can start another microphone.
       await _requestStopAndWaitForOff();
       return false;
     } on PlatformException catch (e) {
@@ -88,7 +87,7 @@ class EnvironmentalMonitoringBridge {
     }
   }
 
-  Future<void> _requestStopAndWaitForOff() async {
+  Future<bool> _requestStopAndWaitForOff() async {
     try { await _channel.invokeMethod<bool>('stop'); } catch (_) {}
     _state = 'STOPPING';
     for (var attempt = 0; attempt < 30; attempt++) {
@@ -97,8 +96,9 @@ class EnvironmentalMonitoringBridge {
         final nextState = await _channel.invokeMethod<String>('getState');
         if (nextState != null) _state = nextState;
       } catch (_) {}
-      if (_state == 'OFF' || _state == 'ERROR') return;
+      if (_state == 'OFF' || _state == 'ERROR') return _state == 'OFF';
     }
+    return false;
   }
 
   Future<void> dispose() async { await _subscription?.cancel(); _subscription = null; }

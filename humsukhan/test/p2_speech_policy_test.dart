@@ -1,0 +1,28 @@
+import 'package:flutter_test/flutter_test.dart';
+import '../lib/providers/everyday_speech_provider.dart';
+import '../lib/services/roman_urdu_detector.dart';
+
+void main() {
+  test('Roman Urdu detector recognizes a strong phrase', () {
+    expect(RomanUrduDetector.isRomanUrdu('Aap kaise hain'), isTrue);
+    expect(RomanUrduDetector.isRomanUrdu('This is a meeting'), isFalse);
+  });
+
+  test('Everyday text routing preserves Roman Urdu as Urdu speech', () {
+    final provider = EverydaySpeechProvider();
+    addTearDown(provider.dispose);
+
+    expect(
+      provider.processingLanguageForText('Aap kaise hain', fallback: 'English'),
+      'Roman Urdu',
+    );
+    expect(
+      provider.processingLanguageForText('Please start the meeting', fallback: 'English'),
+      'English',
+    );
+    expect(
+      provider.processingLanguageForText('آپ کیسے ہیں؟', fallback: 'English'),
+      'Urdu',
+    );
+  });
+}

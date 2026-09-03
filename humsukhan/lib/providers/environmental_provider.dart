@@ -34,6 +34,7 @@ class EnvironmentalProvider extends ChangeNotifier {
   DateTime? _lastAlertTime;
   SettingsProvider? _settingsProvider;
   bool _bridgeInitialized = false;
+  bool _usingInAppFallback = false;
   String? _errorMessage;
   Future<void> _historyWriteQueue = Future.value();
 
@@ -44,9 +45,15 @@ class EnvironmentalProvider extends ChangeNotifier {
   bool get isStarting => _monitoringState == 'STARTING';
   bool get isStopping => _monitoringState == 'STOPPING';
   bool get hasError => _monitoringState == 'ERROR';
-  bool get isProcessing => Platform.isAndroid ? _bridge.isActive : _soundService.isMonitoring;
-  bool get isMicrophoneReady => Platform.isAndroid ? _bridge.isActive : _soundService.isMicrophoneReady;
-  bool get isModelReady => Platform.isAndroid ? _bridge.isActive && !hasError : _soundService.isModelReady;
+  bool get isProcessing => Platform.isAndroid
+      ? (_usingInAppFallback ? _soundService.isMonitoring : _bridge.isActive)
+      : _soundService.isMonitoring;
+  bool get isMicrophoneReady => Platform.isAndroid
+      ? (_usingInAppFallback ? _soundService.isMicrophoneReady : _bridge.isActive)
+      : _soundService.isMicrophoneReady;
+  bool get isModelReady => Platform.isAndroid
+      ? (_usingInAppFallback ? _soundService.isModelReady : _bridge.isActive && !hasError)
+      : _soundService.isModelReady;
   String? get errorMessage => _errorMessage;
   bool get isLocal => true;
   String get environmentalStatus => monitoringEnabled ? 'Monitoring locally' : 'Off';
@@ -121,6 +128,9 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (_bridgeInitialized) return;
     _bridgeInitialized = true;
     await _bridge.initialize(onChange: (state, event) {
+      // A late native callback must not steal ownership back from the in-app
+      // fallback after a native start failure has already been handled.
+      if (_usingInAppFallback && state != 'OFF') return;
       _monitoringState = state;
       if (event != null) {
         final type = event['type']?.toString();
@@ -151,10 +161,16 @@ class EnvironmentalProvider extends ChangeNotifier {
       notifyListeners();
 
       if (Platform.isAndroid) {
-        final stopped = await _bridge.stop();
-        if (!stopped) {
-          _monitoringState = 'ERROR';
-          _errorMessage = 'Environmental monitoring could not be stopped safely. Try again.';
+        if (_usingInAppFallback) {
+          _soundService.stopMonitoring();
+          _usingInAppFallback = false;
+          _monitoringState = 'OFF';
+        } else {
+          final stopped = await _bridge.stop();
+          if (!stopped) {
+            _monitoringState = 'ERROR';
+            _errorMessage = 'Environmental monitoring could not be stopped safely. Try again.';
+          }
         }
       } else {
         _soundService.stopMonitoring();
@@ -180,6 +196,7 @@ class EnvironmentalProvider extends ChangeNotifier {
       // foreground service then starts against a model that is already local,
       // avoiding network/filesystem/plugin races in its secondary engine.
       _monitoringState = 'STARTING';
+      _usingInAppFallback = false;
       notifyListeners();
       final modelReady = await _prepareModel();
       if (!modelReady) {
@@ -191,25 +208,34 @@ class EnvironmentalProvider extends ChangeNotifier {
 
       final started = await _bridge.start();
       if (started && _bridge.state == 'ACTIVE') {
+        _usingInAppFallback = false;
         _monitoringState = 'ACTIVE';
         notifyListeners();
         return;
       }
 
-      // Keep the feature usable in-app if a device rejects the background
-      // foreground-service path. This fallback never runs alongside an active
-      // native service.
+      // Fallback is safe only after the native bridge proves it is OFF.
+      // Otherwise there could be two microphone owners during a transition.
+      if (_bridge.state != 'OFF') {
+        _monitoringState = 'ERROR';
+        _errorMessage = 'Environmental monitoring could not start safely because the background service is still changing state. Try again in a moment.';
+        notifyListeners();
+        return;
+      }
+
       final initialized = await _soundService.initialize(requestPermission: false);
       if (initialized && _soundService.isMicrophoneReady) {
         _soundService.onSoundDetected = processSoundEvent;
         final fallbackStarted = await _soundService.startMonitoring(permissionAlreadyGranted: true);
         if (fallbackStarted) {
+          _usingInAppFallback = true;
           _monitoringState = 'ACTIVE';
           notifyListeners();
           return;
         }
       }
 
+      _usingInAppFallback = false;
       _monitoringState = 'ERROR';
       _errorMessage = 'Environmental monitoring could not start. Check microphone permission and Android battery/background restrictions, then try again.';
       notifyListeners();
