@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import '../providers/conversation_provider.dart';
-import '../providers/speech_provider.dart';
+import '../providers/everyday_speech_provider.dart';
 import 'stt/enhanced_stt.dart';
 
 enum ConversationEngineState {
@@ -28,14 +28,13 @@ class ConversationPauseOptions {
 
 /// Deterministic orchestration for Conversational Mode.
 ///
-/// Existing STT/TTS implementations remain underneath this controller. The
-/// engine serializes mic operations, starts the silence timer only after speech
-/// begins, and commits only after the speech provider has flushed its current
-/// stream.
+/// Everyday Mode now exposes one consolidated speech provider, so the engine
+/// never accidentally binds itself to the legacy provider's separate TTS/STT
+/// runtime.
 class ConversationEngine extends ChangeNotifier {
   static const _pausePreferenceKey = 'conversationPauseMs';
 
-  final SpeechProvider speech;
+  final EverydaySpeechProvider speech;
   final ConversationProvider conversation;
 
   ConversationEngine({required this.speech, required this.conversation}) {
@@ -56,6 +55,7 @@ class ConversationEngine extends ChangeNotifier {
   bool _turnStopping = false;
   int _turnGeneration = 0;
   String _latestTranscript = '';
+  String _latestLanguage = 'English';
   String? _errorMessage;
 
   String get errorMessage => _errorMessage ?? '';
@@ -120,6 +120,7 @@ class ConversationEngine extends ChangeNotifier {
       _turnStopping = false;
       _speechStarted = false;
       _latestTranscript = '';
+      _latestLanguage = 'English';
       _errorMessage = null;
       _state = ConversationEngineState.idle;
       conversation.startConversation();
@@ -149,6 +150,7 @@ class ConversationEngine extends ChangeNotifier {
     _turnStopping = false;
     _speechStarted = false;
     _latestTranscript = '';
+    _latestLanguage = 'English';
     _errorMessage = null;
     _state = ConversationEngineState.startingMic;
     notifyListeners();
@@ -159,7 +161,7 @@ class ConversationEngine extends ChangeNotifier {
     if (generation != _turnGeneration) return;
     if (!speech.isListening) {
       _state = ConversationEngineState.error;
-      _errorMessage = speech.sttProvider.lastStartError ?? 'Live speech recognition could not be started.';
+      _errorMessage = speech.lastStartError ?? 'Live speech recognition could not be started.';
       conversation.commitSpeakerTurn();
       notifyListeners();
       return;
@@ -183,10 +185,9 @@ class ConversationEngine extends ChangeNotifier {
       await speech.stopListening();
       if (generation != _turnGeneration) return;
 
-      _latestTranscript = speech.latestFinalText.trim();
+      _latestTranscript = _latestTranscript.trim();
       if (_latestTranscript.isNotEmpty) {
-        final language = speech.detectedLanguage?.language ?? 'English';
-        conversation.updateSpeakerTurn(_latestTranscript, language: language);
+        conversation.updateSpeakerTurn(_latestTranscript, language: _latestLanguage);
       }
       conversation.commitSpeakerTurn();
       _speechStarted = false;
@@ -222,59 +223,32 @@ class ConversationEngine extends ChangeNotifier {
     notifyListeners();
     try {
       await speech.speak(lastSpeakerCaption.text, language: lastSpeakerCaption.language);
-      _state = ConversationEngineState.idle;
-    } catch (e) {
-      _state = ConversationEngineState.error;
-      _errorMessage = 'Text-to-speech could not play this caption.';
-      debugPrint('ConversationEngine TTS error: $e');
-    }
-    notifyListeners();
-  }
-
-  void stopAndEndConversation() {
-    _enqueue(() async {
-      if (speech.isListening || conversation.isSpeakerTurnActive) {
-        await _stopListening();
-      }
-      conversation.stopConversation();
-      _cancelSilenceTimer();
-      _speechStarted = false;
+    } finally {
       _state = ConversationEngineState.idle;
       notifyListeners();
-    });
+    }
   }
 
-  void _handleSpeechResult(SpeechResultEvent result) {
-    if (_turnStopping || conversation.state != ConversationState.active) return;
-    final text = result.text.trim();
-    if (text.isEmpty) return;
-
-    _latestTranscript = text;
-    _speechStarted = true;
-    conversation.updateSpeakerTurn(text, language: _normalizeConversationLanguage(result.language));
-
-    if (_state == ConversationEngineState.listening || _state == ConversationEngineState.waitingForTurnEnd) {
+  void _handleSpeechResult(SpeechResultEvent event) {
+    if (event.text.trim().isEmpty) return;
+    _latestTranscript = event.text.trim();
+    _latestLanguage = event.language;
+    if (_state == ConversationEngineState.listening) {
       _state = ConversationEngineState.speechActive;
     }
-
-    _restartSilenceTimer();
+    _speechStarted = true;
+    if (event.isFinal) {
+      _cancelSilenceTimer();
+      if (_pauseThreshold == Duration.zero) {
+        _state = ConversationEngineState.speechActive;
+      } else {
+        _state = ConversationEngineState.waitingForTurnEnd;
+        _silenceTimer = Timer(_pauseThreshold, _stopListening);
+      }
+    } else {
+      _cancelSilenceTimer();
+    }
     notifyListeners();
-  }
-
-  String _normalizeConversationLanguage(String language) {
-    final value = language.toLowerCase();
-    if (value.startsWith('ur') || value == 'roman urdu') return 'Urdu';
-    return 'English';
-  }
-
-  void _restartSilenceTimer() {
-    if (!_speechStarted || _turnStopping || isManualPauseMode) return;
-    _silenceTimer?.cancel();
-    _state = ConversationEngineState.waitingForTurnEnd;
-    _silenceTimer = Timer(_pauseThreshold, () {
-      if (!_speechStarted || _turnStopping || !speech.isListening) return;
-      stopListening();
-    });
   }
 
   void _cancelSilenceTimer() {
@@ -282,20 +256,33 @@ class ConversationEngine extends ChangeNotifier {
     _silenceTimer = null;
   }
 
-  void _enqueue(Future<void> Function() command) {
-    _commandTail = _commandTail.then((_) => command()).catchError((Object error, StackTrace stack) {
-      debugPrint('ConversationEngine command error: $error\n$stack');
-      _state = ConversationEngineState.error;
-      _errorMessage = 'Conversation audio operation failed.';
+  void stopAndEndConversation() {
+    _enqueue(() async {
+      _cancelSilenceTimer();
+      _turnGeneration++;
+      await speech.stopListening();
+      conversation.endConversation();
+      _latestTranscript = '';
+      _latestLanguage = 'English';
+      _state = ConversationEngineState.idle;
+      _errorMessage = null;
       notifyListeners();
     });
   }
 
-  @override
   void dispose() {
-    _turnGeneration++;
     _cancelSilenceTimer();
     unawaited(_subscription?.cancel());
+    _subscription = null;
     super.dispose();
+  }
+
+  void _enqueue(Future<void> Function() command) {
+    _commandTail = _commandTail.then((_) => command()).catchError((Object error, StackTrace stack) {
+      _errorMessage = 'Speech control failed.';
+      _state = ConversationEngineState.error;
+      debugPrint('ConversationEngine command error: $error\n$stack');
+      notifyListeners();
+    });
   }
 }
