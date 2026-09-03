@@ -7,6 +7,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 
 import '../models/models.dart';
 import '../services/cloud_tts_service.dart';
+import '../services/roman_urdu_detector.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/stt/model_manager.dart';
 
@@ -59,17 +60,7 @@ class ResilientTtsProvider implements TtsProvider {
     final normalized = language.toLowerCase().trim();
     if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'hindi';
     if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'urdu';
-    const romanUrdu = {
-      'aap', 'ap', 'aapko', 'aapki', 'aapke', 'aapka', 'kya', 'kyun', 'hai', 'hain',
-      'ho', 'mein', 'main', 'mujhe', 'tum', 'se', 'ko', 'ka', 'ki', 'ke', 'yeh', 'woh',
-      'ham', 'hum', 'mera', 'meri', 'mere', 'apna', 'nahi', 'nahin', 'acha', 'achha',
-      'theek', 'karo', 'karna', 'jana', 'jao', 'chahiye', 'bhi', 'par',
-    };
-    final words = text.toLowerCase()
-        .replaceAll(RegExp(r"[^a-z0-9\s']"), ' ')
-        .split(RegExp(r'\s+'))
-        .where((word) => word.isNotEmpty);
-    if (words.any(romanUrdu.contains)) return 'urdu';
+    if (RomanUrduDetector.isRomanUrdu(text)) return 'urdu';
     if (normalized == 'urdu' || normalized == 'roman urdu') return 'urdu';
     if (normalized == 'hindi' || normalized == 'hi') return 'hindi';
     return 'english';
@@ -401,9 +392,7 @@ class SpeechProvider extends ChangeNotifier {
   String processingLanguageForText(String text, {String fallback = 'English'}) {
     if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'Hindi';
     if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'Urdu';
-    const romanUrduWords = ['kya', 'hai', 'mein', 'tum', 'aap', 'ho', 'se', 'ko', 'ka', 'ki', 'ke'];
-    final words = text.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
-    if (romanUrduWords.any(words.contains)) return 'Roman Urdu';
+    if (RomanUrduDetector.isRomanUrdu(text)) return 'Roman Urdu';
     return fallback;
   }
 
@@ -443,11 +432,10 @@ class SpeechProvider extends ChangeNotifier {
 
   void detectLanguage(String text) {
     final urduScriptRegex = RegExp(r'[\u0600-\u06FF]');
-    final romanUrduWords = ['kya', 'hai', 'mein', 'tum', 'aap', 'ho', 'se', 'ko', 'ka', 'ki', 'ke'];
     if (urduScriptRegex.hasMatch(text)) {
       _detectedLanguage = const LanguageResult(language: 'Urdu', confidence: 0.9, script: 'Arabic');
-    } else if (romanUrduWords.any((w) => text.toLowerCase().split(RegExp(r'\s+')).contains(w))) {
-      _detectedLanguage = const LanguageResult(language: 'Roman Urdu', confidence: 0.7, script: 'Latin');
+    } else if (RomanUrduDetector.isRomanUrdu(text)) {
+      _detectedLanguage = const LanguageResult(language: 'Roman Urdu', confidence: 0.92, script: 'Latin');
     } else {
       _detectedLanguage = const LanguageResult(language: 'English', confidence: 0.85, script: 'Latin');
     }
