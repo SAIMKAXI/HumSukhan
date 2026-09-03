@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../lib/providers/everyday_speech_provider.dart';
-import '../lib/services/roman_urdu_detector.dart';
+import 'package:humsukhan/providers/everyday_speech_provider.dart';
+import 'package:humsukhan/services/roman_urdu_detector.dart';
 
 void main() {
   test('Roman Urdu detector recognizes a strong phrase', () {
