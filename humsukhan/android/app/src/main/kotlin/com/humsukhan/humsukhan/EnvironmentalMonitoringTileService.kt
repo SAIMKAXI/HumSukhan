@@ -16,8 +16,15 @@ class EnvironmentalMonitoringTileService : TileService() {
     override fun onClick() {
         super.onClick()
         val monitoringState = EnvironmentalMonitoringState.get(this)
-        if (monitoringState == EnvironmentalMonitoringState.ACTIVE || monitoringState == EnvironmentalMonitoringState.STARTING) {
+        if (monitoringState == EnvironmentalMonitoringState.ACTIVE) {
             EnvironmentalMonitoringState.requestStop(this)
+            syncTile()
+            return
+        }
+        if (monitoringState == EnvironmentalMonitoringState.STARTING ||
+            monitoringState == EnvironmentalMonitoringState.STOPPING) {
+            // The native service owns transitional state. Do not let the tile
+            // issue a second start/stop request while that transition is live.
             syncTile()
             return
         }
@@ -41,7 +48,12 @@ class EnvironmentalMonitoringTileService : TileService() {
         val monitoringState = EnvironmentalMonitoringState.get(this)
         qsTile?.apply {
             label = "Environmental Monitoring"
-            state = if (monitoringState == EnvironmentalMonitoringState.ACTIVE || monitoringState == EnvironmentalMonitoringState.STARTING) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            state = when (monitoringState) {
+                EnvironmentalMonitoringState.ACTIVE -> Tile.STATE_ACTIVE
+                EnvironmentalMonitoringState.STARTING,
+                EnvironmentalMonitoringState.STOPPING -> Tile.STATE_UNAVAILABLE
+                else -> Tile.STATE_INACTIVE
+            }
             icon = Icon.createWithResource(this@EnvironmentalMonitoringTileService, android.R.drawable.ic_btn_speak_now)
             updateTile()
         }
