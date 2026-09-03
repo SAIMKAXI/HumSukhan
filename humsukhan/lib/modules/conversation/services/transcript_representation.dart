@@ -30,10 +30,6 @@ class TranscriptRepresentation {
       return const PreparedTranscript(text: '', segments: [], language: 'English');
     }
 
-    // In Everyday Auto, Devanagari coming back for Urdu is normalized into
-    // Urdu script before display. This is deliberately limited to the app's
-    // supported Urdu/English conversational path rather than treating every
-    // Devanagari transcript as Urdu globally.
     if (normalizedSelection == 'auto' && _containsDevanagari(value)) {
       value = devanagariToUrdu(value);
     }
@@ -44,9 +40,8 @@ class TranscriptRepresentation {
 
     for (final segment in parsed) {
       if (romanize && segment.script == CaptionScript.arabic) {
-        final roman = urduToRoman(segment.text);
         output.add(CaptionSegment(
-          text: roman,
+          text: urduToRoman(segment.text),
           language: 'Roman Urdu',
           script: CaptionScript.romanUrdu,
         ));
@@ -69,6 +64,13 @@ class TranscriptRepresentation {
   }
 
   static bool _containsDevanagari(String text) => RegExp(r'[\u0900-\u097F]').hasMatch(text);
+
+  static Iterable<String> _tokensWithWhitespace(String text) sync* {
+    final tokenPattern = RegExp(r'\s+|\S+');
+    for (final match in tokenPattern.allMatches(text)) {
+      yield match.group(0)!;
+    }
+  }
 
   /// Conservative Urdu-oriented Devanagari normalization. Common Urdu words
   /// get exact lexical mappings first; unknown characters fall back to a
@@ -116,18 +118,21 @@ class TranscriptRepresentation {
       'चाहिए': 'چاہیے',
     };
 
-    final tokens = text.split(RegExp(r'(\s+)'));
-    return tokens.map((token) {
-      if (token.trim().isEmpty) return token;
-      final leading = token.substring(0, token.length - token.trimLeft().length);
-      final trailing = token.substring(token.trimRight().length);
+    final out = StringBuffer();
+    for (final token in _tokensWithWhitespace(text)) {
+      if (token.trim().isEmpty) {
+        out.write(token);
+        continue;
+      }
       final core = token.trim();
-      final punctuation = RegExp(r'^[\u0964\u0965,.!?؟،]+|[\u0964\u0965,.!?؟،]+$');
-      final clean = core.replaceAll(punctuation, '');
+      final match = RegExp(r'^([\u0964\u0965,.!?؟،]*)(.*?)([\u0964\u0965,.!?؟،]*)$').firstMatch(core)!;
+      final clean = match.group(2)!;
       final mapped = words[clean] ?? _devanagariCharacterMap(clean);
-      final suffix = core.substring(clean.length);
-      return '$leading$mapped$suffix$trailing';
-    }).join();
+      out.write(match.group(1));
+      out.write(mapped);
+      out.write(match.group(3));
+    }
+    return out.toString();
   }
 
   static String _devanagariCharacterMap(String value) {
@@ -193,28 +198,24 @@ class TranscriptRepresentation {
       'چاہیے': 'chahiye',
     };
 
-    // Translate complete whitespace-delimited words first, while retaining
-    // surrounding punctuation. Unknown words fall back to the conservative
-    // character transliterator below.
-    final tokens = text.split(RegExp(r'(\s+)'));
-    final tokenOutput = <String>[];
-    for (final token in tokens) {
+    final out = StringBuffer();
+    for (final token in _tokensWithWhitespace(text)) {
       if (token.trim().isEmpty) {
-        tokenOutput.add(token);
+        out.write(token);
         continue;
       }
-      final leading = token.substring(0, token.length - token.trimLeft().length);
-      final trailing = token.substring(token.trimRight().length);
       final core = token.trim();
       final match = RegExp(r'^([^\u0600-\u06FF]*)([\u0600-\u06FF]+)([^\u0600-\u06FF]*)$').firstMatch(core);
       if (match != null) {
         final mapped = words[match.group(2)!] ?? _urduCharacterMap(match.group(2)!);
-        tokenOutput.add('$leading${match.group(1)}$mapped${match.group(3)}$trailing');
+        out.write(match.group(1));
+        out.write(mapped);
+        out.write(match.group(3));
       } else {
-        tokenOutput.add('$leading${_urduCharacterMap(core)}$trailing');
+        out.write(_urduCharacterMap(core));
       }
     }
-    return tokenOutput.join().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return out.toString().trim();
   }
 
   static String _urduCharacterMap(String text) {
