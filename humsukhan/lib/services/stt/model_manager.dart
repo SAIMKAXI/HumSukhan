@@ -6,8 +6,9 @@ import 'package:path_provider/path_provider.dart';
 
 /// Manages Sherpa-ONNX language models for offline speech recognition.
 ///
-/// Models are downloaded as individual files from HuggingFace (no archive
-/// extraction needed). Each language requires specific .onnx and .txt files.
+/// Only models whose output language is unambiguous for HumSukhan are exposed
+/// here. A mixed-language recognizer is intentionally not accepted as an Urdu
+/// fallback because its output cannot be constrained reliably at model level.
 class ModelManager {
   static ModelManager? _instance;
   static ModelManager get instance => _instance ??= ModelManager._();
@@ -21,7 +22,6 @@ class ModelManager {
   Stream<ModelDownloadProgress> get onProgress => _progressController.stream;
   Map<String, ModelStatus> get statuses => Map.unmodifiable(_modelStatuses);
 
-  /// Available models for the app with individual file download URLs.
   static const Map<String, LanguageModel> availableModels = {
     'English': LanguageModel(
       id: 'english_zipformer',
@@ -38,28 +38,10 @@ class ModelManager {
       languages: ['English'],
       baseUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-en-zh-2023-02-20/resolve/main',
     ),
-    'Urdu': LanguageModel(
-      id: 'urdu_dolphin',
-      name: 'Urdu/Hindi (Dolphin CTC)',
-      description: 'Offline speech recognition for Urdu and Hindi',
-      modelDir: 'sherpa-onnx-dolphin-small-ctc-multi-lang-2025-04-02',
-      encoder: '',
-      decoder: '',
-      joiner: '',
-      tokens: 'tokens.txt',
-      modelFile: 'model.int8.onnx',
-      sampleRate: 16000,
-      sizeMB: 239,
-      isStreaming: false,
-      languages: ['Urdu', 'Hindi'],
-      baseUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-dolphin-small-ctc-multi-lang-int8-2025-04-02/resolve/main',
-    ),
   };
 
-  /// Initialize the model manager and check which models are downloaded.
   Future<void> initialize() async {
     if (_initialized) return;
-
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final modelsDir = Directory('${appDir.path}/sherpa_models');
@@ -85,7 +67,6 @@ class ModelManager {
     }
   }
 
-  /// Verify that all required model files exist and are non-empty.
   Future<bool> _verifyModelFiles(LanguageModel model, String dirPath) async {
     final requiredFiles = <String>[model.tokens];
     if (model.isStreaming) {
@@ -103,7 +84,6 @@ class ModelManager {
     return true;
   }
 
-  /// Get the local path for a downloaded model.
   Future<String?> getModelPath(String language) async {
     final status = _modelStatuses[language];
     if (status == null || !status.isDownloaded || status.localPath == null) {
@@ -112,17 +92,15 @@ class ModelManager {
     return status.localPath;
   }
 
-  /// Check if a model is downloaded and ready to use.
   bool isModelReady(String language) {
     final status = _modelStatuses[language];
     return status?.isDownloaded == true && status?.localPath != null;
   }
 
-  /// Download individual model files for the specified language.
   Future<bool> downloadModel(String language) async {
     final model = availableModels[language];
     if (model == null) {
-      debugPrint('No model available for $language');
+      debugPrint('No approved offline model available for $language');
       return false;
     }
 
@@ -141,14 +119,10 @@ class ModelManager {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final modelsDir = Directory('${appDir.path}/sherpa_models');
-      if (!await modelsDir.exists()) {
-        await modelsDir.create(recursive: true);
-      }
+      if (!await modelsDir.exists()) await modelsDir.create(recursive: true);
 
       final targetDir = Directory('${modelsDir.path}/${model.modelDir}');
-      if (!await targetDir.exists()) {
-        await targetDir.create(recursive: true);
-      }
+      if (!await targetDir.exists()) await targetDir.create(recursive: true);
 
       final filesToDownload = <String>[model.tokens];
       if (model.isStreaming) {
@@ -229,48 +203,35 @@ class ModelManager {
         progress: 1.0,
         status: DownloadStatus.completed,
       ));
-
-      debugPrint('Model download completed for $language');
       return true;
     } catch (e) {
       debugPrint('Model download failed for $language: $e');
-
       _modelStatuses[language] = _modelStatuses[language]!.copyWith(
         isDownloading: false,
         downloadProgress: 0.0,
       );
-
       _progressController.add(ModelDownloadProgress(
         language: language,
         progress: 0.0,
         status: DownloadStatus.failed,
         error: e.toString(),
       ));
-
       return false;
     }
   }
 
-  /// Delete a downloaded model to free up space.
   Future<bool> deleteModel(String language) async {
     final status = _modelStatuses[language];
-    if (status == null || !status.isDownloaded || status.localPath == null) {
-      return false;
-    }
+    if (status == null || !status.isDownloaded || status.localPath == null) return false;
 
     try {
       final dir = Directory(status.localPath!);
-      if (await dir.exists()) {
-        await dir.delete(recursive: true);
-      }
-
+      if (await dir.exists()) await dir.delete(recursive: true);
       _modelStatuses[language] = status.copyWith(
         isDownloaded: false,
         localPath: null,
         downloadProgress: 0.0,
       );
-
-      debugPrint('Model deleted for $language');
       return true;
     } catch (e) {
       debugPrint('Failed to delete model for $language: $e');
@@ -278,17 +239,14 @@ class ModelManager {
     }
   }
 
-  /// Get the best model for a given language.
   LanguageModel? getBestModel(String language) {
     for (final model in availableModels.values) {
-      if (model.languages.contains(language) && model.isStreaming) {
-        if (isModelReady(language)) return model;
+      if (model.languages.contains(language) && model.isStreaming && isModelReady(language)) {
+        return model;
       }
     }
     for (final model in availableModels.values) {
-      if (model.languages.contains(language)) {
-        if (isModelReady(language)) return model;
-      }
+      if (model.languages.contains(language) && isModelReady(language)) return model;
     }
     return null;
   }
