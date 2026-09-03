@@ -9,7 +9,6 @@ import 'package:share_plus/share_plus.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
-import '../theme/app_theme.dart';
 import '../widgets/reusable_widgets.dart';
 import '../widgets/speakable_caption_bubble.dart';
 
@@ -86,8 +85,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         ),
         body: TabBarView(
           children: [
-            _overview(context, session, insight, strings),
-            _transcript(context, session, strings),
+            _overview(context, session, strings),
+            _transcript(context, session),
             _summary(context, insight, strings),
             _actions(context, insight, strings),
           ],
@@ -99,7 +98,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Widget _overview(
     BuildContext context,
     ProfessionalSession session,
-    ProfessionalInsight? insight,
     AppStrings strings,
   ) {
     return SingleChildScrollView(
@@ -140,10 +138,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
           const SizedBox(height: 12),
           PrivacyNotice(text: strings.savedRecordsNote),
-          if (insight?.isAvailable == true) ...[
-            const SizedBox(height: 16),
-            _summaryCard(context, insight!, strings),
-          ],
         ],
       ),
     );
@@ -175,9 +169,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Widget _transcript(
     BuildContext context,
     ProfessionalSession session,
-    AppStrings strings,
   ) {
     if (session.captions.isEmpty) {
+      final strings = AppStrings.of(context);
       return EmptyState(
         icon: Icons.subtitles_off,
         title: strings.noTranscriptAvailable,
@@ -241,17 +235,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           const AiDisclaimer(),
           const SizedBox(height: 12),
           _summaryCard(context, insight, strings),
-          if (insight.actionItems.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            InsightCard(
-              title: strings.actionItems,
-              icon: Icons.check_circle_outline,
-              items: insight.actionItems,
-              iconColor: AppTheme.secondaryLight,
-            ),
-          ],
           if (insight.deadlines.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             InsightCard(
               title: strings.deadlines,
               icon: Icons.schedule,
@@ -339,32 +324,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          InsightCard(
-            title: strings.actionItems,
-            icon: Icons.task_alt,
-            items: insight.actionItems,
-            iconColor: AppTheme.secondaryLight,
-          ),
-          if (insight.deadlines.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            InsightCard(
-              title: strings.deadlines,
-              icon: Icons.schedule,
-              items: insight.deadlines,
-              iconColor: AppTheme.warningLight,
-            ),
-          ],
-          if (insight.mentionedPeople.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            InsightCard(
-              title: strings.peopleMentioned,
-              icon: Icons.people_outline,
-              items: insight.mentionedPeople,
-            ),
-          ],
-        ],
+      child: InsightCard(
+        title: strings.actionItems,
+        icon: Icons.task_alt,
+        items: insight.actionItems,
+        iconColor: AppTheme.secondaryLight,
       ),
     );
   }
