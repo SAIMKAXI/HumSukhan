@@ -28,7 +28,28 @@ void main() {
     );
   });
 
-  test('mixed captions receive directional isolation marks', () {
+  test('Roman Urdu is promoted to Urdu script only when a known mapping exists', () {
+    expect(
+      EverydayLanguagePolicy.normalizeRomanUrdu('aap kaise hain'),
+      'آپ کیسے ہیں',
+    );
+    expect(
+      EverydayLanguagePolicy.normalizeRomanUrdu('kal meeting hai at 5'),
+      'کل meeting ہے at 5',
+    );
+    expect(
+      EverydayLanguagePolicy.normalizeRomanUrdu('Hello world'),
+      'Hello world',
+    );
+  });
+
+  test('Hindi is never reintroduced by Roman Urdu normalization', () {
+    final result = EverydayLanguagePolicy.normalizeRomanUrdu('आप aap');
+    expect(result.contains('आप'), isFalse);
+    expect(result, 'آپ');
+  });
+
+  test('legacy directional helper remains available for non-UI callers', () {
     final result = EverydayLanguagePolicy.withBidiIsolation('Hello آپ');
     expect(result, contains('\u2066Hello\u2069'));
     expect(result, contains('\u2067آپ\u2069'));
