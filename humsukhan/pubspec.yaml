@@ -1,9 +1,9 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 2.3.7+27
+version: 2.3.8+28
 
-# Release v2.3.7
+# Release v2.3.8
 # Release build fix: use a compatible record_linux implementation.
 
 environment:
