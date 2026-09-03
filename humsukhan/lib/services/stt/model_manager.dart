@@ -6,8 +6,9 @@ import 'package:path_provider/path_provider.dart';
 
 /// Manages Sherpa-ONNX language models for offline speech recognition.
 ///
-/// Models are downloaded as individual files from HuggingFace (no archive
-/// extraction needed). Each language requires specific .onnx and .txt files.
+/// Models are downloaded as individual files from Hugging Face. The URLs are
+/// pinned to repositories whose file layout matches the Sherpa-ONNX runtime
+/// configuration used by the app.
 class ModelManager {
   static ModelManager? _instance;
   static ModelManager get instance => _instance ??= ModelManager._();
@@ -27,22 +28,22 @@ class ModelManager {
       id: 'english_zipformer',
       name: 'English (Zipformer Streaming)',
       description: 'Real-time streaming speech recognition for English',
-      modelDir: 'sherpa-onnx-streaming-zipformer-bilingual-en-zh-2023-02-20',
-      encoder: 'encoder-epoch-99-avg-1-chunk-16-left-64.onnx',
-      decoder: 'decoder-epoch-99-avg-1-chunk-16-left-64.onnx',
-      joiner: 'joiner-epoch-99-avg-1-chunk-16-left-64.onnx',
+      modelDir: 'sherpa-onnx-streaming-zipformer-en-2023-06-26',
+      encoder: 'encoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx',
+      decoder: 'decoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx',
+      joiner: 'joiner-epoch-99-avg-1-chunk-16-left-64.int8.onnx',
       tokens: 'tokens.txt',
       sampleRate: 16000,
-      sizeMB: 80,
+      sizeMB: 73,
       isStreaming: true,
       languages: ['English'],
-      baseUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-en-zh-2023-02-20/resolve/main',
+      baseUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main',
     ),
     'Urdu': LanguageModel(
       id: 'urdu_dolphin',
       name: 'Urdu/Hindi (Dolphin CTC)',
       description: 'Offline speech recognition for Urdu and Hindi',
-      modelDir: 'sherpa-onnx-dolphin-small-ctc-multi-lang-2025-04-02',
+      modelDir: 'sherpa-onnx-dolphin-small-ctc-multi-lang-int8-2025-04-02',
       encoder: '',
       decoder: '',
       joiner: '',
@@ -131,8 +132,10 @@ class ModelManager {
       return false;
     }
 
-    // Mark as downloading
-    _modelStatuses[language] = status.copyWith(isDownloading: true, downloadProgress: 0.0);
+    _modelStatuses[language] = status.copyWith(
+      isDownloading: true,
+      downloadProgress: 0.0,
+    );
     _progressController.add(ModelDownloadProgress(
       language: language,
       progress: 0.0,
@@ -151,7 +154,6 @@ class ModelManager {
         await targetDir.create(recursive: true);
       }
 
-      // Collect all files to download
       final filesToDownload = <String>[model.tokens];
       if (model.isStreaming) {
         filesToDownload.addAll([model.encoder, model.decoder, model.joiner]);
@@ -159,7 +161,6 @@ class ModelManager {
         filesToDownload.add(model.modelFile!);
       }
 
-      // Download each file individually
       final client = http.Client();
       try {
         for (int i = 0; i < filesToDownload.length; i++) {
@@ -167,22 +168,49 @@ class ModelManager {
           final fileUrl = '${model.baseUrl}/$fileName';
           final targetFile = File('${targetDir.path}/$fileName');
 
-          // Skip if already exists
           if (await targetFile.exists()) {
             final stat = await targetFile.stat();
-            if (stat.size > 0) continue;
+            if (stat.size > 0) {
+              final progress = (i + 1) / filesToDownload.length;
+              _progressController.add(ModelDownloadProgress(
+                language: language,
+                progress: progress,
+                status: DownloadStatus.downloading,
+              ));
+              _modelStatuses[language] = _modelStatuses[language]!.copyWith(
+                downloadProgress: progress,
+              );
+              continue;
+            }
+            await targetFile.delete();
           }
 
-          debugPrint('Downloading $fileName for $language...');
-          final response = await client.get(Uri.parse(fileUrl));
+          debugPrint('Downloading $fileName for $language from $fileUrl');
+          final response = await client
+              .get(Uri.parse(fileUrl))
+              .timeout(const Duration(minutes: 10));
 
-          if (response.statusCode != 200) {
-            throw Exception('Failed to download $fileName: HTTP ${response.statusCode}');
+          if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
+            throw Exception(
+              'Failed to download $fileName: HTTP ${response.statusCode}',
+            );
           }
 
-          // Write to .part file, then rename for atomicity
           final partFile = File('${targetFile.path}.part');
-          await partFile.writeAsBytes(response.bodyBytes);
+          if (await partFile.exists()) {
+            await partFile.delete();
+          }
+          await partFile.writeAsBytes(response.bodyBytes, flush: true);
+
+          final downloadedSize = await partFile.length();
+          if (downloadedSize == 0) {
+            await partFile.delete();
+            throw Exception('Downloaded $fileName is empty');
+          }
+
+          if (await targetFile.exists()) {
+            await targetFile.delete();
+          }
           await partFile.rename(targetFile.path);
 
           final progress = (i + 1) / filesToDownload.length;
@@ -199,12 +227,10 @@ class ModelManager {
         client.close();
       }
 
-      // Verify all files are present
       if (!await _verifyModelFiles(model, targetDir.path)) {
         throw Exception('Downloaded files verification failed');
       }
 
-      // Mark as downloaded
       _modelStatuses[language] = ModelStatus(
         model: model,
         isDownloaded: true,
@@ -354,7 +380,7 @@ class ModelStatus {
       isDownloaded: isDownloaded ?? this.isDownloaded,
       isDownloading: isDownloading ?? this.isDownloading,
       downloadProgress: downloadProgress ?? this.downloadProgress,
-      localPath: localPath ?? this.localPath,
+      localPath: localPath,
     );
   }
 
