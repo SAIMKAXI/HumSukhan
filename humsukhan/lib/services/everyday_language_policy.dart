@@ -36,55 +36,49 @@ class EverydayLanguagePolicy {
   static String withBidiIsolation(String text) {
     final value = sanitizeHindi(text).trim();
     if (value.isEmpty) return value;
-    final tokens = _tokensWithWhitespace(value);
     final out = StringBuffer();
-    var lastWasWhitespace = false;
-    for (final token in tokens) {
-      if (token.trim().isEmpty) {
-        if (!lastWasWhitespace && out.isNotEmpty) out.write(' ');
-        lastWasWhitespace = true;
-        continue;
-      }
-      if (out.isNotEmpty && !lastWasWhitespace) out.write(' ');
-      if (containsUrduScript(token)) {
-        out.write('\u2067'); // RLI
-        out.write(token);
-        out.write('\u2069'); // PDI
-      } else if (containsLatin(token)) {
-        out.write('\u2066'); // LRI
-        out.write(token);
-        out.write('\u2069'); // PDI
-      } else {
-        out.write(token);
-      }
-      lastWasWhitespace = false;
-    }
+    var wroteToken = false;
+    value.splitMapJoin(
+      RegExp(r'\S+'),
+      onMatch: (match) {
+        final token = match.group(0)!;
+        if (wroteToken) out.write(' ');
+        if (containsUrduScript(token)) {
+          out.write('\u2067'); // RLI
+          out.write(token);
+          out.write('\u2069'); // PDI
+        } else if (containsLatin(token)) {
+          out.write('\u2066'); // LRI
+          out.write(token);
+          out.write('\u2069'); // PDI
+        } else {
+          out.write(token);
+        }
+        wroteToken = true;
+        return '';
+      },
+      onNonMatch: (nonMatch) {
+        if (nonMatch.trim().isNotEmpty) {
+          if (wroteToken) out.write(' ');
+          out.write(nonMatch.trim());
+          wroteToken = true;
+        }
+        return '';
+      },
+    );
     return out.toString();
   }
 
   /// Roman Urdu is only applied to Urdu-script runs. English is preserved.
+  /// Whitespace is preserved exactly so transliteration never glues words.
   static String toEnglishMode(String text) {
     final sanitized = sanitizeHindi(text);
     if (sanitized.isEmpty) return sanitized;
 
-    final out = StringBuffer();
-    for (final piece in _tokensWithWhitespace(sanitized)) {
-      if (piece.trim().isEmpty) {
-        out.write(piece);
-      } else if (containsUrduScript(piece)) {
-        out.write(_romanizeWord(piece));
-      } else {
-        out.write(piece);
-      }
-    }
-    return out.toString().trim();
-  }
-
-  static Iterable<String> _tokensWithWhitespace(String text) sync* {
-    final tokenPattern = RegExp(r'\s+|\S+');
-    for (final match in tokenPattern.allMatches(text)) {
-      yield match.group(0)!;
-    }
+    return sanitized.replaceAllMapped(RegExp(r'\S+'), (match) {
+      final piece = match.group(0)!;
+      return containsUrduScript(piece) ? _romanizeWord(piece) : piece;
+    }).trim();
   }
 
   static final Map<String, String> _common = <String, String>{
