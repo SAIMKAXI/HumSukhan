@@ -27,10 +27,6 @@ class ConversationPauseOptions {
 }
 
 /// Deterministic orchestration for Conversational Mode.
-///
-/// Everyday Mode now exposes one consolidated speech provider, so the engine
-/// never accidentally binds itself to the legacy provider's separate TTS/STT
-/// runtime.
 class ConversationEngine extends ChangeNotifier {
   static const _pausePreferenceKey = 'conversationPauseMs';
 
@@ -261,7 +257,7 @@ class ConversationEngine extends ChangeNotifier {
       _cancelSilenceTimer();
       _turnGeneration++;
       await speech.stopListening();
-      conversation.endConversation();
+      conversation.stopConversation();
       _latestTranscript = '';
       _latestLanguage = 'English';
       _state = ConversationEngineState.idle;
