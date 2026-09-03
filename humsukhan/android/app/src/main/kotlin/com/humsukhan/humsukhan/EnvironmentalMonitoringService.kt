@@ -36,10 +36,7 @@ class EnvironmentalMonitoringService : Service() {
     private var stopping = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    override fun onCreate() {
-        super.onCreate()
-        createNotificationChannel()
-    }
+    override fun onCreate() { super.onCreate(); createNotificationChannel() }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -61,14 +58,13 @@ class EnvironmentalMonitoringService : Service() {
         try {
             val notification = buildMonitoringNotification("Environmental monitoring: starting")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ServiceCompat.startForeground(this, NOTIFICATION_ID, notification,
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
             EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
-            stopSelf()
+            cleanupAndStop()
             return
         }
         startFlutterBackgroundEngine()
@@ -88,8 +84,12 @@ class EnvironmentalMonitoringService : Service() {
                 when (call.method) {
                     "pipelineState" -> {
                         val state = call.argument<String>("state") ?: EnvironmentalMonitoringState.ERROR
-                        EnvironmentalMonitoringState.set(this, state)
-                        updateMonitoringNotification(state)
+                        if (state == EnvironmentalMonitoringState.ACTIVE && !hasLiveEngine()) {
+                            EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
+                        } else {
+                            EnvironmentalMonitoringState.set(this, state)
+                            updateMonitoringNotification(state)
+                        }
                         result.success(true)
                     }
                     "event" -> {
@@ -110,12 +110,14 @@ class EnvironmentalMonitoringService : Service() {
         }
     }
 
+    private fun hasLiveEngine(): Boolean = engine != null && channel != null && !stopping
+
     private fun stopMonitoring() {
         if (stopping) return
         stopping = true
         EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.STOPPING)
         try { channel?.invokeMethod("stop", null) } catch (_: Exception) {}
-        mainHandler.postDelayed({ cleanupAndStop() }, 400L)
+        mainHandler.postDelayed({ cleanupAndStop() }, 500L)
     }
 
     private fun cleanupAndStop() {
@@ -123,39 +125,29 @@ class EnvironmentalMonitoringService : Service() {
         channel = null
         engine?.destroy()
         engine = null
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION") stopForeground(true)
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE) else { @Suppress("DEPRECATION") stopForeground(true) }
         EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.OFF)
         stopping = false
         stopSelf()
     }
 
     private fun handleSoundEvent(type: String, confidence: Double, severity: String) {
+        if (EnvironmentalMonitoringState.get(this) != EnvironmentalMonitoringState.ACTIVE) return
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildMonitoringNotification("$type detected • local/offline"))
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            getSystemService(VibratorManager::class.java).defaultVibrator
-        } else {
-            @Suppress("DEPRECATION") getSystemService(VIBRATOR_SERVICE) as Vibrator
-        }
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) getSystemService(VibratorManager::class.java).defaultVibrator else { @Suppress("DEPRECATION") getSystemService(VIBRATOR_SERVICE) as Vibrator }
         val duration = if (severity == "critical") 700L else 250L
         vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE))
         sendBroadcast(Intent(EnvironmentalMonitoringState.ACTION_STATE).setPackage(packageName)
             .putExtra(EnvironmentalMonitoringState.EXTRA_STATE, EnvironmentalMonitoringState.ACTIVE)
-            .putExtra(EnvironmentalMonitoringState.EXTRA_EVENT, JSONObject()
-                .put("type", type).put("confidence", confidence).put("severity", severity).toString()))
+            .putExtra(EnvironmentalMonitoringState.EXTRA_EVENT, JSONObject().put("type", type).put("confidence", confidence).put("severity", severity).toString()))
     }
 
     private fun buildMonitoringNotification(text: String): Notification {
         val stopIntent = Intent(this, EnvironmentalMonitoringService::class.java).setAction(EnvironmentalMonitoringState.ACTION_STOP)
-        val stopPendingIntent = PendingIntent.getService(this, 4108, stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val stopPendingIntent = PendingIntent.getService(this, 4108, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val openIntent = Intent(this, MainActivity::class.java)
-        val openPendingIntent = PendingIntent.getActivity(this, 4109, openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val openPendingIntent = PendingIntent.getActivity(this, 4109, openIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("HumSukhan Environmental Monitoring")
@@ -186,15 +178,14 @@ class EnvironmentalMonitoringService : Service() {
         }
     }
 
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-    }
+    override fun onTaskRemoved(rootIntent: Intent?) { super.onTaskRemoved(rootIntent) }
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
         channel = null
         engine?.destroy()
         engine = null
+        if (EnvironmentalMonitoringState.get(this) != EnvironmentalMonitoringState.OFF) EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.OFF)
         super.onDestroy()
     }
 
