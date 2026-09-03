@@ -84,7 +84,9 @@ class EverydayBilingualSttService {
       return null;
     }
     try {
-      final response = await client.functions.invoke('deepgram-token').timeout(const Duration(seconds: 5));
+      final response = await client.functions
+          .invoke('deepgram-token')
+          .timeout(const Duration(seconds: 5));
       final data = response.data;
       if (data is! Map) {
         _lastStartError = 'Deepgram token service returned an invalid response.';
@@ -133,6 +135,7 @@ class EverydayBilingualSttService {
     if (_recording) return true;
     _mode = _normalizeMode(mode);
     _lastStartError = null;
+
     final permission = await Permission.microphone.status;
     if (!permission.isGranted) {
       final requested = await Permission.microphone.request();
@@ -358,9 +361,9 @@ class EverydayBilingualSttService {
       final punctuationOnly = RegExp(r'^[,.!?;:%)\]}]+$').hasMatch(text);
       if (out.isNotEmpty && !punctuationOnly) out.write(' ');
       if (_mode != 'English' && word.source == 'Urdu') {
-        out.write(text);
+        out.write('\u2067$text\u2069');
       } else {
-        out.write(text);
+        out.write('\u2066$text\u2069');
       }
     }
     return out.toString().trim();
@@ -384,7 +387,7 @@ class EverydayBilingualSttService {
             ? _urduConfidence
             : _englishConfidence;
     _controller.add(EverydayBilingualResult(
-      text: text,
+      text: EverydayLanguagePolicy.sanitizeHindi(text),
       language: language,
       isFinal: complete,
       confidence: confidence,
