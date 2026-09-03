@@ -3,6 +3,8 @@ import 'package:humsukhan/providers/speech_provider.dart';
 import 'package:humsukhan/services/everyday_language_policy.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('Devanagari is removed before caption or language routing', () {
     const blocked = '\u092f\u0939 \u0926\u0947\u0935\u0928\u093e\u0917\u0930\u0940';
     final cleaned = EverydayLanguagePolicy.sanitizeHindi(blocked);
