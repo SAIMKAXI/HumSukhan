@@ -26,6 +26,7 @@ class ResilientTtsProvider implements TtsProvider {
   bool _initialized = false;
   int _speakGeneration = 0;
   static const int _maxCloudCacheEntries = 12;
+  static const Duration _nativeSpeechTimeout = Duration(seconds: 90);
 
   @override
   Future<bool> initialize() async {
@@ -130,8 +131,14 @@ class ResilientTtsProvider implements TtsProvider {
     _speaking = true;
     try {
       await _native.speak(text);
-      while (_speaking) {
+      final deadline = DateTime.now().add(_nativeSpeechTimeout);
+      while (_speaking && DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(milliseconds: 40));
+      }
+      if (_speaking) {
+        try { await _native.stop(); } catch (_) {}
+        _speaking = false;
+        throw TimeoutException('Native TTS did not complete within ${_nativeSpeechTimeout.inSeconds} seconds');
       }
     } finally {
       _speaking = false;
