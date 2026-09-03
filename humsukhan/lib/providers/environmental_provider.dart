@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import '../services/alert_service.dart';
+import '../services/audio_model_manager.dart';
 import '../services/environmental_monitoring_bridge.dart';
 import '../services/sound_detection_service.dart';
 import 'settings_provider.dart';
@@ -24,6 +25,7 @@ class EnvironmentalProvider extends ChangeNotifier {
 
   final EnvironmentalMonitoringBridge _bridge = EnvironmentalMonitoringBridge.instance;
   final SoundDetectionService _soundService = SoundDetectionService.instance;
+  final AudioModelManager _modelManager = AudioModelManager.instance;
   final List<SoundEvent> _alertHistory = [];
 
   SoundEvent? _currentAlert;
@@ -32,21 +34,26 @@ class EnvironmentalProvider extends ChangeNotifier {
   DateTime? _lastAlertTime;
   SettingsProvider? _settingsProvider;
   bool _bridgeInitialized = false;
+  bool _usingInAppFallback = false;
   String? _errorMessage;
   Future<void> _historyWriteQueue = Future.value();
 
   void setSettingsProvider(SettingsProvider settings) => _settingsProvider = settings;
 
-  // STARTING/STOPPING are transitional states only. The product must never
-  // advertise monitoring as active until the microphone pipeline reports ACTIVE.
   bool get monitoringEnabled => _monitoringState == 'ACTIVE';
   String get monitoringState => _monitoringState;
   bool get isStarting => _monitoringState == 'STARTING';
   bool get isStopping => _monitoringState == 'STOPPING';
   bool get hasError => _monitoringState == 'ERROR';
-  bool get isProcessing => Platform.isAndroid ? _bridge.isActive : _soundService.isMonitoring;
-  bool get isMicrophoneReady => Platform.isAndroid ? _bridge.isActive : _soundService.isMicrophoneReady;
-  bool get isModelReady => Platform.isAndroid ? _bridge.isActive && !hasError : _soundService.isModelReady;
+  bool get isProcessing => Platform.isAndroid
+      ? (_usingInAppFallback ? _soundService.isMonitoring : _bridge.isActive)
+      : _soundService.isMonitoring;
+  bool get isMicrophoneReady => Platform.isAndroid
+      ? (_usingInAppFallback ? _soundService.isMicrophoneReady : _bridge.isActive)
+      : _soundService.isMicrophoneReady;
+  bool get isModelReady => Platform.isAndroid
+      ? (_usingInAppFallback ? _soundService.isModelReady : _bridge.isActive && !hasError)
+      : _soundService.isModelReady;
   String? get errorMessage => _errorMessage;
   bool get isLocal => true;
   String get environmentalStatus => monitoringEnabled ? 'Monitoring locally' : 'Off';
@@ -121,6 +128,9 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (_bridgeInitialized) return;
     _bridgeInitialized = true;
     await _bridge.initialize(onChange: (state, event) {
+      // A late native callback must not steal ownership back from the in-app
+      // fallback after a native start failure has already been handled.
+      if (_usingInAppFallback && state != 'OFF') return;
       _monitoringState = state;
       if (event != null) {
         final type = event['type']?.toString();
@@ -137,6 +147,11 @@ class EnvironmentalProvider extends ChangeNotifier {
     });
   }
 
+  Future<bool> _prepareModel() async {
+    if (await _modelManager.initialize()) return true;
+    return _modelManager.downloadModel();
+  }
+
   Future<void> toggleMonitoring() async {
     if (isStarting || isStopping) return;
 
@@ -146,10 +161,16 @@ class EnvironmentalProvider extends ChangeNotifier {
       notifyListeners();
 
       if (Platform.isAndroid) {
-        final stopped = await _bridge.stop();
-        if (!stopped) {
-          _monitoringState = 'ERROR';
-          _errorMessage = 'Environmental monitoring could not be stopped safely. Try again.';
+        if (_usingInAppFallback) {
+          _soundService.stopMonitoring();
+          _usingInAppFallback = false;
+          _monitoringState = 'OFF';
+        } else {
+          final stopped = await _bridge.stop();
+          if (!stopped) {
+            _monitoringState = 'ERROR';
+            _errorMessage = 'Environmental monitoring could not be stopped safely. Try again.';
+          }
         }
       } else {
         _soundService.stopMonitoring();
@@ -170,31 +191,73 @@ class EnvironmentalProvider extends ChangeNotifier {
       return;
     }
 
-    _monitoringState = 'STARTING';
-    notifyListeners();
-
     if (Platform.isAndroid) {
-      final started = await _bridge.start();
-      if (started) {
-        _monitoringState = _bridge.state;
-        if (_monitoringState != 'ACTIVE') {
-          _monitoringState = 'ERROR';
-          _errorMessage = 'The environmental monitoring service did not confirm an active microphone pipeline.';
-        }
-      } else {
-        _monitoringState = _bridge.state == 'ERROR' ? 'ERROR' : 'ERROR';
-        _errorMessage = 'The environmental monitoring service could not start. Check microphone permission and try again.';
+      // Prepare the ML model in the primary Flutter engine. The Android
+      // foreground service then starts against a model that is already local,
+      // avoiding network/filesystem/plugin races in its secondary engine.
+      _monitoringState = 'STARTING';
+      _usingInAppFallback = false;
+      notifyListeners();
+      final modelReady = await _prepareModel();
+      if (!modelReady) {
+        _monitoringState = 'ERROR';
+        _errorMessage = 'The environmental sound model could not be prepared. Connect to the internet once, then try again.';
+        notifyListeners();
+        return;
       }
+
+      final started = await _bridge.start();
+      if (started && _bridge.state == 'ACTIVE') {
+        _usingInAppFallback = false;
+        _monitoringState = 'ACTIVE';
+        notifyListeners();
+        return;
+      }
+
+      // Fallback is safe only after the native bridge proves it is OFF.
+      // Otherwise there could be two microphone owners during a transition.
+      if (_bridge.state != 'OFF') {
+        _monitoringState = 'ERROR';
+        _errorMessage = 'Environmental monitoring could not start safely because the background service is still changing state. Try again in a moment.';
+        notifyListeners();
+        return;
+      }
+
+      final initialized = await _soundService.initialize(requestPermission: false);
+      if (initialized && _soundService.isMicrophoneReady) {
+        _soundService.onSoundDetected = processSoundEvent;
+        final fallbackStarted = await _soundService.startMonitoring(permissionAlreadyGranted: true);
+        if (fallbackStarted) {
+          _usingInAppFallback = true;
+          _monitoringState = 'ACTIVE';
+          notifyListeners();
+          return;
+        }
+      }
+
+      _usingInAppFallback = false;
+      _monitoringState = 'ERROR';
+      _errorMessage = 'Environmental monitoring could not start. Check microphone permission and Android battery/background restrictions, then try again.';
       notifyListeners();
       return;
     }
 
     // iOS uses the in-app detector directly because the Android foreground
     // service bridge is not available there.
+    _monitoringState = 'STARTING';
+    notifyListeners();
     final initialized = await _soundService.initialize(requestPermission: false);
     if (!initialized || !_soundService.isMicrophoneReady) {
       _monitoringState = 'ERROR';
       _errorMessage = 'Microphone access is unavailable. Allow microphone access in App Settings, then try again.';
+      notifyListeners();
+      return;
+    }
+
+    final modelReady = await _prepareModel();
+    if (!modelReady) {
+      _monitoringState = 'ERROR';
+      _errorMessage = 'The environmental sound model could not be prepared. Connect to the internet once, then try again.';
       notifyListeners();
       return;
     }
@@ -269,7 +332,7 @@ class EnvironmentalProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    if (!Platform.isAndroid) _soundService.stopMonitoring();
+    _soundService.stopMonitoring();
     unawaited(_bridge.dispose());
     AlertService.instance.stopAll();
     super.dispose();

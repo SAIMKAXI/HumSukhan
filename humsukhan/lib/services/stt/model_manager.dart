@@ -131,7 +131,6 @@ class ModelManager {
       return false;
     }
 
-    // Mark as downloading
     _modelStatuses[language] = status.copyWith(isDownloading: true, downloadProgress: 0.0);
     _progressController.add(ModelDownloadProgress(
       language: language,
@@ -151,7 +150,6 @@ class ModelManager {
         await targetDir.create(recursive: true);
       }
 
-      // Collect all files to download
       final filesToDownload = <String>[model.tokens];
       if (model.isStreaming) {
         filesToDownload.addAll([model.encoder, model.decoder, model.joiner]);
@@ -159,7 +157,6 @@ class ModelManager {
         filesToDownload.add(model.modelFile!);
       }
 
-      // Download each file individually
       final client = http.Client();
       try {
         for (int i = 0; i < filesToDownload.length; i++) {
@@ -167,22 +164,38 @@ class ModelManager {
           final fileUrl = '${model.baseUrl}/$fileName';
           final targetFile = File('${targetDir.path}/$fileName');
 
-          // Skip if already exists
           if (await targetFile.exists()) {
             final stat = await targetFile.stat();
             if (stat.size > 0) continue;
           }
 
           debugPrint('Downloading $fileName for $language...');
-          final response = await client.get(Uri.parse(fileUrl));
-
-          if (response.statusCode != 200) {
-            throw Exception('Failed to download $fileName: HTTP ${response.statusCode}');
+          final request = http.Request('GET', Uri.parse(fileUrl));
+          final streamed = await client.send(request).timeout(const Duration(minutes: 10));
+          if (streamed.statusCode != 200) {
+            throw Exception('Failed to download $fileName: HTTP ${streamed.statusCode}');
           }
 
-          // Write to .part file, then rename for atomicity
           final partFile = File('${targetFile.path}.part');
-          await partFile.writeAsBytes(response.bodyBytes);
+          if (await partFile.exists()) await partFile.delete();
+          final sink = partFile.openWrite();
+          var bytesWritten = 0;
+          try {
+            await for (final chunk in streamed.stream.timeout(const Duration(minutes: 10))) {
+              sink.add(chunk);
+              bytesWritten += chunk.length;
+            }
+            await sink.flush();
+          } finally {
+            await sink.close();
+          }
+
+          if (bytesWritten == 0) {
+            if (await partFile.exists()) await partFile.delete();
+            throw Exception('Downloaded file is empty: $fileName');
+          }
+
+          if (await targetFile.exists()) await targetFile.delete();
           await partFile.rename(targetFile.path);
 
           final progress = (i + 1) / filesToDownload.length;
@@ -199,12 +212,10 @@ class ModelManager {
         client.close();
       }
 
-      // Verify all files are present
       if (!await _verifyModelFiles(model, targetDir.path)) {
         throw Exception('Downloaded files verification failed');
       }
 
-      // Mark as downloaded
       _modelStatuses[language] = ModelStatus(
         model: model,
         isDownloaded: true,

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
@@ -75,7 +76,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         try {
             cameraManager = getSystemService(Context.CAMERA_SERVICE) as? CameraManager
-            cameraId = cameraManager?.cameraIdList?.firstOrNull()
+            cameraId = findTorchCameraId(cameraManager)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -85,7 +86,7 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "turnOn" -> { turnOnTorch(); result.success(true) }
                     "turnOff" -> { turnOffTorch(); result.success(true) }
-                    "isAvailable" -> result.success(packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH))
+                    "isAvailable" -> result.success(cameraId != null)
                     else -> result.notImplemented()
                 }
             }
@@ -126,21 +127,34 @@ class MainActivity : FlutterActivity() {
             })
     }
 
-    private fun registerEnvironmentalReceiver() {
-        if (receiverRegistered) return
-        val filter = IntentFilter(EnvironmentalMonitoringState.ACTION_STATE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(environmentalReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION") registerReceiver(environmentalReceiver, filter)
+    private fun findTorchCameraId(manager: CameraManager?): String? {
+        if (manager == null) return null
+        for (id in manager.cameraIdList) {
+            try {
+                val characteristics = manager.getCameraCharacteristics(id)
+                val flashAvailable = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                val lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                if (flashAvailable && lensFacing != CameraCharacteristics.LENS_FACING_FRONT) {
+                    return id
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
-        receiverRegistered = true
-    }
 
-    private fun unregisterEnvironmentalReceiver() {
-        if (!receiverRegistered) return
-        try { unregisterReceiver(environmentalReceiver) } catch (_: Exception) {}
-        receiverRegistered = false
+        // Some devices expose only a front-facing flash-capable camera. Prefer
+        // it over reporting a false "available" state when no rear torch exists.
+        for (id in manager.cameraIdList) {
+            try {
+                val characteristics = manager.getCameraCharacteristics(id)
+                if (characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true) {
+                    return id
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return null
     }
 
     private fun turnOnTorch() {

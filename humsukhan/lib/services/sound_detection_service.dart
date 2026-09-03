@@ -34,7 +34,6 @@ class SoundDetectionService {
   final Map<String, List<DateTime>> _temporalBuffer = {};
 
   static const Map<String, List<String>> _labelMapping = {
-    'Fire Alarm': ['smoke detector, smoke alarm', 'fire alarm'],
     'Siren': ['siren', 'police car (siren)', 'ambulance (siren)', 'fire engine, fire truck (siren)', 'civil defense siren', 'emergency vehicle'],
     'Doorbell': ['doorbell', 'chime'],
     'Knock': ['knock', 'tap'],
@@ -45,7 +44,7 @@ class SoundDetectionService {
     'Glass Break': ['glass', 'shatter'],
     'Dog Bark': ['bark'],
   };
-  static const Set<String> _criticalEvents = {'Fire Alarm', 'Siren'};
+  static const Set<String> _criticalEvents = {'Siren'};
   static const double _criticalThreshold = 0.70;
   static const double _nonCriticalThreshold = 0.55;
 
@@ -227,7 +226,7 @@ class SoundDetectionService {
   }
 
   String _getSeverity(String eventType) {
-    if (eventType == 'Fire Alarm' || eventType == 'Siren' || eventType == 'Glass Break') return 'critical';
+    if (eventType == 'Siren' || eventType == 'Glass Break') return 'critical';
     if (eventType == 'Doorbell' || eventType == 'Knock' || eventType == 'Phone' || eventType == 'Baby Cry') return 'warning';
     return 'info';
   }
