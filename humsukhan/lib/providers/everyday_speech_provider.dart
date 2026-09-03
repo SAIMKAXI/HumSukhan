@@ -6,6 +6,7 @@ import '../models/models.dart';
 import '../services/everyday_bilingual_stt.dart';
 import '../services/everyday_language_policy.dart';
 import '../services/roman_urdu_detector.dart';
+import '../services/speech_engine.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/stt/model_manager.dart';
 import 'speech_provider.dart' show ResilientTtsProvider;
@@ -16,7 +17,7 @@ import 'speech_provider.dart' show ResilientTtsProvider;
 /// bilingual recognizer is only created for Auto mode; explicit English/Urdu
 /// modes use a single language stream. This avoids the legacy provider's
 /// hidden second TTS stack and prevents unused recognizers from being opened.
-class EverydaySpeechProvider extends ChangeNotifier {
+class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   final EverydayBilingualSttService _bilingual = EverydayBilingualSttService.instance;
   final ResilientTtsProvider _ttsProvider = ResilientTtsProvider();
   final EnhancedSpeechProvider _fallbackStt = EnhancedSpeechProvider();
@@ -47,10 +48,13 @@ class EverydaySpeechProvider extends ChangeNotifier {
   String? get lastStartError => _lastStartError ?? _bilingual.lastStartError ?? _fallbackStt.lastStartError;
   LanguageResult? get detectedLanguage => _detected;
   STTMode get currentMode => _currentMode;
+  bool get isAvailable => _initialized || _fallbackStt.isAvailable;
+  bool get isPlatformAvailable => _fallbackStt.isPlatformAvailable;
+  bool get isSherpaAvailable => _fallbackStt.isSherpaAvailable;
   bool get isOfflineMode => _currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch;
   bool get isStreamingMode => _currentMode == STTMode.sherpaStreaming;
   bool get isBatchMode => _currentMode == STTMode.sherpaBatch;
-  bool get isOnlineMode => _listening && !isOfflineMode;
+  bool get isOnlineMode => _currentMode == STTMode.platform;
   bool get isDemoMode => false;
   bool get isLiveStt => _listening;
   EnhancedSpeechProvider get sttProvider => _fallbackStt;
@@ -128,8 +132,6 @@ class EverydaySpeechProvider extends ChangeNotifier {
       return;
     }
 
-    // Everyday has a real degraded path: native platform STT first through
-    // the existing EnhancedSpeechProvider, then its configured Sherpa model.
     await _bilingualSubscription?.cancel();
     _bilingualSubscription = null;
     await _startFallback(_language == 'Auto' ? 'English' : _language);
