@@ -209,9 +209,9 @@ class TranscriptRepresentation {
       final match = RegExp('^([^$urduLetterPattern]*)([$urduLetterPattern]+)([^$urduLetterPattern]*)\$').firstMatch(core);
       if (match != null) {
         final mapped = words[match.group(2)!] ?? _urduCharacterMap(match.group(2)!);
-        out.write(match.group(1));
+        out.write(_urduCharacterMap(match.group(1)!));
         out.write(mapped);
-        out.write(match.group(3));
+        out.write(_urduCharacterMap(match.group(3)!));
       } else {
         out.write(_urduCharacterMap(core));
       }
