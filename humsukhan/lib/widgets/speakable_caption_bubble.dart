@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
+import 'mixed_script_caption_text.dart';
 
 class SpeakableCaptionBubble extends StatelessWidget {
   final Caption caption;
@@ -27,6 +28,12 @@ class SpeakableCaptionBubble extends StatelessWidget {
     final textColor = isHighContrast ? Colors.white : theme.colorScheme.onSurface;
     final canSpeak = caption.text.trim().isNotEmpty;
     final isThisMessageSpeaking = speech.isSpeaking && speech.lastSpokenText == caption.text;
+    final captionStyle = TextStyle(
+      fontSize: textSize,
+      color: textColor,
+      fontWeight: caption.isPartial ? FontWeight.normal : FontWeight.w500,
+      fontStyle: caption.isPartial ? FontStyle.italic : FontStyle.normal,
+    );
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
@@ -62,15 +69,9 @@ class SpeakableCaptionBubble extends StatelessWidget {
                     ),
                     border: isHighContrast ? Border.all(color: Colors.white) : null,
                   ),
-                  child: Text(
+                  child: MixedScriptCaptionText(
                     caption.text,
-                    softWrap: true,
-                    style: TextStyle(
-                      fontSize: textSize,
-                      color: textColor,
-                      fontWeight: caption.isPartial ? FontWeight.normal : FontWeight.w500,
-                      fontStyle: caption.isPartial ? FontStyle.italic : FontStyle.normal,
-                    ),
+                    style: captionStyle,
                   ),
                 ),
               ),
