@@ -1,4 +1,4 @@
-import '../models/models.dart';
+import 'stt/enhanced_stt.dart';
 
 /// Common contract for live speech-recognition engines.
 ///
