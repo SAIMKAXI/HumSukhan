@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'humsukhan/**'
+      - 'supabase/**'
       - '.github/workflows/flutter-qa.yml'
   push:
     branches: [main, 'fix/**']
     paths:
       - 'humsukhan/**'
+      - 'supabase/**'
       - '.github/workflows/flutter-qa.yml'
 
 jobs:
