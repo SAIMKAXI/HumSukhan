@@ -7,6 +7,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 
 import '../models/models.dart';
 import '../services/cloud_tts_service.dart';
+import '../services/everyday_language_policy.dart';
 import '../services/roman_urdu_detector.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/stt/model_manager.dart';
@@ -33,14 +34,10 @@ class ResilientTtsProvider implements TtsProvider {
   Future<bool> initialize() async {
     if (_initialized) return true;
     try {
-      // Keep the device TTS engine warm. Local playback is the lowest-latency
-      // path and avoids a network round-trip for English/Urdu/Hindi voices.
       await _native.awaitSpeakCompletion(true);
       await _native.setSpeechRate(0.5);
       await _native.setVolume(1.0);
       await _native.setPitch(1.0);
-      // Touch the native voice catalog during warm-up so locale lookup and the
-      // platform TTS engine are ready before the first user-triggered Speak.
       try { await _native.getVoices; } catch (_) {}
       _native.setStartHandler(() => _speaking = true);
       _native.setCompletionHandler(() => _speaking = false);
@@ -57,12 +54,10 @@ class ResilientTtsProvider implements TtsProvider {
   Future<bool> warmUp() => initialize();
 
   String _deliveryLanguage(String language, String text) {
-    final normalized = language.toLowerCase().trim();
-    if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'hindi';
-    if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'urdu';
-    if (RomanUrduDetector.isRomanUrdu(text)) return 'urdu';
-    if (normalized == 'urdu' || normalized == 'roman urdu') return 'urdu';
-    if (normalized == 'hindi' || normalized == 'hi') return 'hindi';
+    final sanitized = EverydayLanguagePolicy.sanitizeHindi(text);
+    if (sanitized.isEmpty) return 'english';
+    if (EverydayLanguagePolicy.containsUrduScript(sanitized)) return 'urdu';
+    if (RomanUrduDetector.isRomanUrdu(sanitized)) return 'urdu';
     return 'english';
   }
 
@@ -70,8 +65,6 @@ class ResilientTtsProvider implements TtsProvider {
     switch (deliveryLanguage) {
       case 'urdu':
         return const ['ur-PK', 'ur-IN'];
-      case 'hindi':
-        return const ['hi-IN'];
       default:
         return const ['en-US', 'en-GB', 'en-IN'];
     }
@@ -91,11 +84,7 @@ class ResilientTtsProvider implements TtsProvider {
     try {
       final voices = await _native.getVoices;
       if (voices is List) {
-        final prefix = deliveryLanguage == 'urdu'
-            ? 'ur'
-            : deliveryLanguage == 'hindi'
-                ? 'hi'
-                : 'en';
+        final prefix = deliveryLanguage == 'urdu' ? 'ur' : 'en';
         for (final raw in voices) {
           if (raw is! Map) continue;
           final locale = raw['locale']?.toString() ?? '';
@@ -166,7 +155,7 @@ class ResilientTtsProvider implements TtsProvider {
 
   @override
   Future<void> speak(String text, {String language = 'English'}) async {
-    final value = text.trim();
+    final value = EverydayLanguagePolicy.sanitizeHindi(text).trim();
     if (value.isEmpty) return;
     await initialize();
 
@@ -174,9 +163,6 @@ class ResilientTtsProvider implements TtsProvider {
     final deliveryLanguage = _deliveryLanguage(language, value);
     await _stopPlaybackOnly();
 
-    // Local Android/iOS TTS is intentionally first. Network TTS is used only
-    // when the device lacks the requested language/voice, which removes the
-    // common cloud round-trip from the normal English Speak-button path.
     try {
       await _speakNative(value, deliveryLanguage);
       if (generation != _speakGeneration) return;
@@ -198,12 +184,8 @@ class ResilientTtsProvider implements TtsProvider {
   }
 
   Future<void> _stopPlaybackOnly() async {
-    try {
-      await _player.stop();
-    } catch (_) {}
-    try {
-      await _native.stop();
-    } catch (_) {}
+    try { await _player.stop(); } catch (_) {}
+    try { await _native.stop(); } catch (_) {}
     _speaking = false;
   }
 
@@ -225,7 +207,6 @@ class ResilientTtsProvider implements TtsProvider {
   }
 }
 
-/// Speech provider with hybrid STT support and model management.
 class SpeechProvider extends ChangeNotifier {
   late final EnhancedSpeechProvider _sttProvider;
   late final ResilientTtsProvider _ttsProvider;
@@ -304,16 +285,14 @@ class SpeechProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> warmUpTts() async {
-    await _ttsProvider.warmUp();
-  }
+  Future<void> warmUpTts() async => _ttsProvider.warmUp();
 
   Future<void> startListening({String language = 'English'}) async {
     await _sttSubscription?.cancel();
     _sttSubscription = _sttProvider.onResult.listen((result) {
       _currentMode = result.mode;
       if (result.isFinal && result.text.trim().isNotEmpty) {
-        _latestFinalText = result.text.trim();
+        _latestFinalText = EverydayLanguagePolicy.sanitizeHindi(result.text).trim();
         detectLanguage(result.text);
       }
       notifyListeners();
@@ -387,17 +366,16 @@ class SpeechProvider extends ChangeNotifier {
 
   Stream<SpeechResultEvent> get onResult => _sttProvider.onResult;
 
-  /// Returns the internal processing language for a transcript without changing
-  /// the public detected-language result used by the UI.
   String processingLanguageForText(String text, {String fallback = 'English'}) {
-    if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'Hindi';
-    if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'Urdu';
-    if (RomanUrduDetector.isRomanUrdu(text)) return 'Roman Urdu';
-    return fallback;
+    final safe = EverydayLanguagePolicy.sanitizeHindi(text).trim();
+    if (safe.isEmpty) return fallback == 'Auto' ? 'English' : fallback;
+    if (EverydayLanguagePolicy.containsUrduScript(safe)) return 'Urdu';
+    if (RomanUrduDetector.isRomanUrdu(safe)) return 'Roman Urdu';
+    return fallback == 'Auto' ? 'English' : fallback;
   }
 
   Future<void> speak(String text, {String language = 'English'}) async {
-    final value = text.trim();
+    final value = EverydayLanguagePolicy.sanitizeHindi(text).trim();
     if (value.isEmpty) return;
     final runId = ++_speechRunId;
     final wasListening = _sttProvider.isListening;
@@ -431,10 +409,12 @@ class SpeechProvider extends ChangeNotifier {
   }
 
   void detectLanguage(String text) {
-    final urduScriptRegex = RegExp(r'[\u0600-\u06FF]');
-    if (urduScriptRegex.hasMatch(text)) {
+    final safe = EverydayLanguagePolicy.sanitizeHindi(text).trim();
+    if (safe.isEmpty) {
+      _detectedLanguage = const LanguageResult(language: 'English', confidence: 0.0, script: 'Latin');
+    } else if (EverydayLanguagePolicy.containsUrduScript(safe)) {
       _detectedLanguage = const LanguageResult(language: 'Urdu', confidence: 0.9, script: 'Arabic');
-    } else if (RomanUrduDetector.isRomanUrdu(text)) {
+    } else if (RomanUrduDetector.isRomanUrdu(safe)) {
       _detectedLanguage = const LanguageResult(language: 'Roman Urdu', confidence: 0.92, script: 'Latin');
     } else {
       _detectedLanguage = const LanguageResult(language: 'English', confidence: 0.85, script: 'Latin');

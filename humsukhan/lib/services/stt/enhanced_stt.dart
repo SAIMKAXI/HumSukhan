@@ -5,6 +5,7 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'vosk_stt.dart';
 import 'model_manager.dart';
 import '../deepgram_transcription_service.dart';
+import '../everyday_language_policy.dart';
 import '../supabase_service.dart';
 
 export 'vosk_stt.dart' show STTMode;
@@ -57,7 +58,7 @@ class EnhancedSpeechProvider {
     await _modelManager.initialize();
     try {
       final sherpaLanguage = preferredLanguage.toLowerCase() == 'auto'
-          ? (_modelManager.isModelReady('Urdu') ? 'Urdu' : 'English')
+          ? 'English'
           : preferredLanguage;
       _sherpaAvailable = await _sherpaSTT.initialize(language: sherpaLanguage);
     } catch (e) {
@@ -96,18 +97,18 @@ class EnhancedSpeechProvider {
       case 'urdu':
       case 'ur':
       case 'roman urdu':
-      case 'hindi':
-      case 'hi':
         return true;
       default:
         return false;
     }
   }
 
+  String _sanitizeOutput(String text) => EverydayLanguagePolicy.sanitizeHindi(text).trim();
+
   void _onPlatformStatus(String status) {
     if (!_listening || _currentMode != STTMode.platform || _deepgramStreaming) return;
     if (status == 'notListening' || status == 'done') {
-      final pending = _platformLastText.trim();
+      final pending = _sanitizeOutput(_platformLastText);
       if (pending.isNotEmpty && pending != _lastEmittedPlatformText) {
         _emitResult(
           pending,
@@ -128,25 +129,28 @@ class EnhancedSpeechProvider {
     required String language,
     required STTMode mode,
   }) {
-    final value = text.trim();
+    final value = _sanitizeOutput(text);
     if (value.isEmpty || _controller.isClosed) return;
+    final safeLanguage = EverydayLanguagePolicy.containsUrduScript(value)
+        ? 'Urdu'
+        : (language == 'Roman Urdu' ? 'Roman Urdu' : 'English');
     _controller.add(SpeechResultEvent(
       text: value,
       isFinal: isFinal,
       confidence: isFinal ? 0.9 : 0.7,
-      language: language,
+      language: safeLanguage,
       isLive: true,
       mode: mode,
     ));
   }
 
   void _queueDebouncedInterim(String text, String language) {
-    _pendingInterimText = text;
+    _pendingInterimText = _sanitizeOutput(text);
     _pendingInterimLanguage = language;
     _interimDebounce?.cancel();
     _interimDebounce = Timer(const Duration(milliseconds: 250), () {
       if (!_listening || _deepgramStreaming == false) return;
-      final pending = _pendingInterimText.trim();
+      final pending = _sanitizeOutput(_pendingInterimText);
       if (pending.isEmpty) return;
       _emitResult(
         pending,
@@ -205,9 +209,7 @@ class EnhancedSpeechProvider {
     _lastEmittedDeepgramFinal = '';
     _cancelInterimDebounce();
     _currentLanguage = language;
-    if (!_forceOfflineMode) {
-      _currentMode = STTMode.platform;
-    }
+    if (!_forceOfflineMode) _currentMode = STTMode.platform;
     _listening = true;
     _platformLastText = '';
     _lastEmittedPlatformText = '';
@@ -218,19 +220,17 @@ class EnhancedSpeechProvider {
         await _deepgramSubscription?.cancel();
         _deepgramSubscription = _deepgram.onResult.listen((result) {
           if (!_listening) return;
-          final text = result.transcript.trim();
+          final text = _sanitizeOutput(result.transcript);
           if (text.isEmpty) return;
           final detected = result.language == 'Auto'
               ? _detectLanguage(text, fallback: language)
-              : result.language;
+              : (result.language == 'Hindi' ? 'English' : result.language);
           if (result.speechFinal) {
             _cancelInterimDebounce();
             if (text == _lastEmittedDeepgramFinal) return;
             _lastEmittedDeepgramFinal = text;
             _emitResult(text, isFinal: true, language: detected, mode: STTMode.platform);
           } else if (!result.isFinal) {
-            // Deepgram can emit many interim packets per second. Keep the
-            // streaming transport untouched, but publish to Flutter at 4 Hz.
             _queueDebouncedInterim(text, detected);
           }
         });
@@ -287,11 +287,13 @@ class EnhancedSpeechProvider {
   Future<void> _startSherpaStreaming(String language) async {
     await _sherpaSubscription?.cancel();
     _sherpaSubscription = _sherpaSTT.onResult.listen((result) {
+      final text = _sanitizeOutput(result.text);
+      if (text.isEmpty) return;
       _controller.add(SpeechResultEvent(
-        text: result.text,
+        text: text,
         isFinal: result.isFinal,
         confidence: result.confidence,
-        language: _detectLanguage(result.text, fallback: language),
+        language: _detectLanguage(text, fallback: language),
         isLive: true,
         mode: STTMode.sherpaStreaming,
       ));
@@ -302,11 +304,13 @@ class EnhancedSpeechProvider {
   Future<void> _startSherpaBatch(String language) async {
     await _sherpaSubscription?.cancel();
     _sherpaSubscription = _sherpaSTT.onResult.listen((result) {
+      final text = _sanitizeOutput(result.text);
+      if (text.isEmpty) return;
       _controller.add(SpeechResultEvent(
-        text: result.text,
+        text: text,
         isFinal: result.isFinal,
         confidence: result.confidence,
-        language: _detectLanguage(result.text, fallback: language),
+        language: _detectLanguage(text, fallback: language),
         isLive: true,
         mode: STTMode.sherpaBatch,
       ));
@@ -329,7 +333,7 @@ class EnhancedSpeechProvider {
   }
 
   void _onPlatformResult(SpeechRecognitionResult result) {
-    final text = result.recognizedWords.trim();
+    final text = _sanitizeOutput(result.recognizedWords);
     if (text.isEmpty) return;
     _platformLastText = text;
     _emitResult(
@@ -351,7 +355,7 @@ class EnhancedSpeechProvider {
 
     if (_deepgramStreaming) {
       await _deepgram.stop();
-      final flushed = _deepgram.lastFinalTranscript.trim();
+      final flushed = _sanitizeOutput(_deepgram.lastFinalTranscript);
       if (flushed.isNotEmpty && flushed != _lastEmittedDeepgramFinal) {
         _lastEmittedDeepgramFinal = flushed;
         _emitResult(
@@ -370,9 +374,7 @@ class EnhancedSpeechProvider {
     _platformLastText = '';
     _lastEmittedPlatformText = '';
     if (_currentMode == STTMode.platform) {
-      try {
-        await _platformSTT.stop();
-      } catch (_) {}
+      try { await _platformSTT.stop(); } catch (_) {}
     } else if (_currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch) {
       await _sherpaSTT.stopListening();
     }
@@ -394,9 +396,7 @@ class EnhancedSpeechProvider {
     if (_forceOfflineMode) {
       _currentMode = STTMode.none;
       try {
-        final sherpaLanguage = language.toLowerCase() == 'auto'
-            ? (_modelManager.isModelReady('Urdu') ? 'Urdu' : 'English')
-            : language;
+        final sherpaLanguage = language.toLowerCase() == 'auto' ? 'English' : language;
         _sherpaAvailable = await _sherpaSTT.switchLanguage(sherpaLanguage);
       } catch (_) {
         _sherpaAvailable = false;
@@ -414,7 +414,7 @@ class EnhancedSpeechProvider {
   Future<bool> downloadModel(String language) async {
     final success = await _modelManager.downloadModel(language);
     if (success) {
-      final sherpaLanguage = language.toLowerCase() == 'auto' ? 'Urdu' : language;
+      final sherpaLanguage = language.toLowerCase() == 'auto' ? 'English' : language;
       _sherpaAvailable = await _sherpaSTT.initialize(language: sherpaLanguage);
       if (_forceOfflineMode) {
         _currentMode = _modelManager.getBestModel(language)?.isStreaming == true
@@ -444,17 +444,16 @@ class EnhancedSpeechProvider {
     switch (language.toLowerCase()) {
       case 'urdu':
       case 'roman urdu': return 'ur-PK';
-      case 'hindi': return 'hi-IN';
       case 'auto': return 'en-US';
       default: return 'en-US';
     }
   }
 
   String _detectLanguage(String text, {String fallback = 'English'}) {
-    if (text.trim().isEmpty) return fallback;
-    if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'Hindi';
-    if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'Urdu';
-    final normalized = text.toLowerCase().replaceAll(RegExp(r"[^a-z0-9\s']"), ' ');
+    final safe = _sanitizeOutput(text);
+    if (safe.trim().isEmpty) return fallback == 'Auto' ? 'English' : fallback;
+    if (EverydayLanguagePolicy.containsUrduScript(safe)) return 'Urdu';
+    final normalized = safe.toLowerCase().replaceAll(RegExp(r"[^a-z0-9\s']"), ' ');
     final tokens = normalized.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
     const romanUrduWords = {
       'aap','ap','aapko','aapki','aapke','aapka','kya','kyun','hai','hain','ho',
