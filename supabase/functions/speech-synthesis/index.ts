@@ -28,16 +28,25 @@ function corsJson(body: unknown, status = 200) {
   });
 }
 
+function stripBlockedScript(text: string): string {
+  return text
+    .replace(/[\u0900-\u097F]+/gu, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function containsUrdu(text: string): boolean {
+  return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/u.test(text);
+}
+
 function detectProvider(language: string, text: string): "soniox" | "deepgram" {
   const normalized = language.toLowerCase().trim();
-  if (normalized === "urdu" || normalized === "roman urdu" || normalized === "hindi") return "soniox";
-  if (normalized === "auto" && /[\u0600-\u06ff\u0900-\u097f]/u.test(text)) return "soniox";
+  if (normalized === "urdu" || normalized === "roman urdu") return "soniox";
+  if (normalized === "auto" && containsUrdu(text)) return "soniox";
   return "deepgram";
 }
 
-function detectSonioxLanguage(language: string, text: string): string {
-  const normalized = language.toLowerCase().trim();
-  if (normalized === "hindi" || normalized === "hi" || /[\u0900-\u097f]/u.test(text)) return "hi";
+function detectSonioxLanguage(language: string, text: string): "ur" {
   return "ur";
 }
 
@@ -51,10 +60,7 @@ async function synthesizeDeepgram(text: string) {
       "https://api.deepgram.com/v2/speak?model=flux-hannah-en&encoding=mp3",
       {
         method: "POST",
-        headers: {
-          Authorization: `Token ${key}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Token ${key}`, "Content-Type": "application/json" },
         body: JSON.stringify({ text, speed: 1, expressivity: 0 }),
       },
     );
@@ -72,10 +78,9 @@ async function synthesizeDeepgram(text: string) {
   throw new Error(`Deepgram TTS failed (${lastStatus})`);
 }
 
-async function synthesizeSoniox(text: string, language: string) {
+async function synthesizeSoniox(text: string) {
   if (SONIOX_KEYS.length === 0) throw new Error("Soniox TTS is not configured");
   let lastStatus = 502;
-  const sonioxLanguage = detectSonioxLanguage(language, text);
   for (let attempt = 0; attempt < SONIOX_KEYS.length; attempt += 1) {
     const index = (sonioxCursor + attempt) % SONIOX_KEYS.length;
     const key = SONIOX_KEYS[index];
@@ -87,7 +92,7 @@ async function synthesizeSoniox(text: string, language: string) {
       },
       body: JSON.stringify({
         model: "tts-rt-v2",
-        language: sonioxLanguage,
+        language: "ur",
         voice: "Daniel",
         audio_format: "mp3",
         text,
@@ -128,13 +133,21 @@ Deno.serve(async (req) => {
     if (!auth?.startsWith("Bearer ")) return corsJson({ error: "Unauthorized" }, 401);
 
     const body = await req.json();
-    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    const rawText = typeof body?.text === "string" ? body.text.trim() : "";
     const language = typeof body?.language === "string" ? body.language : "auto";
-    if (!text) return corsJson({ error: "Text is required" }, 400);
+    if (!rawText) return corsJson({ error: "Text is required" }, 400);
 
-    const provider = detectProvider(language, text);
+    const text = stripBlockedScript(rawText);
+    if (!text) return corsJson({ error: "No supported speech text remains after validation" }, 400);
+
+    const normalizedLanguage = language.toLowerCase().trim();
+    if (["hindi", "hi"].includes(normalizedLanguage)) {
+      return corsJson({ error: "Unsupported speech language" }, 400);
+    }
+
+    const provider = detectProvider(normalizedLanguage, text);
     const result = provider === "soniox"
-      ? await synthesizeSoniox(text, language)
+      ? await synthesizeSoniox(text)
       : await synthesizeDeepgram(text);
 
     return corsJson({
