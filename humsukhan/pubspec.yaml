@@ -4,6 +4,7 @@ publish_to: 'none'
 version: 2.3.7+27
 
 # Release v2.3.7
+# Release build fix: use a compatible record_linux implementation.
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
