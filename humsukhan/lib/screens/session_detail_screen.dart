@@ -10,6 +10,7 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
+import '../utils/action_item_normalizer.dart';
 import '../widgets/reusable_widgets.dart';
 import '../widgets/speakable_caption_bubble.dart';
 
@@ -315,7 +316,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     ProfessionalInsight? insight,
     AppStrings strings,
   ) {
-    if (insight == null || insight.actionItems.isEmpty) {
+    final actionItems = insight == null
+        ? const <String>[]
+        : ActionItemNormalizer.normalize(insight.actionItems);
+    if (actionItems.isEmpty) {
       return EmptyState(
         icon: Icons.task_alt,
         title: strings.noActionItems,
@@ -328,7 +332,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       child: InsightCard(
         title: strings.actionItems,
         icon: Icons.task_alt,
-        items: insight.actionItems,
+        items: actionItems,
         iconColor: AppTheme.secondaryLight,
       ),
     );
