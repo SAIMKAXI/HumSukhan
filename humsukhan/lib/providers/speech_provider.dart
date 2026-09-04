@@ -9,6 +9,7 @@ import '../models/models.dart';
 import '../services/cloud_tts_service.dart';
 import '../services/everyday_language_policy.dart';
 import '../services/roman_urdu_detector.dart';
+import '../services/speech_capability.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/stt/model_manager.dart';
 import '../services/tts_engine.dart';
@@ -19,11 +20,20 @@ class ResilientTtsProvider implements TtsProvider {
   final FlutterTts _native = FlutterTts();
   final AudioPlayer _player = AudioPlayer();
   final Map<String, Uint8List> _cloudCache = <String, Uint8List>{};
+  final SpeechCapability _capability = SpeechCapability.instance;
   bool _speaking = false;
   bool _initialized = false;
   int _speakGeneration = 0;
+  Future<void> _nativeLock = Future.value();
   static const int _maxCloudCacheEntries = 12;
   static const Duration _nativeSpeechTimeout = Duration(seconds: 90);
+
+  Future<T> _withNativeLock<T>(Future<T> Function() action) {
+    final previous = _nativeLock;
+    final completer = Completer<void>();
+    _nativeLock = completer.future;
+    return previous.then((_) => action()).whenComplete(completer.complete);
+  }
 
   @override
   Future<bool> initialize() async {
@@ -33,11 +43,10 @@ class ResilientTtsProvider implements TtsProvider {
       await _native.setSpeechRate(0.5);
       await _native.setVolume(1.0);
       await _native.setPitch(1.0);
-      try { await _native.getVoices; } catch (_) {}
-      _native.setStartHandler(() => _speaking = true);
-      _native.setCompletionHandler(() => _speaking = false);
-      _native.setCancelHandler(() => _speaking = false);
-      _native.setErrorHandler((_) => _speaking = false);
+      try {
+        await _native.getVoices;
+      } catch (_) {}
+      _installPlaybackHandlers();
       _initialized = true;
       return true;
     } catch (e) {
@@ -46,7 +55,31 @@ class ResilientTtsProvider implements TtsProvider {
     }
   }
 
-  Future<bool> warmUp() => initialize();
+  void _installPlaybackHandlers() {
+    _native.setStartHandler(() => _speaking = true);
+    _native.setCompletionHandler(() => _speaking = false);
+    _native.setCancelHandler(() => _speaking = false);
+    _native.setErrorHandler((_) => _speaking = false);
+  }
+
+  Future<bool> warmUp() async {
+    final ok = await initialize();
+    if (ok) {
+      unawaited(_withNativeLock(() async {
+        await _capability.ttsReliable(_native, 'english');
+        await _capability.ttsReliable(_native, 'urdu');
+        _installPlaybackHandlers();
+      }));
+    }
+    return ok;
+  }
+
+  Future<void> recheckMissingCapabilities() async {
+    await _withNativeLock(() async {
+      await _capability.recheckIfMissing(nativeTts: _native);
+      _installPlaybackHandlers();
+    });
+  }
 
   String _deliveryLanguage(String language, String text) {
     final sanitized = EverydayLanguagePolicy.sanitizeHindi(text);
@@ -56,14 +89,8 @@ class ResilientTtsProvider implements TtsProvider {
     return 'english';
   }
 
-  List<String> _nativeLocaleCandidates(String deliveryLanguage) {
-    switch (deliveryLanguage) {
-      case 'urdu':
-        return const ['ur-PK', 'ur-IN'];
-      default:
-        return const ['en-US', 'en-GB', 'en-IN'];
-    }
-  }
+  List<String> _nativeLocaleCandidates(String deliveryLanguage) =>
+      _capability.ttsCandidates(deliveryLanguage);
 
   Future<bool> _setNativeLocale(String deliveryLanguage) async {
     for (final locale in _nativeLocaleCandidates(deliveryLanguage)) {
@@ -96,13 +123,25 @@ class ResilientTtsProvider implements TtsProvider {
     return false;
   }
 
-  Future<void> _speakNative(String text, String deliveryLanguage) async {
+  Future<void> _speakNative(String text, String deliveryLanguage) =>
+      _withNativeLock(() => _speakNativeLocked(text, deliveryLanguage));
+
+  Future<void> _speakNativeLocked(String text, String deliveryLanguage) async {
+    final reliable = await _capability.ttsReliable(_native, deliveryLanguage);
+    _installPlaybackHandlers();
+    if (!reliable) {
+      throw StateError(
+        'No verified ${deliveryLanguage[0].toUpperCase()}${deliveryLanguage.substring(1)} device voice on this phone',
+      );
+    }
+
     final ready = await _setNativeLocale(deliveryLanguage);
     if (!ready) {
       throw StateError(
         'No installed ${deliveryLanguage[0].toUpperCase()}${deliveryLanguage.substring(1)} device voice is available',
       );
     }
+
     _speaking = true;
     try {
       await _native.speak(text);
@@ -111,9 +150,13 @@ class ResilientTtsProvider implements TtsProvider {
         await Future<void>.delayed(const Duration(milliseconds: 40));
       }
       if (_speaking) {
-        try { await _native.stop(); } catch (_) {}
+        try {
+          await _native.stop();
+        } catch (_) {}
         _speaking = false;
-        throw TimeoutException('Native TTS did not complete within ${_nativeSpeechTimeout.inSeconds} seconds');
+        throw TimeoutException(
+          'Native TTS did not complete within ${_nativeSpeechTimeout.inSeconds} seconds',
+        );
       }
     } finally {
       _speaking = false;
@@ -179,8 +222,12 @@ class ResilientTtsProvider implements TtsProvider {
   }
 
   Future<void> _stopPlaybackOnly() async {
-    try { await _player.stop(); } catch (_) {}
-    try { await _native.stop(); } catch (_) {}
+    try {
+      await _player.stop();
+    } catch (_) {}
+    try {
+      await _withNativeLock(() => _native.stop());
+    } catch (_) {}
     _speaking = false;
   }
 
@@ -198,7 +245,7 @@ class ResilientTtsProvider implements TtsProvider {
     ++_speakGeneration;
     _cloudCache.clear();
     unawaited(_player.dispose());
-    unawaited(_native.stop());
+    unawaited(_withNativeLock(() => _native.stop()));
   }
 }
 
@@ -281,6 +328,12 @@ class SpeechProvider extends ChangeNotifier {
   }
 
   Future<void> warmUpTts() async => _ttsProvider.warmUp();
+
+  Future<void> recheckSpeechCapabilities() async {
+    await _sttProvider.recheckPlatformCapabilities();
+    await _ttsProvider.recheckMissingCapabilities();
+    notifyListeners();
+  }
 
   Future<void> startListening({String language = 'English'}) async {
     await _sttSubscription?.cancel();

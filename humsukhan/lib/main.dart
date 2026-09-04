@@ -207,74 +207,136 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
         ChangeNotifierProvider(create: (_) => QuickReplyProvider()),
         ChangeNotifierProvider(create: (_) => ConnectivityProvider()..initialize()),
       ],
-      child: Consumer2<SettingsProvider, AuthProvider>(
-        builder: (context, settings, auth, _) {
-          if (settings.appLanguage != _lastLanguage) {
-            _lastLanguage = settings.appLanguage;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) context.read<QuickReplyProvider>().switchLanguage(settings.appLanguage);
-            });
-          }
+      child: SpeechLifecycleGuard(
+        child: Consumer2<SettingsProvider, AuthProvider>(
+          builder: (context, settings, auth, _) {
+            if (settings.appLanguage != _lastLanguage) {
+              _lastLanguage = settings.appLanguage;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) context.read<QuickReplyProvider>().switchLanguage(settings.appLanguage);
+              });
+            }
 
-          if (!auth.isAuthenticated) {
-            _lastSyncedSettingsUserId = null;
-          } else if (auth.userId != _lastSyncedSettingsUserId) {
-            _lastSyncedSettingsUserId = auth.userId;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              unawaited(context.read<SettingsProvider>().syncFromCloud());
-            });
-          }
+            if (!auth.isAuthenticated) {
+              _lastSyncedSettingsUserId = null;
+            } else if (auth.userId != _lastSyncedSettingsUserId) {
+              _lastSyncedSettingsUserId = auth.userId;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                unawaited(context.read<SettingsProvider>().syncFromCloud());
+              });
+            }
 
-          context.read<EnvironmentalProvider>().setSettingsProvider(settings);
+            context.read<EnvironmentalProvider>().setSettingsProvider(settings);
 
-          final appLocale = Locale(settings.appLanguage);
-          const delegates = [AppStrings.delegate, GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate];
-          const locales = [Locale('en'), Locale('ur')];
-          final isUrdu = settings.appLanguage == 'ur';
-          final urduFont = isUrdu ? 'NotoNastaliqUrdu' : 'NotoSans';
-          final direction = isUrdu ? TextDirection.rtl : TextDirection.ltr;
-          final highContrast = settings.isHighContrast;
-          final lightBase = highContrast ? _highContrastTheme(fontFamily: urduFont, dark: false) : AppTheme.lightTheme(fontFamily: urduFont);
-          final darkBase = highContrast ? _highContrastTheme(fontFamily: urduFont, dark: true) : AppTheme.darkTheme(fontFamily: urduFont);
-          final lightTheme = _withUrduMetrics(lightBase, isUrdu);
-          final darkTheme = _withUrduMetrics(darkBase, isUrdu);
-          final themeMode = settings.isDarkMode ? ThemeMode.dark : ThemeMode.light;
+            final appLocale = Locale(settings.appLanguage);
+            const delegates = [AppStrings.delegate, GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate];
+            const locales = [Locale('en'), Locale('ur')];
+            final isUrdu = settings.appLanguage == 'ur';
+            final urduFont = isUrdu ? 'NotoNastaliqUrdu' : 'NotoSans';
+            final direction = isUrdu ? TextDirection.rtl : TextDirection.ltr;
+            final highContrast = settings.isHighContrast;
+            final lightBase = highContrast ? _highContrastTheme(fontFamily: urduFont, dark: false) : AppTheme.lightTheme(fontFamily: urduFont);
+            final darkBase = highContrast ? _highContrastTheme(fontFamily: urduFont, dark: true) : AppTheme.darkTheme(fontFamily: urduFont);
+            final lightTheme = _withUrduMetrics(lightBase, isUrdu);
+            final darkTheme = _withUrduMetrics(darkBase, isUrdu);
+            final themeMode = settings.isDarkMode ? ThemeMode.dark : ThemeMode.light;
 
-          if (_showSplash) {
-            return MaterialApp(
-              debugShowCheckedModeBanner: false,
-              theme: lightTheme,
-              darkTheme: darkTheme,
-              themeMode: themeMode,
-              locale: appLocale,
-              supportedLocales: locales,
-              localizationsDelegates: delegates,
-              builder: (context, child) => _applyAccessibilityScale(context, child, settings),
-              home: SplashScreen(onComplete: () => setState(() => _showSplash = false)),
+            if (_showSplash) {
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                theme: lightTheme,
+                darkTheme: darkTheme,
+                themeMode: themeMode,
+                locale: appLocale,
+                supportedLocales: locales,
+                localizationsDelegates: delegates,
+                builder: (context, child) => _applyAccessibilityScale(context, child, settings),
+                home: SplashScreen(onComplete: () => setState(() => _showSplash = false)),
+              );
+            }
+
+            return Directionality(
+              textDirection: direction,
+              child: MaterialApp(
+                title: 'HumSukhan',
+                debugShowCheckedModeBanner: false,
+                theme: lightTheme,
+                darkTheme: darkTheme,
+                themeMode: themeMode,
+                home: const _AccountGate(),
+                onGenerateRoute: AppRouter.generateRoute,
+                locale: appLocale,
+                supportedLocales: locales,
+                localizationsDelegates: delegates,
+                builder: (context, child) => _applyAccessibilityScale(context, child, settings),
+              ),
             );
-          }
-
-          return Directionality(
-            textDirection: direction,
-            child: MaterialApp(
-              title: 'HumSukhan',
-              debugShowCheckedModeBanner: false,
-              theme: lightTheme,
-              darkTheme: darkTheme,
-              themeMode: themeMode,
-              home: const _AccountGate(),
-              onGenerateRoute: AppRouter.generateRoute,
-              locale: appLocale,
-              supportedLocales: locales,
-              localizationsDelegates: delegates,
-              builder: (context, child) => _applyAccessibilityScale(context, child, settings),
-            ),
-          );
-        },
+          },
+        ),
       ),
     );
   }
+}
+
+class SpeechLifecycleGuard extends StatefulWidget {
+  const SpeechLifecycleGuard({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<SpeechLifecycleGuard> createState() => _SpeechLifecycleGuardState();
+}
+
+class _SpeechLifecycleGuardState extends State<SpeechLifecycleGuard> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      final speech = context.read<SpeechProvider>();
+      unawaited(_stopSpeechSession(speech));
+      return;
+    }
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_recheckSpeechCapabilities());
+    }
+  }
+
+  Future<void> _stopSpeechSession(SpeechProvider speech) async {
+    try {
+      await Future.wait<void>([
+        speech.stopListening(),
+        speech.stopSpeaking(),
+      ]);
+    } catch (e) {
+      debugPrint('Speech session cleanup on app lifecycle change failed: $e');
+    }
+  }
+
+  Future<void> _recheckSpeechCapabilities() async {
+    try {
+      await context.read<SpeechProvider>().recheckSpeechCapabilities();
+    } catch (e) {
+      debugPrint('Speech capability recheck after resume failed: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _AccountGate extends StatelessWidget {

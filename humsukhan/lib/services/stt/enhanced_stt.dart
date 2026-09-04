@@ -6,6 +6,7 @@ import 'vosk_stt.dart';
 import 'model_manager.dart';
 import '../deepgram_transcription_service.dart';
 import '../everyday_language_policy.dart';
+import '../speech_capability.dart';
 import '../supabase_service.dart';
 
 export 'vosk_stt.dart' show STTMode;
@@ -16,6 +17,7 @@ class EnhancedSpeechProvider {
   final DeepgramTranscriptionService _deepgram = DeepgramTranscriptionService.instance;
   final StreamController<SpeechResultEvent> _controller = StreamController<SpeechResultEvent>.broadcast();
   final ModelManager _modelManager = ModelManager.instance;
+  final SpeechCapability _capability = SpeechCapability.instance;
 
   bool _initialized = false;
   bool _listening = false;
@@ -75,6 +77,9 @@ class EnhancedSpeechProvider {
           }
         },
       );
+      if (_platformAvailable) {
+        _platformAvailable = await _capability.probeStt(_platformSTT);
+      }
     } catch (e) {
       debugPrint('Platform STT init failed: $e');
       _platformAvailable = false;
@@ -82,6 +87,24 @@ class EnhancedSpeechProvider {
     _initialized = true;
     _updateModeForLanguage(preferredLanguage);
     return isAvailable;
+  }
+
+  Future<void> recheckPlatformCapabilities() async {
+    if (!_initialized) return;
+    try {
+      await _capability.recheckIfMissing(platformStt: _platformSTT);
+      _platformAvailable = await _capability.sttAvailable();
+    } catch (e) {
+      debugPrint('Platform STT capability recheck failed: $e');
+    }
+  }
+
+  bool _supportsPlatformLanguage(String language) {
+    final normalized = language.toLowerCase().trim();
+    if (normalized == 'urdu' || normalized == 'ur' || normalized == 'roman urdu') {
+      return _capability.sttSupportsUrduCached;
+    }
+    return _capability.sttSupportsEnglishCached;
   }
 
   void _updateModeForLanguage(String language) {
@@ -259,10 +282,15 @@ class EnhancedSpeechProvider {
         }
       }
 
-      if (_platformAvailable) {
+      final platformLanguageSupported = _supportsPlatformLanguage(language);
+      if (_platformAvailable && platformLanguageSupported) {
         _currentMode = STTMode.platform;
         await _startPlatformListening(language);
         if (_platformSTT.isListening) return;
+      } else if (_platformAvailable && !platformLanguageSupported) {
+        _lastStartError = language.toLowerCase().contains('urdu')
+            ? 'Urdu is not installed for the device speech recognizer; using the configured fallback.'
+            : 'English is not installed for the device speech recognizer; using the configured fallback.';
       }
 
       if (!_forceOfflineMode && _sherpaAvailable && _modelManager.isModelReady(language)) {
@@ -319,7 +347,11 @@ class EnhancedSpeechProvider {
   }
 
   Future<void> _startPlatformListening(String language) async {
-    _platformLocale = _getLocaleId(language);
+    final locale = await _capability.sttLocaleFor(_platformSTT, language);
+    if (locale == null) {
+      throw StateError('No installed device recognizer locale for $language');
+    }
+    _platformLocale = locale;
     await _platformSTT.listen(
       onResult: _onPlatformResult,
       listenOptions: SpeechListenOptions(
