@@ -43,6 +43,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # Used directly by test/speech_capability_recheck_test.dart to fake the
+  # native speech recognizer platform without touching a real method channel.
+  plugin_platform_interface: ^2.1.8
+  speech_to_text_platform_interface: ^2.4.0
 
 flutter:
   uses-material-design: true

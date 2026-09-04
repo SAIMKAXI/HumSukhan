@@ -17,6 +17,17 @@ class SpeakableCaptionBubble extends StatelessWidget {
     this.isHighContrast = false,
   });
 
+  Future<void> _speak(BuildContext context, SpeechProvider speech) async {
+    try {
+      await speech.speak(caption.text, language: caption.language);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not speak this message: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final speech = context.watch<SpeechProvider>();
@@ -93,7 +104,7 @@ class SpeakableCaptionBubble extends StatelessWidget {
                         if (isThisMessageSpeaking) {
                           await speech.stopSpeaking();
                         } else {
-                          await speech.speak(caption.text, language: caption.language);
+                          await _speak(context, speech);
                         }
                       },
               ),
