@@ -136,6 +136,18 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     }
   }
 
+  Future<void> _speakReply(String text, String language) async {
+    final speech = context.read<SpeechProvider>();
+    try {
+      await speech.speak(text, language: language);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not speak this message: $error')),
+      );
+    }
+  }
+
   Future<void> _stopListeningSegment(SpeechProvider speech) async {
     if (_isFinalizing) return;
     setState(() {
@@ -536,10 +548,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                     icon: const Icon(Icons.volume_up),
                     onPressed: _captionController.text.trim().isEmpty
                         ? null
-                        : () => context.read<SpeechProvider>().speak(
-                              _captionController.text.trim(),
-                              language: session.captionLanguage,
-                            ),
+                        : () => _speakReply(_captionController.text.trim(), session.captionLanguage),
                   ),
                   const SizedBox(width: 4),
                   IconButton.filled(

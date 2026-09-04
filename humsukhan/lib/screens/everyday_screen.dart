@@ -148,9 +148,9 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     IconButton.filled(
                       tooltip: 'Speak response',
                       icon: Icon(speech.isSpeaking ? Icons.stop : Icons.volume_up),
-                      onPressed: conv.isListening || _engine.isBusy || _textController.text.trim().isEmpty ? null : () async {
-                        if (speech.isSpeaking) { await speech.stopSpeaking(); } else { await speech.speak(_textController.text.trim(), language: 'Auto'); }
-                      },
+                      onPressed: conv.isListening || _engine.isBusy || _textController.text.trim().isEmpty
+                          ? null
+                          : () => _speakOrStop(speech, _textController.text.trim()),
                     ),
                     const SizedBox(width: 2),
                     IconButton.filled(
@@ -199,6 +199,21 @@ class _EverydayScreenState extends State<EverydayScreen> {
         ]),
       ),
     );
+  }
+
+  Future<void> _speakOrStop(SpeechProvider speech, String text, {String language = 'Auto'}) async {
+    if (speech.isSpeaking) {
+      await speech.stopSpeaking();
+      return;
+    }
+    try {
+      await speech.speak(text, language: language);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not speak this message: $e')),
+      );
+    }
   }
 
   void _sendTypedText(String text) {

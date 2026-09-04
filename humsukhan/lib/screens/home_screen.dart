@@ -19,7 +19,7 @@ class HomeScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final profile = user.profile;
-    final profileValue = profile?.name?.trim();
+    final profileValue = profile?.name.trim();
     final metadataValue = auth.user?.userMetadata?['name']?.toString().trim();
     final s = AppStrings.of(context);
     final profileName = profileValue?.isNotEmpty == true
