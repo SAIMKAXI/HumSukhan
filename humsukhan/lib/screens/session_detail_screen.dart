@@ -89,7 +89,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           children: [
             _overview(context, session, strings),
             _transcript(context, session, strings),
-            _summary(context, insight, strings),
+            _summary(context, insight, strings, provider),
             _actions(context, insight, strings),
           ],
         ),
@@ -220,11 +220,37 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     BuildContext context,
     ProfessionalInsight? insight,
     AppStrings strings,
+    ProfessionalProvider provider,
   ) {
-    if (insight == null || !insight.isAvailable || insight.summaryBullets.isEmpty) {
+    final hasSummary =
+        insight != null && insight.isAvailable && insight.summaryBullets.isNotEmpty;
+
+    // Distinguish "still working", "it failed and here is why" and "nothing to
+    // show". These all used to render the same generic empty state, so a failed
+    // AI summary looked identical to a session that simply had none.
+    if (!hasSummary && provider.isGeneratingInsight(widget.sessionId)) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Generating the AI summary…'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (!hasSummary) {
+      final failure = provider.insightError(widget.sessionId);
       return ErrorState(
-        title: strings.insightsUnavailable,
-        message: strings.insightsUnavailableDesc,
+        title: failure == null
+            ? strings.insightsUnavailable
+            : 'AI summary unavailable',
+        message: failure ?? strings.insightsUnavailableDesc,
         buttonText: strings.viewTranscript,
       );
     }

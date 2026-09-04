@@ -8,7 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:humsukhan/models/models.dart';
 import 'package:humsukhan/providers/conversation_provider.dart';
+import 'package:humsukhan/providers/professional_provider.dart';
 import 'package:humsukhan/services/conversation_engine.dart';
 import 'package:humsukhan/providers/everyday_speech_provider.dart';
 import 'package:humsukhan/services/stt/enhanced_stt.dart';
@@ -217,6 +219,34 @@ void main() {
             'is transparent, so filling with colorScheme.surface left it '
             'floating on white.',
       );
+    });
+  });
+
+  group('Professional AI summary', () {
+    test('a failed summary reports a reason instead of returning silently',
+        () async {
+      final provider = ProfessionalProvider();
+      addTearDown(provider.dispose);
+      // Let the constructor's async load settle before driving the provider.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final session = await provider.createSession(
+        title: 'Standup',
+        type: SessionType.meeting,
+      );
+
+      // No transcript at all: the old code returned with no state change, so
+      // the UI could not tell this apart from a summary that simply had not
+      // been generated yet.
+      await provider.generateInsights(session.id);
+
+      expect(provider.isGeneratingInsight(session.id), isFalse);
+      expect(
+        provider.insightError(session.id),
+        isNotNull,
+        reason: 'Every failure path must leave a user-facing reason behind.',
+      );
+      expect(provider.insightError(session.id), contains('no transcript'));
     });
   });
 }
