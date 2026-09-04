@@ -18,6 +18,7 @@ class ActionItemNormalizer {
     'contact',
     'create',
     'deliver',
+    'discuss',
     'draft',
     'email',
     'finish',
