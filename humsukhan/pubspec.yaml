@@ -1,10 +1,11 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 2.3.9+29
+version: 2.4.0+30
 
-# Release v2.3.9
-# Native speech capability hardening and deterministic device fallback.
+# Release v2.4.0
+# Speech reliability fixes (capability recheck, Speak error surfacing,
+# start-listening concurrency) and the current HumSukhan icon/logo pack.
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
