@@ -78,14 +78,14 @@ void main() {
       ]);
     });
 
-    test('action-summary overlap keeps the richer summary context out of Actions', () {
+    test('exact action-summary overlap is removed while richer context remains', () {
       final actions = ActionItemNormalizer.normalize([
         'Send the final build.',
         'Aisha will send the final build.',
       ]);
       final summary = ActionItemNormalizer.removeActionOverlap(
         summaryBullets: const [
-          'The team agreed to send the final build Friday.',
+          'Send the final build.',
           'The release candidate is ready.',
         ],
         actionItems: actions,
