@@ -82,6 +82,9 @@ class SpeechCapability {
     return result;
   }
 
+  bool get sttSupportsEnglishCached => _memoryCache['stt_english'] ?? false;
+  bool get sttSupportsUrduCached => _memoryCache['stt_urdu'] ?? false;
+
   Future<bool> probeStt(
     SpeechToText platformStt, {
     bool recheckNegative = false,
@@ -127,7 +130,9 @@ class SpeechCapability {
 
   Future<String?> sttLocaleFor(SpeechToText platformStt, String language) async {
     final locales = _localeIds(await platformStt.locales());
-    final wanted = _normalizeLocale(language == 'urdu' || language == 'roman urdu' ? 'ur' : 'en');
+    final wanted = _normalizeLocale(
+      language == 'urdu' || language == 'roman urdu' ? 'ur' : 'en',
+    );
     for (final locale in locales) {
       if (_normalizeLocale(locale) == wanted) return locale;
     }
