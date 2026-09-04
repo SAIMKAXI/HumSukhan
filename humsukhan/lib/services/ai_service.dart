@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../config/env_config.dart';
 import '../models/models.dart';
+import '../utils/action_item_normalizer.dart';
 import '../utils/insight_normalizer.dart';
 import 'supabase_service.dart';
 
@@ -33,11 +34,16 @@ class AiService {
       final data = response.data;
       if (data is! Map) return null;
       final json = Map<String, dynamic>.from(data);
-      final bullets = InsightNormalizer.dedupeSummary(
+
+      final rawBullets = InsightNormalizer.dedupeSummary(
         InsightNormalizer.list(json['summaryBullets']),
       );
-      final actionItems = InsightNormalizer.dedupeActions(
+      final actionItems = ActionItemNormalizer.normalize(
         InsightNormalizer.list(json['actionItems']),
+      );
+      final bullets = ActionItemNormalizer.removeActionOverlap(
+        summaryBullets: rawBullets,
+        actionItems: actionItems,
       );
       final deadlines = InsightNormalizer.dedupeDeadlines(
         InsightNormalizer.list(json['deadlines']),
