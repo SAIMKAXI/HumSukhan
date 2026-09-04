@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../config/env_config.dart';
 import '../models/models.dart';
+import '../utils/insight_normalizer.dart';
 import 'supabase_service.dart';
 
 /// AI insight service. Gemini credentials remain server-side in Supabase.
@@ -32,10 +33,18 @@ class AiService {
       final data = response.data;
       if (data is! Map) return null;
       final json = Map<String, dynamic>.from(data);
-      final bullets = _strings(json['summaryBullets']);
-      final actionItems = _strings(json['actionItems']);
-      final deadlines = _strings(json['deadlines']);
-      final mentionedPeople = _strings(json['mentionedPeople']);
+      final bullets = InsightNormalizer.dedupeSummary(
+        InsightNormalizer.list(json['summaryBullets']),
+      );
+      final actionItems = InsightNormalizer.dedupeActions(
+        InsightNormalizer.list(json['actionItems']),
+      );
+      final deadlines = InsightNormalizer.dedupeDeadlines(
+        InsightNormalizer.list(json['deadlines']),
+      );
+      final mentionedPeople = InsightNormalizer.dedupePeople(
+        InsightNormalizer.list(json['mentionedPeople']),
+      );
 
       // The summary is authoritative only when Gemini returned structured bullets.
       // Never turn a legacy/free-form summary into a fake one-bullet "AI summary".
@@ -54,19 +63,5 @@ class AiService {
       debugPrint('AI Edge Function error: $e');
       return null;
     }
-  }
-
-  List<String> _strings(dynamic value) {
-    if (value is! List) return const [];
-    final seen = <String>{};
-    final result = <String>[];
-    for (final item in value) {
-      final text = item.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
-      if (text.isEmpty) continue;
-      final key = text.toLowerCase();
-      if (!seen.add(key)) continue;
-      result.add(text);
-    }
-    return result;
   }
 }

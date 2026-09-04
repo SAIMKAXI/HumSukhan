@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../services/ai_service.dart';
 import '../services/database_service.dart';
 import '../services/supabase_service.dart';
+import '../utils/insight_normalizer.dart';
 
 enum FolderDeleteMode { keepSessions, deleteSessions }
 
@@ -30,18 +31,54 @@ class ProfessionalProvider extends ChangeNotifier {
   ProfessionalInsight? getInsightForSession(String sessionId) { for (final i in _insights) { if (i.sessionId == sessionId) return i; } return null; }
 
   ProfessionalProvider() { _loadData(); }
+
+  ProfessionalInsight _normalizeInsight(ProfessionalInsight insight) {
+    final summaryBullets = InsightNormalizer.dedupeSummary(insight.summaryBullets);
+    final actionItems = InsightNormalizer.dedupeActions(insight.actionItems);
+    final deadlines = InsightNormalizer.dedupeDeadlines(insight.deadlines);
+    final mentionedPeople = InsightNormalizer.dedupePeople(insight.mentionedPeople);
+    return ProfessionalInsight(
+      id: insight.id,
+      sessionId: insight.sessionId,
+      summary: summaryBullets.isEmpty ? '' : summaryBullets.join(' '),
+      summaryBullets: summaryBullets,
+      actionItems: actionItems,
+      deadlines: deadlines,
+      mentionedPeople: mentionedPeople,
+      generatedAt: insight.generatedAt,
+      isAvailable: insight.isAvailable && summaryBullets.isNotEmpty,
+    );
+  }
+
+  List<ProfessionalInsight> _canonicalizeInsights(Iterable<ProfessionalInsight> source) {
+    final bySession = <String, ProfessionalInsight>{};
+    for (final raw in source) {
+      final insight = _normalizeInsight(raw);
+      if (!insight.isAvailable || insight.sessionId.trim().isEmpty) continue;
+      final existing = bySession[insight.sessionId];
+      if (existing == null || insight.generatedAt.isAfter(existing.generatedAt)) {
+        bySession[insight.sessionId] = insight;
+      }
+    }
+    final result = bySession.values.toList()
+      ..sort((a, b) => b.generatedAt.compareTo(a.generatedAt));
+    return result;
+  }
+
   Future<void> _loadData() async {
     _isLoading = true; notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
       _sessions = (jsonDecode(prefs.getString(_sessionsKey) ?? '[]') as List).map((s)=>ProfessionalSession.fromJson(s)).toList();
       _folders = (jsonDecode(prefs.getString(_foldersKey) ?? '[]') as List).map((f)=>Folder.fromJson(f)).toList();
-      _insights = (jsonDecode(prefs.getString(_insightsKey) ?? '[]') as List).map((i)=>ProfessionalInsight.fromJson(i)).toList();
+      _insights = _canonicalizeInsights((jsonDecode(prefs.getString(_insightsKey) ?? '[]') as List).map((i)=>ProfessionalInsight.fromJson(i)));
+      await _saveInsights();
       if (SupabaseService.instance.isAuthenticated) await _syncFromCloud();
       await _cleanExpiredSessions();
     } catch (e) { debugPrint('Error loading professional data: $e'); }
     _isLoading = false; notifyListeners();
   }
+
   Future<void> _syncFromCloud() async {
     try {
       final cloudSessions = await DatabaseService.instance.fetchSessions();
@@ -51,13 +88,16 @@ class ProfessionalProvider extends ChangeNotifier {
       final localFolderIds=_folders.map((f)=>f.id).toSet();
       for(final cf in cloudFolders) { if(!localFolderIds.contains(cf.id)) _folders.add(cf); }
       await _saveFolders();
-      for (final session in _sessions) { final insight=await DatabaseService.instance.fetchInsight(session.id); if(insight!=null){ final idx=_insights.indexWhere((i)=>i.sessionId==session.id); if(idx==-1)_insights.add(insight);else _insights[idx]=insight; } }
+      final cloudInsights=<ProfessionalInsight>[];
+      for (final session in _sessions) { final insight=await DatabaseService.instance.fetchInsight(session.id); if(insight!=null) cloudInsights.add(insight); }
+      _insights = _canonicalizeInsights([..._insights, ...cloudInsights]);
       await _saveInsights();
     } catch(e){ debugPrint('Cloud sync error: $e'); }
   }
+
   Future<void> _saveSessions() async { final prefs=await SharedPreferences.getInstance(); await prefs.setString(_sessionsKey,jsonEncode(_sessions.map((s)=>s.toJson()).toList())); }
   Future<void> _saveFolders() async { final prefs=await SharedPreferences.getInstance(); await prefs.setString(_foldersKey,jsonEncode(_folders.map((f)=>f.toJson()).toList())); }
-  Future<void> _saveInsights() async { final prefs=await SharedPreferences.getInstance(); await prefs.setString(_insightsKey,jsonEncode(_insights.map((i)=>i.toJson()).toList())); }
+  Future<void> _saveInsights() async { final prefs=await SharedPreferences.getInstance(); await prefs.setString(_insightsKey,jsonEncode(_canonicalizeInsights(_insights).map((i)=>i.toJson()).toList())); }
   Future<void> _cleanExpiredSessions() async { final before=_sessions.length; _sessions.removeWhere((s)=>s.isExpired); if(_sessions.length!=before) await _saveSessions(); }
 
   Future<ProfessionalSession> createSession({required String title, required SessionType type, String? folderId, String captionLanguage='English', int retentionDays=7}) async {
@@ -94,19 +134,27 @@ class ProfessionalProvider extends ChangeNotifier {
   Future<void> moveSessionToFolder(String sessionId,String? folderId) async { if(folderId!=null&&!_folders.any((f)=>f.id==folderId))return; final idx=_sessions.indexWhere((s)=>s.id==sessionId);if(idx==-1)return;_sessions[idx]=_sessions[idx].copyWith(folderId:folderId);await _saveSessions();if(SupabaseService.instance.isAuthenticated)await DatabaseService.instance.upsertSession(_sessions[idx]);notifyListeners(); }
 
   Future<void> generateInsights(String sessionId) async {
-    final session=_sessions.firstWhere((s)=>s.id==sessionId); final existingIdx=_insights.indexWhere((i)=>i.sessionId==sessionId); final allText=session.captions.map((c)=>c.text).join('\n'); if(allText.trim().isEmpty)return;
+    final session=_sessions.firstWhere((s)=>s.id==sessionId);
+    final allText=session.captions.map((c)=>c.text).join('\n');
+    if(allText.trim().isEmpty)return;
+
     final ai = AiService.instance.isAvailable
         ? await AiService.instance.generateInsights(sessionId:sessionId,transcript:allText,sessionTitle:session.title,sessionType:session.type)
         : null;
-    if (existingIdx != -1) {
-      _insights.removeAt(existingIdx);
+
+    if (ai == null || !ai.isAvailable) {
+      // Preserve the last known good insight when regeneration fails.
+      return;
     }
-    if (ai != null && ai.isAvailable) {
-      _insights.add(ai);
-      await _saveInsights();
-      if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.upsertInsight(ai);
-    } else {
-      await _saveInsights();
+
+    final normalized = _normalizeInsight(ai);
+    if (!normalized.isAvailable) return;
+
+    _insights.removeWhere((i)=>i.sessionId==sessionId);
+    _insights.add(normalized);
+    await _saveInsights();
+    if (SupabaseService.instance.isAuthenticated) {
+      await DatabaseService.instance.upsertInsight(normalized);
     }
     notifyListeners();
   }
