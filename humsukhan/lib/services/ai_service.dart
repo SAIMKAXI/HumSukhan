@@ -32,20 +32,23 @@ class AiService {
       final data = response.data;
       if (data is! Map) return null;
       final json = Map<String, dynamic>.from(data);
-      final rawBullets = json['summaryBullets'];
-      final bullets = rawBullets is List
-          ? rawBullets.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList()
-          : <String>[];
-      final legacySummary = json['summary']?.toString().trim() ?? '';
+      final bullets = _strings(json['summaryBullets']);
+      final actionItems = _strings(json['actionItems']);
+      final deadlines = _strings(json['deadlines']);
+      final mentionedPeople = _strings(json['mentionedPeople']);
+
+      // The summary is authoritative only when Gemini returned structured bullets.
+      // Never turn a legacy/free-form summary into a fake one-bullet "AI summary".
+      if (bullets.isEmpty) return null;
+
       return ProfessionalInsight(
         sessionId: sessionId,
-        summary: legacySummary,
-        summaryBullets: bullets.isNotEmpty ? bullets : (legacySummary.isEmpty ? const [] : [legacySummary]),
-        actionItems: _strings(json['actionItems']),
-        deadlines: _strings(json['deadlines']),
-        mentionedPeople: _strings(json['mentionedPeople']),
-        isAvailable: bullets.isNotEmpty || legacySummary.isNotEmpty ||
-            _strings(json['actionItems']).isNotEmpty || _strings(json['deadlines']).isNotEmpty,
+        summary: bullets.join(' '),
+        summaryBullets: bullets,
+        actionItems: actionItems,
+        deadlines: deadlines,
+        mentionedPeople: mentionedPeople,
+        isAvailable: true,
       );
     } catch (e) {
       debugPrint('AI Edge Function error: $e');
@@ -53,7 +56,17 @@ class AiService {
     }
   }
 
-  List<String> _strings(dynamic value) => value is List
-      ? value.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList()
-      : const [];
+  List<String> _strings(dynamic value) {
+    if (value is! List) return const [];
+    final seen = <String>{};
+    final result = <String>[];
+    for (final item in value) {
+      final text = item.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (text.isEmpty) continue;
+      final key = text.toLowerCase();
+      if (!seen.add(key)) continue;
+      result.add(text);
+    }
+    return result;
+  }
 }
