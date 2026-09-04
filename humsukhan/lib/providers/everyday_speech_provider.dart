@@ -6,6 +6,7 @@ import '../models/models.dart';
 import '../services/everyday_bilingual_stt.dart';
 import '../services/everyday_language_policy.dart';
 import '../services/roman_urdu_detector.dart';
+import '../services/speech_capability.dart';
 import '../services/speech_engine.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/stt/model_manager.dart';
@@ -23,6 +24,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   final EnhancedSpeechProvider _fallbackStt = EnhancedSpeechProvider();
   final StreamController<SpeechResultEvent> _results = StreamController<SpeechResultEvent>.broadcast();
   final ModelManager _modelManager = ModelManager.instance;
+  final SpeechCapability _capability = SpeechCapability.instance;
 
   StreamSubscription<EverydayBilingualResult>? _bilingualSubscription;
   StreamSubscription<SpeechResultEvent>? _fallbackSubscription;
@@ -81,6 +83,9 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       case STTMode.sherpaBatch:
         return 'Offline speech recognition using Sherpa-ONNX. Short processing delay.';
       case STTMode.platform:
+        if ((_language == 'Urdu' || _language == 'Auto') && !_capability.sttSupportsUrduCached) {
+          return 'Using cloud or offline fallback because Urdu is not installed in the device speech recognizer.';
+        }
         return _usingFallback
             ? 'Using the device speech recognizer after the primary Everyday recognizer became unavailable.'
             : 'Online bilingual speech recognition.';
@@ -106,6 +111,12 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   }
 
   Future<void> warmUpTts() => _ttsProvider.warmUp();
+
+  Future<void> recheckSpeechCapabilities() async {
+    await _fallbackStt.recheckPlatformCapabilities();
+    await _ttsProvider.recheckMissingCapabilities();
+    notifyListeners();
+  }
 
   Future<void> startListening({String language = 'English'}) async {
     await initialize(preferredLanguage: language);
