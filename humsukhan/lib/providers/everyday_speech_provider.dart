@@ -59,6 +59,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   bool get isLiveStt => _listening;
   EnhancedSpeechProvider get sttProvider => _fallbackStt;
   Stream<SpeechResultEvent> get onResult => _results.stream;
+
   String get sttModeLabel {
     switch (_currentMode) {
       case STTMode.sherpaStreaming:
@@ -95,7 +96,10 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     if (_initialized) return;
     _language = _normalizeLanguage(preferredLanguage);
     try {
-      await _ttsProvider.initialize();
+      // Warm up once so any native-language capability calibration is completed
+      // before the user's first Speak action. ResilientTtsProvider serializes
+      // its probe with all later native TTS operations.
+      await _ttsProvider.warmUp();
       _initialized = true;
       notifyListeners();
     } catch (e) {
@@ -260,21 +264,24 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     _forceFallbackMode = false;
     _language = _normalizeLanguage(language);
     _currentMode = STTMode.platform;
-    if (wasListening) await startListening(language: _language);
+    if (wasListening) await startListening(language: language);
     notifyListeners();
   }
 
   Future<void> switchLanguage(String language) async {
+    final normalized = _normalizeLanguage(language);
     final wasListening = _listening;
     await stopListening();
-    _language = _normalizeLanguage(language);
+    _language = normalized;
     if (_forceFallbackMode) {
-      await _fallbackStt.switchLanguage(_language == 'Auto' ? 'English' : _language);
-      _currentMode = _fallbackStt.currentMode;
-    } else {
-      _currentMode = STTMode.platform;
+      try {
+        await _fallbackStt.switchLanguage(normalized == 'Auto' ? 'English' : normalized);
+        _currentMode = _fallbackStt.currentMode;
+      } catch (e) {
+        _lastStartError = 'Could not switch speech language: $e';
+      }
     }
-    if (wasListening) await startListening(language: _language);
+    if (wasListening) await startListening(language: normalized);
     notifyListeners();
   }
 
@@ -285,23 +292,27 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   Future<bool> downloadOfflineModel(String language) async {
     final success = await _modelManager.downloadModel(language);
-    if (success && _forceFallbackMode) {
-      await _fallbackStt.switchLanguage(language);
-      _currentMode = _fallbackStt.currentMode;
+    if (success) {
+      if (_currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch) {
+        await _fallbackStt.switchLanguage(language);
+        _currentMode = _fallbackStt.currentMode;
+      }
+      notifyListeners();
     }
-    notifyListeners();
     return success;
   }
 
   Future<bool> deleteModel(String language) async {
     final success = await _modelManager.deleteModel(language);
-    if (success && _forceFallbackMode) _currentMode = _fallbackStt.currentMode;
-    notifyListeners();
+    if (success) {
+      _currentMode = _fallbackStt.currentMode;
+      notifyListeners();
+    }
     return success;
   }
 
   String processingLanguageForText(String text, {String fallback = 'English'}) {
-    final safe = EverydayLanguagePolicy.normalizeRomanUrdu(text).trim();
+    final safe = EverydayLanguagePolicy.sanitizeHindi(text).trim();
     if (safe.isEmpty) return fallback == 'Auto' ? 'English' : fallback;
     if (EverydayLanguagePolicy.containsUrduScript(safe)) return 'Urdu';
     if (RomanUrduDetector.isRomanUrdu(safe)) return 'Roman Urdu';
@@ -309,84 +320,29 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   }
 
   Future<void> speak(String text, {String language = 'English'}) async {
-    final safe = EverydayLanguagePolicy.sanitizeHindi(text).trim();
-    if (safe.isEmpty) return;
+    final value = EverydayLanguagePolicy.sanitizeHindi(text).trim();
+    if (value.isEmpty) return;
     await initialize(preferredLanguage: language);
-    final generation = ++_speechGeneration;
+    final runId = ++_speechGeneration;
     final wasListening = _listening;
     final resumeLanguage = _language;
-    if (wasListening) await stopListening();
-
-    _lastSpoken = safe;
+    if (wasListening) {
+      await stopListening();
+    }
     _speaking = true;
+    _lastSpoken = value;
     notifyListeners();
     try {
-      final requested = _normalizeLanguage(language);
-      if (requested == 'English') {
-        await _speakEnglishMode(safe, generation);
-      } else {
-        final normalized = EverydayLanguagePolicy.normalizeRomanUrdu(safe);
-        for (final segment in _splitForSpeech(normalized)) {
-          if (generation != _speechGeneration) return;
-          await _ttsProvider.speak(segment.text, language: segment.language);
-        }
-      }
+      await _ttsProvider.speak(
+        value,
+        language: processingLanguageForText(value, fallback: language),
+      );
     } finally {
-      if (generation != _speechGeneration) return;
+      if (runId != _speechGeneration) return;
       _speaking = false;
       notifyListeners();
       if (wasListening) await startListening(language: resumeLanguage);
     }
-  }
-
-  Future<void> _speakEnglishMode(String text, int generation) async {
-    final converted = EverydayLanguagePolicy.toEnglishMode(text);
-    for (final segment in _splitForSpeech(converted)) {
-      if (generation != _speechGeneration) return;
-      await _ttsProvider.speak(segment.text, language: segment.language);
-    }
-  }
-
-  List<_SpeechSegment> _splitForSpeech(String text) {
-    final tokens = text.split(RegExp(r'\s+'));
-    final result = <_SpeechSegment>[];
-    var current = 'english';
-    final buffer = <String>[];
-
-    void flush() {
-      if (buffer.isNotEmpty) {
-        result.add(_SpeechSegment(buffer.join(' '), current));
-        buffer.clear();
-      }
-    }
-
-    for (var i = 0; i < tokens.length; i++) {
-      final token = tokens[i];
-      if (token.isEmpty) continue;
-      final isUrdu = EverydayLanguagePolicy.containsUrduScript(token);
-      final pair = i + 1 < tokens.length ? '$token ${tokens[i + 1]}' : token;
-      final isRoman = RomanUrduDetector.isRomanUrdu(pair);
-
-      if (isUrdu || isRoman) {
-        if (current != 'urdu') flush();
-        current = 'urdu';
-        buffer.add(token);
-        continue;
-      }
-
-      if (current == 'urdu') {
-        final previous = buffer.isEmpty ? token : '${buffer.last} $token';
-        if (RomanUrduDetector.isRomanUrdu(previous)) {
-          buffer.add(token);
-          continue;
-        }
-        flush();
-        current = 'english';
-      }
-      buffer.add(token);
-    }
-    flush();
-    return result;
   }
 
   Future<void> stopSpeaking() async {
@@ -396,65 +352,46 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     notifyListeners();
   }
 
-  void detectLanguage(String text) {
-    final safe = EverydayLanguagePolicy.normalizeRomanUrdu(text).trim();
+  void _updateDetection(String text, String fallback) {
+    final safe = EverydayLanguagePolicy.sanitizeHindi(text).trim();
+    if (safe.isEmpty) {
+      _detected = null;
+      return;
+    }
     final hasUrdu = EverydayLanguagePolicy.containsUrduScript(safe);
-    final hasEnglish = EverydayLanguagePolicy.containsLatin(safe);
-    final hasRomanUrdu = !hasUrdu && RomanUrduDetector.isRomanUrdu(safe);
-    final language = hasUrdu && hasEnglish
-        ? 'Auto'
-        : hasUrdu
-            ? 'Urdu'
-            : hasRomanUrdu
-                ? 'Roman Urdu'
-                : 'English';
+    final language = hasUrdu ? 'Urdu' : RomanUrduDetector.isRomanUrdu(safe) ? 'Roman Urdu' : fallback;
     _detected = LanguageResult(
       language: language,
-      confidence: hasUrdu && hasEnglish ? 0.85 : hasRomanUrdu ? 0.92 : 0.9,
-      script: hasUrdu && hasEnglish ? 'Mixed' : hasUrdu ? 'Arabic' : 'Latin',
+      confidence: hasUrdu || language != 'English' ? .92 : .85,
+      script: hasUrdu ? 'Arabic' : 'Latin',
     );
-    notifyListeners();
   }
 
   String _detectCaptionLanguage(String text, {required String fallback}) {
-    final hasUrdu = EverydayLanguagePolicy.containsUrduScript(text);
-    if (hasUrdu && EverydayLanguagePolicy.containsLatin(text)) return 'Auto';
-    if (hasUrdu) return 'Urdu';
+    if (EverydayLanguagePolicy.containsUrduScript(text)) return 'Urdu';
     if (RomanUrduDetector.isRomanUrdu(text)) return 'Roman Urdu';
     return fallback == 'Auto' ? 'English' : fallback;
   }
 
   String _normalizeLanguage(String language) {
-    switch (language.toLowerCase().trim()) {
-      case 'english':
-      case 'en':
-        return 'English';
-      case 'urdu':
-      case 'ur':
-      case 'roman urdu':
-        return 'Urdu';
-      default:
-        return 'Auto';
-    }
+    final value = language.trim().toLowerCase();
+    if (value == 'urdu') return 'Urdu';
+    if (value == 'roman urdu' || value == 'roman_urdu') return 'Roman Urdu';
+    if (value == 'auto') return 'Auto';
+    return 'English';
   }
 
   @override
   void dispose() {
-    _speechGeneration++;
-    unawaited(_bilingualSubscription?.cancel());
-    unawaited(_fallbackSubscription?.cancel());
-    unawaited(_bilingual.stop());
-    unawaited(_fallbackStt.stopListening());
-    _ttsProvider.dispose();
+    ++_speechGeneration;
+    _bilingualSubscription?.cancel();
+    _fallbackSubscription?.cancel();
     _results.close();
+    _bilingual.stop();
+    _fallbackStt.stopListening();
+    _ttsProvider.dispose();
+    _fallbackStt.dispose();
+    _modelManager.dispose();
     super.dispose();
   }
 }
-
-final class _SpeechSegment {
-  const _SpeechSegment(this.text, this.language);
-  final String text;
-  final String language;
-}
-
-class SpeechProvider extends EverydaySpeechProvider {}
