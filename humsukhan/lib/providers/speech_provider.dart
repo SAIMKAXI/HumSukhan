@@ -9,9 +9,9 @@ import '../models/models.dart';
 import '../services/cloud_tts_service.dart';
 import '../services/everyday_language_policy.dart';
 import '../services/roman_urdu_detector.dart';
+import '../services/speech_capability.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/stt/model_manager.dart';
-import '../services/tts_capability_service.dart';
 import '../services/tts_engine.dart';
 
 abstract class TtsProvider implements TtsEngine {}
@@ -20,6 +20,7 @@ class ResilientTtsProvider implements TtsProvider {
   final FlutterTts _native = FlutterTts();
   final AudioPlayer _player = AudioPlayer();
   final Map<String, Uint8List> _cloudCache = <String, Uint8List>{};
+  final SpeechCapability _capability = SpeechCapability.instance;
   bool _speaking = false;
   bool _initialized = false;
   int _speakGeneration = 0;
@@ -65,12 +66,19 @@ class ResilientTtsProvider implements TtsProvider {
     final ok = await initialize();
     if (ok) {
       unawaited(_withNativeLock(() async {
-        await TtsCapabilityService.instance.isNativeReliable(_native, 'english');
-        await TtsCapabilityService.instance.isNativeReliable(_native, 'urdu');
+        await _capability.ttsReliable(_native, 'english');
+        await _capability.ttsReliable(_native, 'urdu');
         _installPlaybackHandlers();
       }));
     }
     return ok;
+  }
+
+  Future<void> recheckMissingCapabilities() async {
+    await _withNativeLock(() async {
+      await _capability.recheckIfMissing(nativeTts: _native);
+      _installPlaybackHandlers();
+    });
   }
 
   String _deliveryLanguage(String language, String text) {
@@ -81,14 +89,8 @@ class ResilientTtsProvider implements TtsProvider {
     return 'english';
   }
 
-  List<String> _nativeLocaleCandidates(String deliveryLanguage) {
-    switch (deliveryLanguage) {
-      case 'urdu':
-        return const ['ur-PK', 'ur-IN'];
-      default:
-        return const ['en-US', 'en-GB', 'en-IN'];
-    }
-  }
+  List<String> _nativeLocaleCandidates(String deliveryLanguage) =>
+      _capability.ttsCandidates(deliveryLanguage);
 
   Future<bool> _setNativeLocale(String deliveryLanguage) async {
     for (final locale in _nativeLocaleCandidates(deliveryLanguage)) {
@@ -125,10 +127,7 @@ class ResilientTtsProvider implements TtsProvider {
       _withNativeLock(() => _speakNativeLocked(text, deliveryLanguage));
 
   Future<void> _speakNativeLocked(String text, String deliveryLanguage) async {
-    final reliable = await TtsCapabilityService.instance.isNativeReliable(
-      _native,
-      deliveryLanguage,
-    );
+    final reliable = await _capability.ttsReliable(_native, deliveryLanguage);
     _installPlaybackHandlers();
     if (!reliable) {
       throw StateError(
@@ -329,6 +328,12 @@ class SpeechProvider extends ChangeNotifier {
   }
 
   Future<void> warmUpTts() async => _ttsProvider.warmUp();
+
+  Future<void> recheckSpeechCapabilities() async {
+    await _sttProvider.recheckPlatformCapabilities();
+    await _ttsProvider.recheckMissingCapabilities();
+    notifyListeners();
+  }
 
   Future<void> startListening({String language = 'English'}) async {
     await _sttSubscription?.cancel();
