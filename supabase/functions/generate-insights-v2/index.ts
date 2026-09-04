@@ -16,7 +16,7 @@ const MAX_MENTIONED_PEOPLE = 12;
 
 const TASK_VERBS = new Set([
   "add", "approve", "book", "call", "check", "complete", "confirm",
-  "contact", "create", "deliver", "draft", "email", "finish", "follow",
+  "contact", "create", "deliver", "discuss", "draft", "email", "finish", "follow",
   "fix", "implement", "prepare", "review", "schedule", "send", "share",
   "submit", "test", "update", "upload", "write",
 ]);
@@ -27,7 +27,7 @@ const COMMITMENT_MARKERS = [
 ];
 
 const DISCUSSION_PREFIXES = [
-  "discussed", "discuss ", "talked about", "mentioned", "noted ", "reviewed",
+  "discussed", "talked about", "mentioned", "noted ", "reviewed",
   "considered", "explored", "covered", "talked through", "agreed", "decided",
   "the deadline is", "deadline:", "context:", "background:",
 ];
@@ -183,6 +183,7 @@ Deno.serve(async (req) => {
       `Only emit an action item when the transcript contains an explicit task, commitment, request, assignment, or follow-up.`,
       `Action items must be phrased as concrete work, not a topic, observation, decision, or discussion point.`,
       `Remove passive statements such as "the team discussed...", "the deadline is...", or "the project needs..." unless they contain an explicit follow-up task.`,
+      `Imperative actions such as "Discuss the rollout plan" are valid tasks when explicitly requested or assigned.`,
       `When a person is explicitly assigned, keep that person's name in the action item.`,
       `When a deadline is explicitly attached to an action, keep the deadline in the same action item.`,
       `Never invent an owner or deadline.`,
