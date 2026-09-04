@@ -48,3 +48,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+  fonts:
+    - family: NotoNastaliqUrdu
+      fonts:
+        - asset: fonts/noto_sans/NotoNastaliqUrdu-Regular.ttf
