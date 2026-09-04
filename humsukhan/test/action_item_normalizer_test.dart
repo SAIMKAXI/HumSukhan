@@ -36,9 +36,8 @@ void main() {
         'Please review the budget proposal.',
       ]);
 
-      expect(result, hasLength(2));
-      expect(result.first, 'Review the budget proposal.');
-      expect(result.last, 'Please review the budget proposal.');
+      expect(result, hasLength(1));
+      expect(result.single, 'Review the budget proposal.');
     });
   });
 
