@@ -90,7 +90,7 @@ class EnhancedSpeechProvider {
   }
 
   Future<void> recheckPlatformCapabilities() async {
-    if (!_initialized || !_platformAvailable) return;
+    if (!_initialized) return;
     try {
       await _capability.recheckIfMissing(platformStt: _platformSTT);
       _platformAvailable = await _capability.sttAvailable();
