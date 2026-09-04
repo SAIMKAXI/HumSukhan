@@ -221,7 +221,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     ProfessionalInsight? insight,
     AppStrings strings,
   ) {
-    if (insight == null || !insight.isAvailable) {
+    if (insight == null || !insight.isAvailable || insight.summaryBullets.isEmpty) {
       return ErrorState(
         title: strings.insightsUnavailable,
         message: strings.insightsUnavailableDesc,
@@ -264,9 +264,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     ProfessionalInsight insight,
     AppStrings strings,
   ) {
-    final bullets = insight.summaryBullets.isEmpty
-        ? <String>[if (insight.summary.trim().isNotEmpty) insight.summary.trim()]
-        : insight.summaryBullets;
+    final bullets = insight.summaryBullets;
 
     return Card(
       child: Padding(
@@ -397,9 +395,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       buffer.writeln('${caption.speaker}: ${caption.text}');
     }
 
-    if (insight?.isAvailable == true) {
+    if (insight?.isAvailable == true && insight!.summaryBullets.isNotEmpty) {
       buffer.writeln('\n--- AI SUMMARY ---');
-      for (final bullet in insight!.summaryBullets) {
+      for (final bullet in insight.summaryBullets) {
         buffer.writeln('• $bullet');
       }
 
@@ -416,6 +414,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           buffer.writeln('• $deadline');
         }
       }
+    } else if (insight?.summary.trim().isNotEmpty == true) {
+      buffer.writeln('\n--- LEGACY AI SUMMARY ---');
+      buffer.writeln(insight!.summary.trim());
     }
 
     return buffer.toString();
