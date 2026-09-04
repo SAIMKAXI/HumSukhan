@@ -52,8 +52,6 @@ class SettingsScreen extends StatelessWidget {
         SwitchListTile(title: Text(s.visualAlerts), subtitle: Text(s.visualAlertsDesc), value: settings.visualAlerts, onChanged: (_) => settings.toggleVisualAlerts()),
         SwitchListTile(title: Text(s.screenFlashAlerts), subtitle: Text(s.screenFlashAlertsDesc), value: settings.screenFlashAlerts, onChanged: (_) => settings.toggleScreenFlashAlerts()),
         SwitchListTile(title: Text(s.flashlightAlerts), subtitle: Text(s.flashlightAlertsDesc), value: settings.flashAlerts, onChanged: (_) => settings.toggleFlashAlerts()),
-        _SectionHeader(title: s.languageSection),
-        ListTile(title: Text(s.captionLanguage), subtitle: Text(settings.captionLanguage), trailing: const Icon(Icons.chevron_right), onTap: () => _showLanguageDialog(context, settings, s)),
         _SectionHeader(title: s.speechRecognition),
         const _SpeechModelsSection(),
         _SectionHeader(title: s.environmentalAlerts),
@@ -74,7 +72,6 @@ class SettingsScreen extends StatelessWidget {
     final nameController = TextEditingController(text: user.profile?.name ?? '');
     String? avatarData = user.profile?.avatarData;
     final picker = ImagePicker();
-
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -123,20 +120,6 @@ class SettingsScreen extends StatelessWidget {
             RadioListTile<String>(title: Text(s.languageEnglish), value: 'en', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
             RadioListTile<String>(title: Text(s.languageUrdu), value: 'ur', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
           ],
-        ),
-      ),
-    );
-  }
-
-  void _showLanguageDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
-    const languages = ['English', 'Roman Urdu', 'Urdu'];
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(s.captionLanguage),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: languages.map((lang) => RadioListTile<String>(title: Text(lang), value: lang, groupValue: settings.captionLanguage, onChanged: (v) { if (v != null) settings.setCaptionLanguage(v); Navigator.pop(ctx); })).toList(),
         ),
       ),
     );
