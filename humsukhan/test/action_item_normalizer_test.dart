@@ -7,6 +7,7 @@ void main() {
       final result = ActionItemNormalizer.normalize([
         '• Send the final deck by Friday. ',
         'Aisha will review the numbers before the meeting.',
+        'Discuss the rollout plan with Aisha.',
         'The team discussed the launch timeline.',
         'The deadline is Friday.',
         'We talked about budget options.',
@@ -15,6 +16,7 @@ void main() {
       expect(result, [
         'Send the final deck by Friday.',
         'Aisha will review the numbers before the meeting.',
+        'Discuss the rollout plan with Aisha.',
       ]);
     });
 
