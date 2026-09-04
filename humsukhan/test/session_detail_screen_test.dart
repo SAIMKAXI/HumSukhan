@@ -49,7 +49,11 @@ void main() {
         'The team agreed on the project direction.',
         'Launch preparation will start this week.',
       ],
-      actionItems: const ['Prepare the launch checklist.'],
+      actionItems: const [
+        'Prepare the launch checklist.',
+        'The team discussed the launch timeline.',
+        'The deadline is Friday.',
+      ],
       deadlines: const ['Friday'],
       mentionedPeople: const ['Aisha'],
       isAvailable: true,
@@ -86,6 +90,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Prepare the launch checklist.'), findsOneWidget);
+    expect(find.text('The team discussed the launch timeline.'), findsNothing);
+    expect(find.text('The deadline is Friday.'), findsNothing);
     expect(find.text('Friday'), findsNothing);
     expect(find.text('Aisha'), findsNothing);
   });

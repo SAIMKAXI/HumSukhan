@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../services/ai_service.dart';
 import '../services/database_service.dart';
 import '../services/supabase_service.dart';
+import '../utils/action_item_normalizer.dart';
 import '../utils/insight_normalizer.dart';
 
 enum FolderDeleteMode { keepSessions, deleteSessions }
@@ -33,8 +34,12 @@ class ProfessionalProvider extends ChangeNotifier {
   ProfessionalProvider() { _loadData(); }
 
   ProfessionalInsight _normalizeInsight(ProfessionalInsight insight) {
-    final summaryBullets = InsightNormalizer.dedupeSummary(insight.summaryBullets);
-    final actionItems = InsightNormalizer.dedupeActions(insight.actionItems);
+    final rawSummaryBullets = InsightNormalizer.dedupeSummary(insight.summaryBullets);
+    final actionItems = ActionItemNormalizer.normalize(insight.actionItems);
+    final summaryBullets = ActionItemNormalizer.removeActionOverlap(
+      summaryBullets: rawSummaryBullets,
+      actionItems: actionItems,
+    );
     final deadlines = InsightNormalizer.dedupeDeadlines(insight.deadlines);
     final mentionedPeople = InsightNormalizer.dedupePeople(insight.mentionedPeople);
     return ProfessionalInsight(
