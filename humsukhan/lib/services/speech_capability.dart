@@ -177,8 +177,17 @@ class SpeechCapability {
     FlutterTts? nativeTts,
   }) async {
     if (platformStt != null) {
-      final sttAvailable = await _cached('stt_available');
-      if (sttAvailable == false) {
+      // Recheck when *any* tracked sub-capability is a cached negative, not
+      // only when the recognizer itself was unavailable. A device can have
+      // `stt_available == true` (the recognizer exists) while a specific
+      // language pack (e.g. Urdu) was missing at the time it was probed;
+      // that language should be rediscovered once installed, not left
+      // permanently false just because the recognizer overall works.
+      final available = await _cached('stt_available');
+      final english = await _cached('stt_english');
+      final urdu = await _cached('stt_urdu');
+      final hasNegative = available == false || english == false || urdu == false;
+      if (hasNegative) {
         await probeStt(platformStt, recheckNegative: true);
       }
     }
