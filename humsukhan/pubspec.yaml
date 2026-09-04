@@ -52,6 +52,9 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+    - assets/icon_mark.png
+    - assets/logo_rectangle.png
+    - assets/logo_rectangle_transparent.png
   fonts:
     - family: NotoNastaliqUrdu
       fonts:

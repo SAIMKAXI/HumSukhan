@@ -24,7 +24,10 @@ class BrandLogo extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: Image.asset('assets/logo.png', fit: BoxFit.cover),
+      // A dedicated mark-only, transparent, safe-zone-padded asset -- not
+      // assets/logo.png, which is the full lockup including the Urdu
+      // wordmark and is illegible at this badge's small sizes (40-56dp).
+      child: Image.asset('assets/icon_mark.png', fit: BoxFit.contain),
     );
   }
 }
