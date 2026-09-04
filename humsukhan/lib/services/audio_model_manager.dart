@@ -110,6 +110,18 @@ class AudioModelManager {
           await partFile.delete();
           return false;
         }
+        // A server that closes early ends the stream without throwing, which
+        // would otherwise rename a truncated model into place and leave the
+        // feature permanently broken. Only accept a complete download.
+        final expected = response.contentLength;
+        if (expected != null && stat.size != expected) {
+          debugPrint(
+            'AudioModelManager: truncated download for $url '
+            '(${stat.size} of $expected bytes)',
+          );
+          await partFile.delete();
+          return false;
+        }
         await partFile.rename(targetPath);
         return true;
       } finally {
