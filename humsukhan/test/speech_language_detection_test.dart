@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:humsukhan/providers/speech_provider.dart';
+import 'package:humsukhan/providers/everyday_speech_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -59,8 +59,20 @@ void main() {
     final speech = SpeechProvider();
     addTearDown(speech.dispose);
 
+    // A short, fully-mapped Roman Urdu phrase normalizes entirely to Urdu
+    // script, so it is reported as Urdu -- not a separate "Roman Urdu"
+    // language, and never as Hindi.
+    speech.detectLanguage('aap kaise hain');
+    expect(speech.detectedLanguage?.language, 'Urdu');
+
+    // A phrase containing a word the Roman-Urdu-to-Urdu dictionary does not
+    // cover (here "chahte") normalizes only partially: some tokens become
+    // Urdu script, the uncovered token stays Latin. detectLanguage correctly
+    // reports this as genuinely mixed-script text ('Auto'/script 'Mixed')
+    // rather than silently mislabeling it as pure English or pure Urdu.
     speech.detectLanguage('aap kya karna chahte hain');
-    expect(speech.detectedLanguage?.language, 'Roman Urdu');
+    expect(speech.detectedLanguage?.language, 'Auto');
+    expect(speech.detectedLanguage?.script, 'Mixed');
 
     speech.detectLanguage('this is an English sentence');
     expect(speech.detectedLanguage?.language, 'English');

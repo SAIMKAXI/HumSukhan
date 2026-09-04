@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:humsukhan/providers/speech_provider.dart';
+import 'package:humsukhan/providers/everyday_speech_provider.dart';
 import 'package:humsukhan/services/everyday_language_policy.dart';
 
 void main() {
