@@ -17,13 +17,14 @@ class InsightNormalizer {
   }
 
   static String clean(String value) {
-    return value
+    var result = value
         .replaceAll(RegExp(r'[\u2018\u2019\u201C\u201D]'), "'")
-        .replaceAll(RegExp(r'[\u2013\u2014]'), '-')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .replaceFirst(RegExp(r'^[•\-*]+\s*'), '')
-        .replaceFirst(RegExp(r'^\d+[.)]\s*'), '')
+        .replaceAll(RegExp(r'[\u2013\u2014]'), '-');
+    result = result.replaceAll(RegExp(r'\s+'), ' ').trim();
+    result = result
+        .replaceFirst(RegExp(r'^(?:[•▪◦·*-]+|\d+[.)])\s*'), '')
         .trim();
+    return result;
   }
 
   static List<String> dedupeSummary(List<String> items) => list(items, maxItems: 6);
@@ -39,21 +40,13 @@ class InsightNormalizer {
       final itemKey = _canonical(item);
       if (itemKey == candidateKey) return true;
 
-      if (candidateKey.contains(itemKey) || itemKey.contains(candidateKey)) {
-        final shorter = candidateKey.length < itemKey.length
-            ? candidateKey.length
-            : itemKey.length;
-        final longer = candidateKey.length > itemKey.length
-            ? candidateKey.length
-            : itemKey.length;
-        if (shorter >= 12 && shorter / longer >= .72) return true;
-      }
-
       final itemTokens = _tokens(itemKey);
       if (candidateTokens.length < 3 || itemTokens.length < 3) continue;
       final intersection = candidateTokens.intersection(itemTokens).length;
       final union = candidateTokens.union(itemTokens).length;
-      if (union > 0 && intersection / union >= .78) return true;
+      if (intersection >= 3 && union > 0 && intersection / union >= .80) {
+        return true;
+      }
     }
 
     return false;
@@ -72,7 +65,7 @@ class InsightNormalizer {
     return value
         .split(' ')
         .map((token) => token.trim())
-        .where((token) => token.length >= 2)
+        .where((token) => token.length >= 2 || int.tryParse(token) != null)
         .toSet();
   }
 }
