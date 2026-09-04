@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
+import '../widgets/modern_ui.dart';
 import '../l10n/app_strings.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -212,7 +213,7 @@ class _AboutSection extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(18),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [Image.asset('assets/logo.png', width: 56, height: 56), const SizedBox(width: 14), Expanded(child: Text('HumSukhan', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)))]),
+            Row(children: [const BrandLogo(size: 56), const SizedBox(width: 14), Expanded(child: Text('HumSukhan', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)))]),
             const SizedBox(height: 16),
             Text(isUrdu ? 'قابلِ رسائی مواصلات، لائیو کیپشنز، تقریر کی مدد اور پیشہ ورانہ سننا ایک ہی جگہ۔' : 'Accessible communication, live captions, speech assistance, and professional listening in one place.', style: theme.textTheme.bodyLarge),
             const SizedBox(height: 12),
