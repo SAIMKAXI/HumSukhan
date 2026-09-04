@@ -30,6 +30,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   StreamSubscription<SpeechResultEvent>? _fallbackSubscription;
   bool _initialized = false;
   bool _listening = false;
+  bool _startingListening = false;
   bool _usingFallback = false;
   bool _forceFallbackMode = false;
   bool _speaking = false;
@@ -119,33 +120,45 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   }
 
   Future<void> startListening({String language = 'English'}) async {
-    await initialize(preferredLanguage: language);
-    if (_listening) return;
+    // Guard set synchronously, before any `await`, so two rapid calls (a
+    // double tap on the mic button, or a resume racing a manual tap) cannot
+    // both pass this check and open two microphone/socket sessions. Without
+    // this, `_listening` is only flipped true deep inside the async start
+    // sequence below, leaving a window where a second call would see
+    // `_listening == false` and start a second recognizer session.
+    if (_listening || _startingListening) return;
+    _startingListening = true;
+    try {
+      await initialize(preferredLanguage: language);
+      if (_listening) return;
 
-    _language = _normalizeLanguage(language);
-    _lastStartError = null;
-    _latestFinal = '';
-    _detected = null;
-    _currentMode = STTMode.platform;
-    _usingFallback = false;
+      _language = _normalizeLanguage(language);
+      _lastStartError = null;
+      _latestFinal = '';
+      _detected = null;
+      _currentMode = STTMode.platform;
+      _usingFallback = false;
 
-    if (_forceFallbackMode) {
+      if (_forceFallbackMode) {
+        await _startFallback(_language == 'Auto' ? 'English' : _language);
+        return;
+      }
+
+      await _bilingualSubscription?.cancel();
+      _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
+      final started = await _bilingual.start(mode: _language);
+      if (started) {
+        _listening = true;
+        notifyListeners();
+        return;
+      }
+
+      await _bilingualSubscription?.cancel();
+      _bilingualSubscription = null;
       await _startFallback(_language == 'Auto' ? 'English' : _language);
-      return;
+    } finally {
+      _startingListening = false;
     }
-
-    await _bilingualSubscription?.cancel();
-    _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
-    final started = await _bilingual.start(mode: _language);
-    if (started) {
-      _listening = true;
-      notifyListeners();
-      return;
-    }
-
-    await _bilingualSubscription?.cancel();
-    _bilingualSubscription = null;
-    await _startFallback(_language == 'Auto' ? 'English' : _language);
   }
 
   Future<void> _startFallback(String language) async {

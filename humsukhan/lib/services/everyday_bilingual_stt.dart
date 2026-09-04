@@ -90,6 +90,14 @@ class EverydayBilingualSttService {
   String _mode = 'Auto';
   String? _lastStartError;
 
+  // Incremented by every start()/stop() call. start() checks this after each
+  // await against the value it captured at entry; if stop() (or a newer
+  // start()) ran while a permission request / token fetch / websocket
+  // connect / recorder start was in flight, the stale start() tears down
+  // whatever it opened instead of "reviving" a session the caller already
+  // asked to stop (see: stop-immediately-after-start race).
+  int _sessionGeneration = 0;
+
   List<_WordToken> _englishWords = const [];
   List<_WordToken> _urduWords = const [];
   String _englishInterim = '';
@@ -159,6 +167,7 @@ class EverydayBilingualSttService {
 
   Future<bool> start({String mode = 'Auto'}) async {
     if (_recording) return true;
+    final generation = ++_sessionGeneration;
     _mode = _normalizeMode(mode);
     _lastStartError = null;
 
@@ -172,10 +181,12 @@ class EverydayBilingualSttService {
         return false;
       }
     }
+    if (generation != _sessionGeneration) return false;
     if (!await _recorder.hasPermission()) {
       _lastStartError = 'The microphone is not available to the speech recorder.';
       return false;
     }
+    if (generation != _sessionGeneration) return false;
 
     final needsEnglish = _mode == 'English' || _mode == 'Auto';
     final needsUrdu = _mode == 'Urdu' || _mode == 'Auto';
@@ -186,8 +197,13 @@ class EverydayBilingualSttService {
     if (needsEnglish) {
       final token = await _getTemporaryToken();
       if (token == null) return false;
+      if (generation != _sessionGeneration) return false;
       english = await _connect('en-US', token);
       if (english == null) return false;
+      if (generation != _sessionGeneration) {
+        try { await english.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
+        return false;
+      }
     }
 
     if (needsUrdu) {
@@ -196,9 +212,18 @@ class EverydayBilingualSttService {
         try { await english?.close(WebSocketStatus.normalClosure, 'Urdu channel unavailable'); } catch (_) {}
         return false;
       }
+      if (generation != _sessionGeneration) {
+        try { await english?.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
+        return false;
+      }
       urdu = await _connect('ur', token);
       if (urdu == null) {
         try { await english?.close(WebSocketStatus.normalClosure, 'Urdu channel unavailable'); } catch (_) {}
+        return false;
+      }
+      if (generation != _sessionGeneration) {
+        try { await english?.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
+        try { await urdu.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
         return false;
       }
     }
@@ -235,6 +260,22 @@ class EverydayBilingualSttService {
         sampleRate: 16000,
         numChannels: 1,
       ));
+      if (generation != _sessionGeneration) {
+        // A stop() (or a newer start()) ran while the recorder was starting.
+        // Tear this session down instead of leaving a live mic stream the
+        // caller already asked to stop.
+        try { await _recorder.stop(); } catch (_) {}
+        try { await english?.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
+        try { await urdu?.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
+        await _englishSubscription?.cancel();
+        await _urduSubscription?.cancel();
+        _englishSubscription = null;
+        _urduSubscription = null;
+        if (identical(_englishSocket, english)) _englishSocket = null;
+        if (identical(_urduSocket, urdu)) _urduSocket = null;
+        _ready = false;
+        return false;
+      }
       _recording = true;
       _audioSubscription = stream.listen(
         (data) {
@@ -495,6 +536,9 @@ class EverydayBilingualSttService {
   }
 
   Future<void> stop() async {
+    // Supersede any start() still in flight so it tears itself down instead
+    // of finishing after this stop() and reviving the session.
+    ++_sessionGeneration;
     _emitTimer?.cancel();
     _finalTimer?.cancel();
     _emitTimer = null;
