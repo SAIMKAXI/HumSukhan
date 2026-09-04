@@ -82,206 +82,109 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       case STTMode.sherpaBatch:
         return 'Offline speech recognition using Sherpa-ONNX. Short processing delay.';
       case STTMode.platform:
-        return _usingFallback
-            ? 'Using the device speech recognizer after the primary Everyday recognizer became unavailable.'
-            : 'Online bilingual speech recognition.';
+        return 'Online speech recognition using the configured streaming transcription service.';
       case STTMode.demo:
-        return 'Demo mode with simulated captions.';
+        return 'Demo mode with simulated captions. No actual speech recognition.';
       case STTMode.none:
-        return 'Speech recognition unavailable.';
+        return 'Speech recognition unavailable. Please check microphone access or download a language model for offline use.';
     }
   }
 
-  Future<void> initialize({String preferredLanguage = 'English'}) async {
+  Future<void> initialize({String preferredLanguage = 'Auto'}) async {
     if (_initialized) return;
     _language = _normalizeLanguage(preferredLanguage);
-    try {
-      // Warm up once so any native-language capability calibration is completed
-      // before the user's first Speak action. ResilientTtsProvider serializes
-      // its probe with all later native TTS operations.
-      await _ttsProvider.warmUp();
-      _initialized = true;
-      notifyListeners();
-    } catch (e) {
-      _lastStartError = 'Speech services could not initialize: $e';
-      notifyListeners();
-      rethrow;
-    }
+    await _modelManager.initialize();
+    await _fallbackStt.initialize(preferredLanguage: preferredLanguage);
+    await _ttsProvider.initialize();
+    _initialized = true;
+    _currentMode = _fallbackStt.currentMode;
+    notifyListeners();
   }
 
-  Future<void> warmUpTts() => _ttsProvider.warmUp();
+  Future<bool> warmUpTts() => _ttsProvider.warmUp();
 
-  Future<void> startListening({String language = 'English'}) async {
-    await initialize(preferredLanguage: language);
-    if (_listening) return;
-
-    _language = _normalizeLanguage(language);
+  Future<void> startListening({String language = 'Auto'}) async {
+    await _bilingualSubscription?.cancel();
+    await _fallbackSubscription?.cancel();
+    _bilingualSubscription = null;
+    _fallbackSubscription = null;
     _lastStartError = null;
-    _latestFinal = '';
-    _detected = null;
-    _currentMode = STTMode.platform;
+    _language = _normalizeLanguage(language);
+    _listening = false;
     _usingFallback = false;
 
-    if (_forceFallbackMode) {
-      await _startFallback(_language == 'Auto' ? 'English' : _language);
-      return;
-    }
-
-    await _bilingualSubscription?.cancel();
-    _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
-    final started = await _bilingual.start(mode: _language);
-    if (started) {
-      _listening = true;
-      notifyListeners();
-      return;
-    }
-
-    await _bilingualSubscription?.cancel();
-    _bilingualSubscription = null;
-    await _startFallback(_language == 'Auto' ? 'English' : _language);
-  }
-
-  Future<void> _startFallback(String language) async {
-    await _fallbackSubscription?.cancel();
-    _fallbackSubscription = _fallbackStt.onResult.listen((result) {
-      if (!_listening && result.isFinal == false) return;
-      final safe = EverydayLanguagePolicy.sanitizeHindi(result.text).trim();
-      if (safe.isEmpty || _results.isClosed) return;
-      final normalized = EverydayLanguagePolicy.normalizeRomanUrdu(safe);
-      final detected = _detectCaptionLanguage(normalized, fallback: language);
-      if (result.isFinal) _latestFinal = normalized;
-      _detected = LanguageResult(
-        language: detected,
-        confidence: result.confidence,
-        script: EverydayLanguagePolicy.containsUrduScript(normalized) ? 'Arabic' : 'Latin',
-      );
-      _results.add(SpeechResultEvent(
-        text: normalized,
-        isFinal: result.isFinal,
-        confidence: result.confidence,
-        language: detected,
-        isLive: true,
-        mode: result.mode,
-      ));
-      _currentMode = result.mode;
-      notifyListeners();
-    });
-
-    try {
-      await _fallbackStt.startListening(language: language);
-      if (_fallbackStt.isListening) {
+    if (_language == 'Auto' && !_forceFallbackMode) {
+      final started = await _bilingual.start();
+      if (started) {
+        _currentMode = STTMode.platform;
         _listening = true;
-        _usingFallback = true;
-        _currentMode = _fallbackStt.currentMode;
+        _bilingualSubscription = _bilingual.onResult.listen((result) {
+          final text = EverydayLanguagePolicy.sanitizeHindi(result.text).trim();
+          if (text.isEmpty) return;
+          final detected = _detectCaptionLanguage(text, fallback: 'English');
+          _currentMode = result.mode;
+          if (result.isFinal) _latestFinal = text;
+          _updateDetection(text, detected);
+          _results.add(SpeechResultEvent(
+            text: text,
+            isFinal: result.isFinal,
+            mode: result.mode,
+          ));
+          notifyListeners();
+        });
         notifyListeners();
         return;
       }
+      _lastStartError = _bilingual.lastStartError;
+    }
+
+    _usingFallback = true;
+    _fallbackSubscription = _fallbackStt.onResult.listen((result) {
+      _currentMode = result.mode;
+      if (result.isFinal && result.text.trim().isNotEmpty) {
+        _latestFinal = EverydayLanguagePolicy.sanitizeHindi(result.text).trim();
+        _updateDetection(result.text, _language == 'Auto' ? 'English' : _language);
+      }
+      _results.add(result);
+      notifyListeners();
+    });
+    try {
+      await _fallbackStt.startListening(language: _language == 'Auto' ? 'English' : _language);
+      _currentMode = _fallbackStt.currentMode;
+      _listening = _fallbackStt.isListening;
     } catch (e) {
-      _lastStartError = 'Fallback speech recognition could not start: $e';
-    }
-
-    _listening = false;
-    _usingFallback = false;
-    _currentMode = STTMode.none;
-    _lastStartError ??= _fallbackStt.lastStartError ?? 'Live speech recognition could not be started.';
-    await _fallbackSubscription?.cancel();
-    _fallbackSubscription = null;
-    notifyListeners();
-  }
-
-  void _handleResult(EverydayBilingualResult result) {
-    final safe = EverydayLanguagePolicy.sanitizeHindi(result.text).trim();
-    if (safe.isEmpty) return;
-
-    final normalized = _language == 'English'
-        ? EverydayLanguagePolicy.toEnglishMode(safe)
-        : EverydayLanguagePolicy.normalizeRomanUrdu(safe);
-    if (normalized.trim().isEmpty) return;
-
-    final hasUrdu = EverydayLanguagePolicy.containsUrduScript(normalized);
-    final hasEnglish = EverydayLanguagePolicy.containsLatin(normalized);
-    final hasRomanUrdu = !hasUrdu && RomanUrduDetector.isRomanUrdu(normalized);
-    final language = hasUrdu && hasEnglish
-        ? 'Auto'
-        : hasUrdu
-            ? 'Urdu'
-            : hasRomanUrdu
-                ? 'Roman Urdu'
-                : 'English';
-    _detected = LanguageResult(
-      language: language,
-      confidence: result.confidence,
-      script: hasUrdu && hasEnglish ? 'Mixed' : hasUrdu ? 'Arabic' : 'Latin',
-    );
-    if (result.isFinal) _latestFinal = normalized;
-    if (!_results.isClosed) {
-      _results.add(SpeechResultEvent(
-        text: normalized,
-        isFinal: result.isFinal,
-        confidence: result.confidence,
-        language: language,
-        isLive: true,
-        mode: STTMode.platform,
-      ));
+      _lastStartError = e.toString();
+      _listening = false;
+      rethrow;
     }
     notifyListeners();
   }
 
-  @override
   Future<void> stopListening() async {
     await _bilingual.stop();
     await _fallbackStt.stopListening();
-    _listening = false;
-    _usingFallback = false;
     await _bilingualSubscription?.cancel();
     await _fallbackSubscription?.cancel();
     _bilingualSubscription = null;
     _fallbackSubscription = null;
+    _listening = false;
     notifyListeners();
   }
 
-  Future<void> switchToOfflineStreamingMode({String language = 'English'}) async {
+  Future<void> switchMode(STTMode mode, {String language = 'English'}) async {
+    _forceFallbackMode = mode != STTMode.platform;
     await stopListening();
-    _forceFallbackMode = true;
-    await _fallbackStt.switchMode(STTMode.sherpaStreaming, language: language);
-    _currentMode = STTMode.sherpaStreaming;
     _language = _normalizeLanguage(language);
-    notifyListeners();
-  }
-
-  Future<void> switchToOfflineBatchMode({String language = 'Urdu'}) async {
-    await stopListening();
-    _forceFallbackMode = true;
-    await _fallbackStt.switchMode(STTMode.sherpaBatch, language: language);
-    _currentMode = STTMode.sherpaBatch;
-    _language = _normalizeLanguage(language);
-    notifyListeners();
-  }
-
-  Future<void> switchToOnlineMode({String language = 'English'}) async {
-    final wasListening = _listening;
-    await stopListening();
-    _forceFallbackMode = false;
-    _language = _normalizeLanguage(language);
-    _currentMode = STTMode.platform;
-    if (wasListening) await startListening(language: language);
+    await _fallbackStt.switchMode(mode, language: _language == 'Auto' ? 'English' : _language);
+    _currentMode = _fallbackStt.currentMode;
     notifyListeners();
   }
 
   Future<void> switchLanguage(String language) async {
     final normalized = _normalizeLanguage(language);
-    final wasListening = _listening;
-    await stopListening();
     _language = normalized;
-    if (_forceFallbackMode) {
-      try {
-        await _fallbackStt.switchLanguage(normalized == 'Auto' ? 'English' : normalized);
-        _currentMode = _fallbackStt.currentMode;
-      } catch (e) {
-        _lastStartError = 'Could not switch speech language: $e';
-      }
-    }
-    if (wasListening) await startListening(language: normalized);
+    await _fallbackStt.switchLanguage(normalized == 'Auto' ? 'English' : normalized);
+    _currentMode = _fallbackStt.currentMode;
     notifyListeners();
   }
 
@@ -292,13 +195,10 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   Future<bool> downloadOfflineModel(String language) async {
     final success = await _modelManager.downloadModel(language);
-    if (success) {
-      if (_currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch) {
-        await _fallbackStt.switchLanguage(language);
-        _currentMode = _fallbackStt.currentMode;
-      }
-      notifyListeners();
+    if (success && isOfflineMode) {
+      await switchLanguage(language);
     }
+    notifyListeners();
     return success;
   }
 
@@ -322,7 +222,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   Future<void> speak(String text, {String language = 'English'}) async {
     final value = EverydayLanguagePolicy.sanitizeHindi(text).trim();
     if (value.isEmpty) return;
-    await initialize(preferredLanguage: language);
     final runId = ++_speechGeneration;
     final wasListening = _listening;
     final resumeLanguage = _language;
@@ -395,3 +294,5 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     super.dispose();
   }
 }
+
+typedef SpeechProvider = EverydaySpeechProvider;
