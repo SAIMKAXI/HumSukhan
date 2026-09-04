@@ -67,7 +67,7 @@ class SpeechCapability {
     bool recheckNegative = false,
   }) async {
     final memory = _memoryCache[capability];
-    if (memory == true || (memory == false && !recheckNegative)) return memory;
+    if (memory == true || (memory == false && !recheckNegative)) return memory!;
 
     final prefs = await _prefsInstance;
     final cached = prefs.getBool(_key(capability));
