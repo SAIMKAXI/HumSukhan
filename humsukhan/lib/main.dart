@@ -297,9 +297,17 @@ class _SpeechLifecycleGuardState extends State<SpeechLifecycleGuard> with Widget
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.inactive && state != AppLifecycleState.paused) return;
-    final speech = context.read<SpeechProvider>();
-    unawaited(_stopSpeechSession(speech));
+    if (!mounted) return;
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      final speech = context.read<SpeechProvider>();
+      unawaited(_stopSpeechSession(speech));
+      return;
+    }
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_recheckSpeechCapabilities());
+    }
   }
 
   Future<void> _stopSpeechSession(SpeechProvider speech) async {
@@ -310,6 +318,14 @@ class _SpeechLifecycleGuardState extends State<SpeechLifecycleGuard> with Widget
       ]);
     } catch (e) {
       debugPrint('Speech session cleanup on app lifecycle change failed: $e');
+    }
+  }
+
+  Future<void> _recheckSpeechCapabilities() async {
+    try {
+      await context.read<SpeechProvider>().recheckSpeechCapabilities();
+    } catch (e) {
+      debugPrint('Speech capability recheck after resume failed: $e');
     }
   }
 
