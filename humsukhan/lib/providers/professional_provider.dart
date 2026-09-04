@@ -95,12 +95,22 @@ class ProfessionalProvider extends ChangeNotifier {
 
   Future<void> generateInsights(String sessionId) async {
     final session=_sessions.firstWhere((s)=>s.id==sessionId); final existingIdx=_insights.indexWhere((i)=>i.sessionId==sessionId); final allText=session.captions.map((c)=>c.text).join('\n'); if(allText.trim().isEmpty)return;
-    final ai=AiService.instance.isAvailable ? await AiService.instance.generateInsights(sessionId:sessionId,transcript:allText,sessionTitle:session.title,sessionType:session.type) : null;
-    final insight=ai ?? _generateLocalInsights(session,allText); if(existingIdx==-1)_insights.add(insight);else _insights[existingIdx]=insight; await _saveInsights(); if(SupabaseService.instance.isAuthenticated)await DatabaseService.instance.upsertInsight(insight); notifyListeners();
+    final ai = AiService.instance.isAvailable
+        ? await AiService.instance.generateInsights(sessionId:sessionId,transcript:allText,sessionTitle:session.title,sessionType:session.type)
+        : null;
+    if (existingIdx != -1) {
+      _insights.removeAt(existingIdx);
+    }
+    if (ai != null && ai.isAvailable) {
+      _insights.add(ai);
+      await _saveInsights();
+      if (SupabaseService.instance.isAuthenticated) await DatabaseService.instance.upsertInsight(ai);
+    } else {
+      await _saveInsights();
+    }
+    notifyListeners();
   }
-  ProfessionalInsight _generateLocalInsights(ProfessionalSession session,String text){ final sentences=text.split(RegExp(r'[.!?]+')).map((s)=>s.trim()).where((s)=>s.length>10).toList(); final bullets=<String>[]; for(final sentence in sentences){if(bullets.length>=5)break; final clean='${sentence[0].toUpperCase()}${sentence.substring(1)}'; if(!bullets.contains(clean))bullets.add(clean);} if(bullets.isEmpty)bullets.add('Session captured ${session.captions.length} caption${session.captions.length==1?'':'s'}.'); final speakers=session.captions.map((c)=>c.speaker).toSet().where((s)=>s!='Speaker 1').toList(); return ProfessionalInsight(sessionId:session.id,summary:bullets.join(' '),summaryBullets:bullets,actionItems:_extractActionItems(text),deadlines:_extractDeadlines(text),mentionedPeople:speakers,isAvailable:true); }
-  List<String> _extractActionItems(String text){final out=<String>[];final patterns=[RegExp(r'\b(need to|must|should|will|going to|plan to|have to)\b',caseSensitive:false),RegExp(r'\b(complete|prepare|review|finish|send|update|create|build|fix|check)\b',caseSensitive:false)];for(final sentence in text.split(RegExp(r'[.!?]+')).where((s)=>s.trim().length>5)){final t=sentence.trim();if(patterns.any((p)=>p.hasMatch(t))&&out.length<5){final c='${t[0].toUpperCase()}${t.substring(1)}';if(!out.contains(c))out.add(c);}}return out;}
-  List<String> _extractDeadlines(String text){final out=<String>[];final patterns=[RegExp(r'\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}',caseSensitive:false),RegExp(r'\b\d{1,2}/\d{1,2}/\d{2,4}\b'),RegExp(r'\b(next week|this week|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b',caseSensitive:false)];for(final sentence in text.split(RegExp(r'[.!?]+')).where((s)=>s.trim().length>5)){final t=sentence.trim();if(patterns.any((p)=>p.hasMatch(t))&&out.length<5){final c='${t[0].toUpperCase()}${t.substring(1)}';if(!out.contains(c))out.add(c);}}return out;}
+
   void checkRetention(){_cleanExpiredSessions();notifyListeners();}
   void addDemoSession(){}
 }
