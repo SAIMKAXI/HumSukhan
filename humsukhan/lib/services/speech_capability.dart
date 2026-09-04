@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -15,9 +14,9 @@ import 'package:speech_to_text/speech_to_text.dart';
 /// therefore intentionally not done. TTS capability is verified with a real
 /// short synthesis and completion callback.
 ///
-/// Persisted results are scoped by platform + OS version. A negative result is
-/// cheap to recheck on resume so newly installed language packs are discovered
-/// without making every launch pay the probe cost.
+/// Persisted results are scoped by platform + OS version. Negative results are
+/// rechecked after app resume so newly installed language packs are discovered
+/// without paying the full probe cost on every app launch.
 class SpeechCapability {
   SpeechCapability._();
   static final SpeechCapability instance = SpeechCapability._();
@@ -39,9 +38,8 @@ class SpeechCapability {
   String _normalizeLocale(String locale) =>
       locale.trim().toLowerCase().replaceAll('_', '-').split('-').first;
 
-  bool _matchesLanguage(String locale, String language) {
-    return _normalizeLocale(locale) == _normalizeLocale(language);
-  }
+  bool _matchesLanguage(String locale, String language) =>
+      _normalizeLocale(locale) == _normalizeLocale(language);
 
   List<String> _localeIds(List<dynamic> locales) {
     final ids = <String>[];
@@ -52,6 +50,15 @@ class SpeechCapability {
       if (id.isNotEmpty) ids.add(id);
     }
     return ids;
+  }
+
+  Future<bool?> _cached(String capability) async {
+    final memory = _memoryCache[capability];
+    if (memory != null) return memory;
+    final prefs = await _prefsInstance;
+    final cached = prefs.getBool(_key(capability));
+    if (cached != null) _memoryCache[capability] = cached;
+    return cached;
   }
 
   Future<bool> _readOrProbe(
@@ -71,7 +78,7 @@ class SpeechCapability {
 
     final result = await probe();
     _memoryCache[capability] = result;
-    unawaited(prefs.setBool(_key(capability), result));
+    await prefs.setBool(_key(capability), result);
     return result;
   }
 
@@ -88,26 +95,44 @@ class SpeechCapability {
     await _writeCached('stt_available', available);
     await _writeCached('stt_english', english);
     await _writeCached('stt_urdu', urdu);
-
-    // A missing locale can become available after the user installs a voice /
-    // language pack. Rechecking negatives on resume is intentional.
-    if (!recheckNegative) return available;
-    _memoryCache['stt_available'] = available;
-    _memoryCache['stt_english'] = english;
-    _memoryCache['stt_urdu'] = urdu;
     return available;
   }
 
   Future<bool> sttAvailable({bool recheckNegative = false}) async {
-    return _readOrProbe('stt_available', () async => false,
-        recheckNegative: recheckNegative);
+    return _readOrProbe(
+      'stt_available',
+      () async => false,
+      recheckNegative: recheckNegative,
+    );
   }
 
-  Future<bool> sttSupportsEnglish() async =>
-      _readOrProbe('stt_english', () async => false);
+  Future<bool> sttSupportsEnglish() async => _readOrProbe(
+        'stt_english',
+        () async => false,
+      );
 
-  Future<bool> sttSupportsUrdu() async =>
-      _readOrProbe('stt_urdu', () async => false);
+  Future<bool> sttSupportsUrdu() async => _readOrProbe(
+        'stt_urdu',
+        () async => false,
+      );
+
+  Future<bool> sttSupportsLanguage(String language) async {
+    switch (_normalizeLocale(language)) {
+      case 'ur':
+        return sttSupportsUrdu();
+      default:
+        return sttSupportsEnglish();
+    }
+  }
+
+  Future<String?> sttLocaleFor(SpeechToText platformStt, String language) async {
+    final locales = _localeIds(await platformStt.locales());
+    final wanted = _normalizeLocale(language == 'urdu' || language == 'roman urdu' ? 'ur' : 'en');
+    for (final locale in locales) {
+      if (_normalizeLocale(locale) == wanted) return locale;
+    }
+    return null;
+  }
 
   Future<void> _writeCached(String capability, bool value) async {
     _memoryCache[capability] = value;
@@ -142,19 +167,22 @@ class SpeechCapability {
     String deliveryLanguage,
   ) => ttsReliable(native, deliveryLanguage, recheckNegative: true);
 
-  Future<void> recheckIfMissing({SpeechToText? platformStt, FlutterTts? nativeTts}) async {
+  Future<void> recheckIfMissing({
+    SpeechToText? platformStt,
+    FlutterTts? nativeTts,
+  }) async {
     if (platformStt != null) {
-      final sttMissing = !(_memoryCache['stt_available'] ?? true);
-      if (sttMissing) await probeStt(platformStt, recheckNegative: true);
+      final sttAvailable = await _cached('stt_available');
+      if (sttAvailable == false) {
+        await probeStt(platformStt, recheckNegative: true);
+      }
     }
     if (nativeTts != null) {
-      final englishMissing = !(_memoryCache['tts_english'] ?? true);
-      final urduMissing = !(_memoryCache['tts_urdu'] ?? true);
-      if (englishMissing) {
-        await recheckTtsIfMissing(nativeTts, 'english');
-      }
-      if (urduMissing) {
-        await recheckTtsIfMissing(nativeTts, 'urdu');
+      for (final language in const ['english', 'urdu']) {
+        final cached = await _cached('tts_$language');
+        if (cached == false) {
+          await recheckTtsIfMissing(nativeTts, language);
+        }
       }
     }
   }
@@ -189,9 +217,4 @@ class SpeechCapability {
     }
     return false;
   }
-
-  Map<String, dynamic> debugSnapshot() => <String, dynamic>{
-        'scope': _scope,
-        'cached': jsonDecode(jsonEncode(_memoryCache)),
-      };
 }
