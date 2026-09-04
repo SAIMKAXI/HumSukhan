@@ -207,7 +207,74 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
         ChangeNotifierProvider(create: (_) => QuickReplyProvider()),
         ChangeNotifierProvider(create: (_) => ConnectivityProvider()..initialize()),
       ],
-      child: const SpeechLifecycleGuard(child: _AppContent()),
+      child: SpeechLifecycleGuard(
+        child: Consumer2<SettingsProvider, AuthProvider>(
+          builder: (context, settings, auth, _) {
+            if (settings.appLanguage != _lastLanguage) {
+              _lastLanguage = settings.appLanguage;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) context.read<QuickReplyProvider>().switchLanguage(settings.appLanguage);
+              });
+            }
+
+            if (!auth.isAuthenticated) {
+              _lastSyncedSettingsUserId = null;
+            } else if (auth.userId != _lastSyncedSettingsUserId) {
+              _lastSyncedSettingsUserId = auth.userId;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                unawaited(context.read<SettingsProvider>().syncFromCloud());
+              });
+            }
+
+            context.read<EnvironmentalProvider>().setSettingsProvider(settings);
+
+            final appLocale = Locale(settings.appLanguage);
+            const delegates = [AppStrings.delegate, GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate];
+            const locales = [Locale('en'), Locale('ur')];
+            final isUrdu = settings.appLanguage == 'ur';
+            final urduFont = isUrdu ? 'NotoNastaliqUrdu' : 'NotoSans';
+            final direction = isUrdu ? TextDirection.rtl : TextDirection.ltr;
+            final highContrast = settings.isHighContrast;
+            final lightBase = highContrast ? _highContrastTheme(fontFamily: urduFont, dark: false) : AppTheme.lightTheme(fontFamily: urduFont);
+            final darkBase = highContrast ? _highContrastTheme(fontFamily: urduFont, dark: true) : AppTheme.darkTheme(fontFamily: urduFont);
+            final lightTheme = _withUrduMetrics(lightBase, isUrdu);
+            final darkTheme = _withUrduMetrics(darkBase, isUrdu);
+            final themeMode = settings.isDarkMode ? ThemeMode.dark : ThemeMode.light;
+
+            if (_showSplash) {
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                theme: lightTheme,
+                darkTheme: darkTheme,
+                themeMode: themeMode,
+                locale: appLocale,
+                supportedLocales: locales,
+                localizationsDelegates: delegates,
+                builder: (context, child) => _applyAccessibilityScale(context, child, settings),
+                home: SplashScreen(onComplete: () => setState(() => _showSplash = false)),
+              );
+            }
+
+            return Directionality(
+              textDirection: direction,
+              child: MaterialApp(
+                title: 'HumSukhan',
+                debugShowCheckedModeBanner: false,
+                theme: lightTheme,
+                darkTheme: darkTheme,
+                themeMode: themeMode,
+                home: const _AccountGate(),
+                onGenerateRoute: AppRouter.generateRoute,
+                locale: appLocale,
+                supportedLocales: locales,
+                localizationsDelegates: delegates,
+                builder: (context, child) => _applyAccessibilityScale(context, child, settings),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -231,8 +298,6 @@ class _SpeechLifecycleGuardState extends State<SpeechLifecycleGuard> with Widget
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.inactive && state != AppLifecycleState.paused) return;
-    if (!mounted) return;
-
     final speech = context.read<SpeechProvider>();
     unawaited(_stopSpeechSession(speech));
   }
@@ -256,81 +321,6 @@ class _SpeechLifecycleGuardState extends State<SpeechLifecycleGuard> with Widget
 
   @override
   Widget build(BuildContext context) => widget.child;
-}
-
-class _AppContent extends StatelessWidget {
-  const _AppContent();
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = context.findAncestorStateOfType<_HumSukhanAppState>()!;
-    return Consumer2<SettingsProvider, AuthProvider>(
-      builder: (context, settings, auth, _) {
-        if (settings.appLanguage != appState._lastLanguage) {
-          appState._lastLanguage = settings.appLanguage;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (appState.mounted) context.read<QuickReplyProvider>().switchLanguage(settings.appLanguage);
-          });
-        }
-
-        if (!auth.isAuthenticated) {
-          appState._lastSyncedSettingsUserId = null;
-        } else if (auth.userId != appState._lastSyncedSettingsUserId) {
-          appState._lastSyncedSettingsUserId = auth.userId;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!appState.mounted) return;
-            unawaited(context.read<SettingsProvider>().syncFromCloud());
-          });
-        }
-
-        context.read<EnvironmentalProvider>().setSettingsProvider(settings);
-
-        final appLocale = Locale(settings.appLanguage);
-        const delegates = [AppStrings.delegate, GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate];
-        const locales = [Locale('en'), Locale('ur')];
-        final isUrdu = settings.appLanguage == 'ur';
-        final urduFont = isUrdu ? 'NotoNastaliqUrdu' : 'NotoSans';
-        final direction = isUrdu ? TextDirection.rtl : TextDirection.ltr;
-        final highContrast = settings.isHighContrast;
-        final lightBase = highContrast ? appState._highContrastTheme(fontFamily: urduFont, dark: false) : AppTheme.lightTheme(fontFamily: urduFont);
-        final darkBase = highContrast ? appState._highContrastTheme(fontFamily: urduFont, dark: true) : AppTheme.darkTheme(fontFamily: urduFont);
-        final lightTheme = appState._withUrduMetrics(lightBase, isUrdu);
-        final darkTheme = appState._withUrduMetrics(darkBase, isUrdu);
-        final themeMode = settings.isDarkMode ? ThemeMode.dark : ThemeMode.light;
-
-        if (appState._showSplash) {
-          return MaterialApp(
-            debugShowCheckedModeBanner: false,
-            theme: lightTheme,
-            darkTheme: darkTheme,
-            themeMode: themeMode,
-            locale: appLocale,
-            supportedLocales: locales,
-            localizationsDelegates: delegates,
-            builder: (context, child) => appState._applyAccessibilityScale(context, child, settings),
-            home: SplashScreen(onComplete: () => appState.setState(() => appState._showSplash = false)),
-          );
-        }
-
-        return Directionality(
-          textDirection: direction,
-          child: MaterialApp(
-            title: 'HumSukhan',
-            debugShowCheckedModeBanner: false,
-            theme: lightTheme,
-            darkTheme: darkTheme,
-            themeMode: themeMode,
-            home: const _AccountGate(),
-            onGenerateRoute: AppRouter.generateRoute,
-            locale: appLocale,
-            supportedLocales: locales,
-            localizationsDelegates: delegates,
-            builder: (context, child) => appState._applyAccessibilityScale(context, child, settings),
-          ),
-        );
-      },
-    );
-  }
 }
 
 class _AccountGate extends StatelessWidget {
