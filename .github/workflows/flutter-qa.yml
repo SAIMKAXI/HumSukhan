@@ -36,3 +36,6 @@ jobs:
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - name: Tests
         run: flutter test
+      - name: Android debug build
+        # Release gate: tests alone do not exercise the Android Gradle/plugin graph.
+        run: flutter build apk --debug
