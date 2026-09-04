@@ -50,7 +50,6 @@ class ActionItemNormalizer {
 
   static const _discussionStarters = <String>{
     'discussed',
-    'discuss',
     'talked about',
     'mentioned',
     'noted',
