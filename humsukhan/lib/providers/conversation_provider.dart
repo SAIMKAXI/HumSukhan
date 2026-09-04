@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/supabase_service.dart';
 import '../services/database_service.dart';
-import '../services/deepgram_transcription_service.dart';
 
 class ConversationProvider extends ChangeNotifier {
   ConversationState _state = ConversationState.idle;
@@ -217,19 +216,15 @@ class ConversationProvider extends ChangeNotifier {
   }
 
   void commitSpeakerTurn({bool notify = true}) {
-    final deepgramFinal = DeepgramTranscriptionService.instance.lastFinalTranscript.trim();
-    if (deepgramFinal.isNotEmpty && _activeSpeakerDraft != null) {
-      _activeSpeakerDraft = Caption(
-        id: _activeSpeakerDraft!.id,
-        text: deepgramFinal,
-        speaker: _activeSpeakerDraft!.speaker,
-        timestamp: _activeSpeakerDraft!.timestamp,
-        language: _activeSpeakerDraft!.language,
-        isPartial: true,
-      );
-      _currentPartial = _activeSpeakerDraft;
-    }
-
+    // The draft text is already kept current by updateSpeakerTurn(), which the
+    // caller feeds from the recognizer that is actually running. This used to
+    // additionally overwrite the draft with
+    // DeepgramTranscriptionService.instance.lastFinalTranscript -- a singleton
+    // belonging to a *different* STT implementation (the EnhancedSpeechProvider
+    // fallback) that Everyday Mode never starts, and which is only ever cleared
+    // inside that service's own start(). So it held a stale utterance and every
+    // committed caption was replaced by it, which is why the transcript kept
+    // repeating the first recognised phrase instead of the new speech.
     final draft = _activeSpeakerDraft;
     _partialCommitTimer?.cancel();
     _partialCommitTimer = null;

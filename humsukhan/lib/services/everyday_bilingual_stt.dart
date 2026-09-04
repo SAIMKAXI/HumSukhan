@@ -98,6 +98,10 @@ class EverydayBilingualSttService {
   // asked to stop (see: stop-immediately-after-start race).
   int _sessionGeneration = 0;
 
+  static const int _maxReconnectAttempts = 3;
+  int _reconnectAttempts = 0;
+  bool _reconnecting = false;
+
   List<_WordToken> _englishWords = const [];
   List<_WordToken> _urduWords = const [];
   String _englishInterim = '';
@@ -239,20 +243,9 @@ class EverydayBilingualSttService {
     _lastEmitted = '';
     _ready = true;
 
-    if (english != null) {
-      _englishSubscription = english.listen(
-        (message) => _handleSocketMessage('English', message),
-        onError: (Object error) => debugPrint('Everyday English STT error: $error'),
-        onDone: () {},
-      );
-    }
-    if (urdu != null) {
-      _urduSubscription = urdu.listen(
-        (message) => _handleSocketMessage('Urdu', message),
-        onError: (Object error) => debugPrint('Everyday Urdu STT error: $error'),
-        onDone: () {},
-      );
-    }
+    _reconnectAttempts = 0;
+    if (english != null) _listenToSocket('English', english, generation);
+    if (urdu != null) _listenToSocket('Urdu', urdu, generation);
 
     try {
       final stream = await _recorder.startStream(const RecordConfig(
@@ -304,6 +297,83 @@ class EverydayBilingualSttService {
         return 'Urdu';
       default:
         return 'Auto';
+    }
+  }
+
+  void _listenToSocket(String source, WebSocket socket, int generation) {
+    final subscription = socket.listen(
+      (message) => _handleSocketMessage(source, message),
+      onError: (Object error) => debugPrint('Everyday $source STT error: $error'),
+      // A closed socket used to be ignored entirely. The microphone kept
+      // streaming into a dead connection, isListening stayed true and the UI
+      // still read "Listening…", but no further captions could ever arrive --
+      // recognition just stopped part-way through a session.
+      onDone: () => _handleSocketClosed(source, generation),
+    );
+    if (source == 'English') {
+      _englishSubscription = subscription;
+    } else {
+      _urduSubscription = subscription;
+    }
+  }
+
+  void _handleSocketClosed(String source, int generation) {
+    if (!_recording || generation != _sessionGeneration) return;
+    debugPrint('Everyday $source STT socket closed mid-session; reconnecting');
+    unawaited(_reconnectSocket(source, generation));
+  }
+
+  /// Re-opens a recognizer socket that dropped while the session is still live.
+  ///
+  /// Bounded and generation-guarded: it gives up after [_maxReconnectAttempts]
+  /// and abandons the attempt as soon as stop() (or a newer start()) supersedes
+  /// this session, so it can never resurrect a session the caller ended.
+  Future<void> _reconnectSocket(String source, int generation) async {
+    if (_reconnecting) return;
+    _reconnecting = true;
+    try {
+      while (_recording &&
+          generation == _sessionGeneration &&
+          _reconnectAttempts < _maxReconnectAttempts) {
+        _reconnectAttempts++;
+        await Future<void>.delayed(
+          Duration(milliseconds: 400 * _reconnectAttempts),
+        );
+        if (!_recording || generation != _sessionGeneration) return;
+
+        final token = await _getTemporaryToken();
+        if (token == null) continue;
+        if (!_recording || generation != _sessionGeneration) return;
+
+        final socket = await _connect(source == 'English' ? 'en-US' : 'ur', token);
+        if (socket == null) continue;
+        if (!_recording || generation != _sessionGeneration) {
+          try {
+            await socket.close(WebSocketStatus.normalClosure, 'superseded');
+          } catch (_) {}
+          return;
+        }
+
+        if (source == 'English') {
+          await _englishSubscription?.cancel();
+          _englishSocket = socket;
+        } else {
+          await _urduSubscription?.cancel();
+          _urduSocket = socket;
+        }
+        _listenToSocket(source, socket, generation);
+        _lastStartError = null;
+        _reconnectAttempts = 0;
+        return;
+      }
+
+      if (_recording && generation == _sessionGeneration) {
+        _lastStartError =
+            'Speech recognition lost its connection and could not reconnect. '
+            'Check your internet connection, then start listening again.';
+      }
+    } finally {
+      _reconnecting = false;
     }
   }
 

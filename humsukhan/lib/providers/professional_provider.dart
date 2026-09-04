@@ -16,7 +16,19 @@ class ProfessionalProvider extends ChangeNotifier {
   List<ProfessionalInsight> _insights = [];
   ProfessionalSession? _activeSession;
   bool _isLoading = false;
+  final Set<String> _generatingInsightFor = <String>{};
+  final Map<String, String> _insightErrors = <String, String>{};
   Future<void> _persistQueue = Future.value();
+
+  /// True while an AI summary request for [sessionId] is in flight.
+  bool isGeneratingInsight(String sessionId) =>
+      _generatingInsightFor.contains(sessionId);
+
+  /// Why the last AI summary attempt for [sessionId] produced nothing, or null
+  /// if the last attempt succeeded or none has run. Every failure path used to
+  /// return silently, so a failed summary was indistinguishable from a session
+  /// that simply had no summary yet.
+  String? insightError(String sessionId) => _insightErrors[sessionId];
 
   String get _storageSuffix { final userId = SupabaseService.instance.userId; return userId.isEmpty ? 'guest' : userId; }
   String get _sessionsKey => 'professionalSessions:$_storageSuffix';
@@ -32,6 +44,21 @@ class ProfessionalProvider extends ChangeNotifier {
   ProfessionalInsight? getInsightForSession(String sessionId) { for (final i in _insights) { if (i.sessionId == sessionId) return i; } return null; }
 
   ProfessionalProvider() { _loadData(); }
+
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  /// notifyListeners() that tolerates the provider having been disposed while
+  /// an async load or save was still in flight.
+  void _notifySafely() {
+    if (_disposed) return;
+    notifyListeners();
+  }
 
   ProfessionalInsight _normalizeInsight(ProfessionalInsight insight) {
     final rawSummaryBullets = InsightNormalizer.dedupeSummary(insight.summaryBullets);
@@ -81,7 +108,7 @@ class ProfessionalProvider extends ChangeNotifier {
       if (SupabaseService.instance.isAuthenticated) await _syncFromCloud();
       await _cleanExpiredSessions();
     } catch (e) { debugPrint('Error loading professional data: $e'); }
-    _isLoading = false; notifyListeners();
+    _isLoading = false; _notifySafely();
   }
 
   Future<void> _syncFromCloud() async {
@@ -141,27 +168,63 @@ class ProfessionalProvider extends ChangeNotifier {
   Future<void> generateInsights(String sessionId) async {
     final session=_sessions.firstWhere((s)=>s.id==sessionId);
     final allText=session.captions.map((c)=>c.text).join('\n');
-    if(allText.trim().isEmpty)return;
-
-    final ai = AiService.instance.isAvailable
-        ? await AiService.instance.generateInsights(sessionId:sessionId,transcript:allText,sessionTitle:session.title,sessionType:session.type)
-        : null;
-
-    if (ai == null || !ai.isAvailable) {
-      // Preserve the last known good insight when regeneration fails.
+    if (allText.trim().isEmpty) {
+      _insightErrors[sessionId] =
+          'This session has no transcript yet, so there is nothing to summarize.';
+      notifyListeners();
       return;
     }
+    if (_generatingInsightFor.contains(sessionId)) return;
 
-    final normalized = _normalizeInsight(ai);
-    if (!normalized.isAvailable) return;
-
-    _insights.removeWhere((i)=>i.sessionId==sessionId);
-    _insights.add(normalized);
-    await _saveInsights();
-    if (SupabaseService.instance.isAuthenticated) {
-      await DatabaseService.instance.upsertInsight(normalized);
-    }
+    _generatingInsightFor.add(sessionId);
+    _insightErrors.remove(sessionId);
     notifyListeners();
+
+    try {
+      if (!AiService.instance.isAvailable) {
+        _insightErrors[sessionId] =
+            'AI summaries need a signed-in connection to the HumSukhan service. '
+            'Reconnect, then try again.';
+        return;
+      }
+
+      final ai = await AiService.instance.generateInsights(
+        sessionId: sessionId,
+        transcript: allText,
+        sessionTitle: session.title,
+        sessionType: session.type,
+      );
+
+      if (ai == null || !ai.isAvailable) {
+        // Preserve the last known good insight when regeneration fails.
+        _insightErrors[sessionId] =
+            'The AI summary could not be generated for this session. Check your '
+            'connection and try again.';
+        return;
+      }
+
+      final normalized = _normalizeInsight(ai);
+      if (!normalized.isAvailable) {
+        _insightErrors[sessionId] =
+            'The AI returned no usable summary for this session.';
+        return;
+      }
+
+      _insights.removeWhere((i) => i.sessionId == sessionId);
+      _insights.add(normalized);
+      await _saveInsights();
+      if (SupabaseService.instance.isAuthenticated) {
+        await DatabaseService.instance.upsertInsight(normalized);
+      }
+    } catch (e) {
+      debugPrint('Professional insight generation failed: $e');
+      _insightErrors[sessionId] =
+          'The AI summary could not be generated for this session. Check your '
+          'connection and try again.';
+    } finally {
+      _generatingInsightFor.remove(sessionId);
+      notifyListeners();
+    }
   }
 
   void checkRetention(){_cleanExpiredSessions();notifyListeners();}

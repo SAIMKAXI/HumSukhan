@@ -202,6 +202,31 @@ class SpeechCapability {
   }
 
   Future<bool> _probeTts(FlutterTts native, String deliveryLanguage) async {
+    // The probe is a real synthesis call, so it must be silent: it runs on
+    // app resume and on Everyday warm-up, without the user asking for any
+    // speech. Left audible, a device with no Urdu voice re-probes on every
+    // resume and the app appears to talk to itself. Volume is restored to
+    // the app default that initialize() sets before any user-facing speech.
+    try {
+      await native.setVolume(0.0);
+    } catch (e) {
+      debugPrint('TTS capability probe could not mute output: $e');
+    }
+    try {
+      return await _probeTtsAtCurrentVolume(native, deliveryLanguage);
+    } finally {
+      try {
+        await native.setVolume(1.0);
+      } catch (e) {
+        debugPrint('TTS capability probe could not restore volume: $e');
+      }
+    }
+  }
+
+  Future<bool> _probeTtsAtCurrentVolume(
+    FlutterTts native,
+    String deliveryLanguage,
+  ) async {
     for (final locale in ttsCandidates(deliveryLanguage)) {
       try {
         await native.setLanguage(locale);

@@ -107,9 +107,19 @@ class SoundDetectionService {
       if (!_modelReady) {
         _modelReady = await manager.downloadModel();
       }
+      final filesLookedReady = _modelReady;
       _modelReady = _modelReady && await _tagger.initialize();
       if (!_modelReady) {
         debugPrint('SoundDetection model is unavailable');
+        if (filesLookedReady) {
+          // The cached files exist but the tagger cannot load them, so they are
+          // unusable (a corrupt or partial download). Without discarding them
+          // this is a permanent trap: initialize() keeps reporting ready, so
+          // downloadModel() short-circuits and monitoring can never start
+          // again. Dropping them lets the next attempt re-download.
+          debugPrint('SoundDetection: discarding unusable cached model');
+          await manager.deleteModel();
+        }
         return false;
       }
 
