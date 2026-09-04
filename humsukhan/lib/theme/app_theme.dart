@@ -4,6 +4,10 @@ enum ThemeModeType { light, dark, highContrast }
 
 class AppTokens {
   static const Color deepSage = Color(0xFF506858);
+  /// Exact background colour of the launcher icon's adaptive background layer
+  /// (android/.../mipmap-anydpi-v26/ic_launcher_background.png). The in-app
+  /// brand badge uses this so it matches the installed app icon exactly.
+  static const Color brandIconBackground = Color(0xFF53695B);
   static const Color primarySage = Color(0xFF587060);
   static const Color mediumSage = Color(0xFF607868);
   static const Color lightSage = Color(0xFF688070);

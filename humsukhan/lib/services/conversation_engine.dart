@@ -51,6 +51,11 @@ class ConversationEngine extends ChangeNotifier {
   bool _turnStopping = false;
   int _turnGeneration = 0;
   String _latestTranscript = '';
+
+  /// Finalized utterances in the current turn that have not been committed
+  /// as a caption yet. Interim results are appended to this rather than
+  /// replacing it, so a turn can span several utterances.
+  String _settledTurnText = '';
   String _latestLanguage = 'English';
   String? _errorMessage;
 
@@ -116,6 +121,7 @@ class ConversationEngine extends ChangeNotifier {
       _turnStopping = false;
       _speechStarted = false;
       _latestTranscript = '';
+      _settledTurnText = '';
       _latestLanguage = 'English';
       _errorMessage = null;
       _state = ConversationEngineState.idle;
@@ -146,6 +152,7 @@ class ConversationEngine extends ChangeNotifier {
     _turnStopping = false;
     _speechStarted = false;
     _latestTranscript = '';
+    _settledTurnText = '';
     _latestLanguage = 'English';
     _errorMessage = null;
     _state = ConversationEngineState.startingMic;
@@ -186,6 +193,10 @@ class ConversationEngine extends ChangeNotifier {
         conversation.updateSpeakerTurn(_latestTranscript, language: _latestLanguage);
       }
       conversation.commitSpeakerTurn();
+      // Clear after committing: leaving the text here meant a later commit
+      // could re-post the previous utterance as a duplicate caption.
+      _latestTranscript = '';
+      _settledTurnText = '';
       _speechStarted = false;
       _state = ConversationEngineState.idle;
       _errorMessage = null;
@@ -198,6 +209,41 @@ class ConversationEngine extends ChangeNotifier {
       _turnStopping = false;
       notifyListeners();
     }
+  }
+
+  /// Commits the utterance that just ended and immediately opens the next one,
+  /// leaving the microphone running.
+  ///
+  /// A pause in speech ends an *utterance*, not the listening session: the UI
+  /// says "Pause detected — speak again to continue", and the pause menu offers
+  /// "Manual only — no auto-stop" as the alternative, so auto-stop is meant to
+  /// segment turns rather than close the microphone. Wiring the silence timer
+  /// straight to _stopListening() closed the microphone after the very first
+  /// final result, so continuing to speak produced no further captions.
+  Future<void> _finalizeTurn() async {
+    if (_turnStopping) return;
+    _cancelSilenceTimer();
+    final transcript = _latestTranscript.trim();
+    if (transcript.isEmpty) return;
+
+    conversation.updateSpeakerTurn(transcript, language: _latestLanguage);
+    conversation.commitSpeakerTurn();
+    _latestTranscript = '';
+    _settledTurnText = '';
+    _speechStarted = false;
+
+    final stillListening =
+        speech.isListening && conversation.state == ConversationState.active;
+    if (stillListening) {
+      // Open a fresh draft so the next utterance becomes its own caption
+      // instead of appending to the one just committed.
+      conversation.beginSpeakerTurn(language: 'Auto');
+      _state = ConversationEngineState.listening;
+    } else {
+      _state = ConversationEngineState.idle;
+    }
+    _errorMessage = null;
+    notifyListeners();
   }
 
   void speakLastUtterance() => _enqueue(_speakLastUtterance);
@@ -225,9 +271,18 @@ class ConversationEngine extends ChangeNotifier {
     }
   }
 
+  static String _joinTurn(String settled, String addition) =>
+      settled.isEmpty ? addition : '$settled $addition';
+
   void _handleSpeechResult(SpeechResultEvent event) {
-    if (event.text.trim().isEmpty) return;
-    _latestTranscript = event.text.trim();
+    final text = event.text.trim();
+    if (text.isEmpty) return;
+    // The recognizer clears its own buffer after each final result, so a final
+    // carries only the utterance that just ended. Accumulate finals into the
+    // turn instead of overwriting: replacing meant that speaking again before
+    // the pause threshold elapsed silently discarded the previous utterance.
+    _latestTranscript = _joinTurn(_settledTurnText, text);
+    if (event.isFinal) _settledTurnText = _latestTranscript;
     _latestLanguage = event.language;
     if (_state == ConversationEngineState.listening) {
       _state = ConversationEngineState.speechActive;
@@ -239,7 +294,9 @@ class ConversationEngine extends ChangeNotifier {
         _state = ConversationEngineState.speechActive;
       } else {
         _state = ConversationEngineState.waitingForTurnEnd;
-        _silenceTimer = Timer(_pauseThreshold, _stopListening);
+        // Ends the utterance, not the microphone. Queued rather than called
+        // directly so it serialises against start/stop/speak commands.
+        _silenceTimer = Timer(_pauseThreshold, () => _enqueue(_finalizeTurn));
       }
     } else {
       _cancelSilenceTimer();
@@ -259,6 +316,7 @@ class ConversationEngine extends ChangeNotifier {
       await speech.stopListening();
       conversation.stopConversation();
       _latestTranscript = '';
+      _settledTurnText = '';
       _latestLanguage = 'English';
       _state = ConversationEngineState.idle;
       _errorMessage = null;

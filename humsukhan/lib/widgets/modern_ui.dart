@@ -12,9 +12,11 @@ class BrandLogo extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        // The brand mark is a light shape on brand green, exactly like the
+        // installed launcher icon. Filling with colorScheme.surface instead
+        // dropped the green treatment and left the mark floating on white.
+        color: AppTokens.brandIconBackground,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: Theme.of(context).colorScheme.outline.withValues(alpha: .5)),
         boxShadow: [
           BoxShadow(
             color: Theme.of(context).colorScheme.primary.withValues(alpha: .08),
@@ -24,10 +26,14 @@ class BrandLogo extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      // A dedicated mark-only, transparent, safe-zone-padded asset -- not
-      // assets/logo.png, which is the full lockup including the Urdu
-      // wordmark and is illegible at this badge's small sizes (40-56dp).
-      child: Image.asset('assets/icon_mark.png', fit: BoxFit.contain),
+      // assets/icon_mark.png is the adaptive-icon foreground layer, so it
+      // carries the 108dp-canvas safe-zone padding. Android shows only the
+      // centre 72dp of that canvas, so scale by 108/72 to reproduce the
+      // launcher icon's framing instead of a mark that looks too small.
+      child: Transform.scale(
+        scale: 1.5,
+        child: Image.asset('assets/icon_mark.png', fit: BoxFit.contain),
+      ),
     );
   }
 }
