@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.4.1+31
+
+### Everyday Mode
+- A pause now ends the current utterance instead of closing the microphone, so speaking continuously produces one caption per utterance rather than stopping after the first.
+- Captions no longer repeat the first recognised phrase. Committing a turn read a leftover transcript from a different speech service that Everyday Mode never runs, and that stale text replaced every new caption.
+- Speaking again before the pause elapses no longer discards the previous utterance.
+
+### Professional Mode
+- A dropped recognizer connection is now detected and reconnected. Previously the microphone kept streaming into a closed socket, the screen still showed "Listening…", and no further captions could arrive.
+- AI summary failures now say what went wrong and show a distinct loading state, instead of looking identical to a session that simply has no summary.
+
+### Environmental Alerts
+- A truncated sound-model download is now rejected instead of being stored as if complete, and an unusable cached model is discarded so the next attempt re-downloads it. Previously a bad download left monitoring permanently unable to start.
+
+### Speech and audio
+- The device speech-capability check no longer plays audible sound. It ran on app resume whenever a voice was missing (the normal case for Urdu), which made the app appear to speak on its own after sign-in.
+
+### Branding
+- Restored the green brand treatment behind the in-app logo and matched its framing to the launcher icon.
+- Corrected the Android launcher label to "HumSukhan".
+
+### Android
+- Declared the speech recognition service query required by Android 11+ package visibility, without which the device recognizer is invisible to the app.
+
 ## 2.4.0+30
 
 ### Speech reliability
