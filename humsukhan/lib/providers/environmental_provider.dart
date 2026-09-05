@@ -128,8 +128,6 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (_bridgeInitialized) return;
     _bridgeInitialized = true;
     await _bridge.initialize(onChange: (state, event) {
-      // A late native callback must not steal ownership back from the in-app
-      // fallback after a native start failure has already been handled.
       if (_usingInAppFallback && state != 'OFF') return;
       _monitoringState = state;
       if (event != null) {
@@ -147,10 +145,10 @@ class EnvironmentalProvider extends ChangeNotifier {
     });
   }
 
-  Future<bool> _prepareModel() async {
-    if (await _modelManager.initialize()) return true;
-    return _modelManager.downloadModel();
-  }
+  /// Monitoring startup is local-only. The model download is an explicit
+  /// setup operation and must never become a hidden network side effect of
+  /// pressing Start Monitoring.
+  Future<bool> _prepareModel() => _modelManager.initialize();
 
   Future<void> toggleMonitoring() async {
     if (isStarting || isStopping) return;
@@ -192,16 +190,13 @@ class EnvironmentalProvider extends ChangeNotifier {
     }
 
     if (Platform.isAndroid) {
-      // Prepare the ML model in the primary Flutter engine. The Android
-      // foreground service then starts against a model that is already local,
-      // avoiding network/filesystem/plugin races in its secondary engine.
       _monitoringState = 'STARTING';
       _usingInAppFallback = false;
       notifyListeners();
       final modelReady = await _prepareModel();
       if (!modelReady) {
         _monitoringState = 'ERROR';
-        _errorMessage = 'The environmental sound model could not be prepared. Connect to the internet once, then try again.';
+        _errorMessage = 'The environmental sound model is not installed. Connect to the internet and complete model setup, then try again.';
         notifyListeners();
         return;
       }
@@ -214,8 +209,6 @@ class EnvironmentalProvider extends ChangeNotifier {
         return;
       }
 
-      // Fallback is safe only after the native bridge proves it is OFF.
-      // Otherwise there could be two microphone owners during a transition.
       if (_bridge.state != 'OFF') {
         _monitoringState = 'ERROR';
         _errorMessage = 'Environmental monitoring could not start safely because the background service is still changing state. Try again in a moment.';
@@ -242,8 +235,6 @@ class EnvironmentalProvider extends ChangeNotifier {
       return;
     }
 
-    // iOS uses the in-app detector directly because the Android foreground
-    // service bridge is not available there.
     _monitoringState = 'STARTING';
     notifyListeners();
     final initialized = await _soundService.initialize(requestPermission: false);
@@ -257,7 +248,7 @@ class EnvironmentalProvider extends ChangeNotifier {
     final modelReady = await _prepareModel();
     if (!modelReady) {
       _monitoringState = 'ERROR';
-      _errorMessage = 'The environmental sound model could not be prepared. Connect to the internet once, then try again.';
+      _errorMessage = 'The environmental sound model is not installed. Connect to the internet and complete model setup, then try again.';
       notifyListeners();
       return;
     }
@@ -268,7 +259,7 @@ class EnvironmentalProvider extends ChangeNotifier {
       _monitoringState = 'ACTIVE';
     } else if (!_soundService.isModelReady) {
       _monitoringState = 'ERROR';
-      _errorMessage = 'The environmental sound model is unavailable. Try Start Monitoring again to restore it.';
+      _errorMessage = 'The environmental sound model is unavailable. Try model setup, then start monitoring again.';
     } else {
       _monitoringState = 'ERROR';
       _errorMessage = 'The microphone recorder could not start. Check microphone access and try again.';
