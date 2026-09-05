@@ -53,10 +53,18 @@ class ProfessionalProvider extends ChangeNotifier {
     super.dispose();
   }
 
+  /// Guard every notification so asynchronous work cannot notify a disposed
+  /// provider. This is intentionally centralized so future async paths cannot
+  /// accidentally bypass the lifecycle check.
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
   /// notifyListeners() that tolerates the provider having been disposed while
   /// an async load or save was still in flight.
   void _notifySafely() {
-    if (_disposed) return;
     notifyListeners();
   }
 
