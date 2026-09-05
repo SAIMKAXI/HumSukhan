@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../screens/screens.dart';
-import '../widgets/main_scaffold.dart';
 import '../services/auth_service.dart';
 
 class AppRouter {
