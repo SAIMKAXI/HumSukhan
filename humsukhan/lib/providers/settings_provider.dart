@@ -123,6 +123,9 @@ class SettingsProvider extends ChangeNotifier {
         _applySettings({'allowedAlerts': jsonDecode(storedAlerts)});
       } catch (_) {}
     }
+    // Rewrite the stored map using only the supported alert catalog so retired
+    // preferences are physically removed from existing installs.
+    await prefs.setString('allowedAlerts', jsonEncode(_allowedAlerts));
 
     // Local settings are sufficient for startup. Remote synchronization is
     // deliberately moved off the first-frame critical path.
