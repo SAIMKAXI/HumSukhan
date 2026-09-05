@@ -165,9 +165,19 @@ class SpeechCapability {
   List<String> ttsCandidates(String deliveryLanguage) {
     switch (deliveryLanguage.toLowerCase()) {
       case 'urdu':
-        return const ['ur-PK', 'ur-IN'];
+        return const ['ur', 'ur-PK', 'ur-IN'];
       default:
-        return const ['en-US', 'en-GB', 'en-IN'];
+        return const [
+          'en-US',
+          'en-GB',
+          'en-IN',
+          'en-AU',
+          'en-CA',
+          'en-IE',
+          'en-NZ',
+          'en-SG',
+          'en-ZA',
+        ];
     }
   }
 
