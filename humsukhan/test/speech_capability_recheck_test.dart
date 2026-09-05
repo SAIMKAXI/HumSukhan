@@ -51,8 +51,8 @@ void main() {
   test('cached getters remain unknown until the capability has been probed', () async {
     final capability = SpeechCapability.instance;
 
-    expect(capability.sttSupportsEnglishCached, isNull);
-    expect(capability.sttSupportsUrduCached, isNull);
+    expect(capability.sttSupportsEnglishCachedState, isNull);
+    expect(capability.sttSupportsUrduCachedState, isNull);
   });
 
   test('probeStt caches per-language availability from installed locales', () async {
@@ -60,8 +60,8 @@ void main() {
     final available = await capability.probeStt(platformStt);
 
     expect(available, isTrue);
-    expect(capability.sttSupportsEnglishCached, isTrue);
-    expect(capability.sttSupportsUrduCached, isFalse);
+    expect(capability.sttSupportsEnglishCachedState, isTrue);
+    expect(capability.sttSupportsUrduCachedState, isFalse);
   });
 
   test(
@@ -72,8 +72,8 @@ void main() {
     // First probe: only English is installed. Recognizer overall is
     // available, but Urdu is a cached negative.
     await capability.probeStt(platformStt);
-    expect(capability.sttSupportsEnglishCached, isTrue);
-    expect(capability.sttSupportsUrduCached, isFalse);
+    expect(capability.sttSupportsEnglishCachedState, isTrue);
+    expect(capability.sttSupportsUrduCachedState, isFalse);
 
     // The user installs the Urdu language pack for the device recognizer.
     fakePlatform.localeStrings = ['en-US:English (US)', 'ur-PK:Urdu (Pakistan)'];
@@ -83,7 +83,7 @@ void main() {
     await capability.recheckIfMissing(platformStt: platformStt);
 
     expect(
-      capability.sttSupportsUrduCached,
+      capability.sttSupportsUrduCachedState,
       isTrue,
       reason: 'A newly installed language pack must be rediscovered on '
           'resume even when the recognizer overall was already usable.',
@@ -101,7 +101,7 @@ void main() {
     fakePlatform.localeStrings = [];
     await capability.recheckIfMissing(platformStt: platformStt);
 
-    expect(capability.sttSupportsEnglishCached, isTrue);
-    expect(capability.sttSupportsUrduCached, isTrue);
+    expect(capability.sttSupportsEnglishCachedState, isTrue);
+    expect(capability.sttSupportsUrduCachedState, isTrue);
   });
 }
