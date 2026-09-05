@@ -12,8 +12,6 @@ class ConversationProvider extends ChangeNotifier {
   Caption? _currentPartial;
   Caption? _activeSpeakerDraft;
   Timer? _partialCommitTimer;
-  String _isolateFingerprint = '';
-  DateTime? _lastCommittedAt;
   bool _isListening = false;
   String _currentLanguage = 'English';
   String _listeningStatus = 'Not listening';
@@ -90,8 +88,6 @@ class ConversationProvider extends ChangeNotifier {
     _captions.clear();
     _currentPartial = null;
     _activeSpeakerDraft = null;
-    _isolateFingerprint = '';
-    _lastCommittedAt = null;
     _state = ConversationState.active;
     _isListening = false;
     _conversationStartedAt = DateTime.now();
@@ -168,8 +164,6 @@ class ConversationProvider extends ChangeNotifier {
     _captions.clear();
     _currentPartial = null;
     _activeSpeakerDraft = null;
-    _isolateFingerprint = '';
-    _lastCommittedAt = null;
     _currentSessionId = null;
     notifyListeners();
   }
@@ -242,8 +236,6 @@ class ConversationProvider extends ChangeNotifier {
         isOwn: draft.isOwn,
       );
       _captions.add(committed);
-      _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
-      _lastCommittedAt = committed.timestamp;
       _sortCaptionsInPlace();
     }
     _listeningStatus = 'Your turn — respond below';
@@ -303,8 +295,6 @@ class ConversationProvider extends ChangeNotifier {
       );
       _captions.add(committed);
       _currentPartial = null;
-      _isolateFingerprint = _fingerprint(value, speaker);
-      _lastCommittedAt = committed.timestamp;
     } else {
       _commitCurrentPartial();
       _appendFinalCaption(value, speaker, language);
@@ -322,8 +312,6 @@ class ConversationProvider extends ChangeNotifier {
       isPartial: false,
     );
     _captions.add(committed);
-    _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
-    _lastCommittedAt = committed.timestamp;
   }
 
   void addOwnCaption(String text) {
@@ -344,8 +332,6 @@ class ConversationProvider extends ChangeNotifier {
     _captions.clear();
     _currentPartial = null;
     _activeSpeakerDraft = null;
-    _isolateFingerprint = '';
-    _lastCommittedAt = null;
     notifyListeners();
   }
 
@@ -365,8 +351,6 @@ class ConversationProvider extends ChangeNotifier {
       isOwn: partial.isOwn,
     );
     _captions.add(committed);
-    _isolateFingerprint = _fingerprint(committed.text, committed.speaker);
-    _lastCommittedAt = committed.timestamp;
     _sortCaptionsInPlace();
   }
 
@@ -384,8 +368,6 @@ class ConversationProvider extends ChangeNotifier {
   void _sortCaptionsInPlace() {
     _captions.sort((a, b) => a.timestamp.compareTo(b.timestamp));
   }
-
-  String _fingerprint(String text, String speaker) => '$speaker|${text.trim().toLowerCase()}';
 
   @override
   void dispose() {
