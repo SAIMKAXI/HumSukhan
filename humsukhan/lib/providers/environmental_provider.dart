@@ -93,6 +93,12 @@ class EnvironmentalProvider extends ChangeNotifier {
             _lastAlertType = _alertHistory.first.type;
             _lastAlertTime = _alertHistory.first.timestamp;
           }
+          await prefs.setString(
+            _historyKey,
+            jsonEncode(
+              _alertHistory.take(_maxHistoryEntries).map((event) => event.toJson()).toList(),
+            ),
+          );
         }
       }
     } catch (e) {
