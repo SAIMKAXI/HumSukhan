@@ -84,8 +84,16 @@ class SpeechCapability {
     return result;
   }
 
-  bool? get sttSupportsEnglishCached => _memoryCache['stt_english'];
-  bool? get sttSupportsUrduCached => _memoryCache['stt_urdu'];
+  /// Nullable cache state used when the caller needs to distinguish unknown
+  /// from a verified negative capability.
+  bool? get sttSupportsEnglishCachedState => _memoryCache['stt_english'];
+  bool? get sttSupportsUrduCachedState => _memoryCache['stt_urdu'];
+
+  /// Backwards-compatible boolean getters for existing speech providers.
+  /// Unknown is intentionally not exposed through this legacy API; callers
+  /// that need to distinguish unknown must use the nullable *State getters.
+  bool get sttSupportsEnglishCached => sttSupportsEnglishCachedState ?? false;
+  bool get sttSupportsUrduCached => sttSupportsUrduCachedState ?? false;
 
   /// Clears process-local and preference state for isolated unit tests.
   @visibleForTesting
