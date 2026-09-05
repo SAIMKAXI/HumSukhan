@@ -84,15 +84,15 @@ class SpeechCapability {
     return result;
   }
 
-  /// Legacy boolean view used by existing speech-mode callers.
-  /// Unknown/unprobed is conservatively treated as unsupported here.
-  bool get sttSupportsEnglishCached => _memoryCache['stt_english'] ?? false;
-  bool get sttSupportsUrduCached => _memoryCache['stt_urdu'] ?? false;
+  bool? get sttSupportsEnglishCached => _memoryCache['stt_english'];
+  bool? get sttSupportsUrduCached => _memoryCache['stt_urdu'];
 
-  /// Explicit capability state for consumers that need to distinguish
-  /// unknown/unprobed from verified unsupported.
-  bool? get sttSupportsEnglishState => _memoryCache['stt_english'];
-  bool? get sttSupportsUrduState => _memoryCache['stt_urdu'];
+  /// Clears process-local and preference state for isolated unit tests.
+  @visibleForTesting
+  void resetForTesting() {
+    _memoryCache.clear();
+    _prefs = null;
+  }
 
   Future<bool> probeStt(
     SpeechToText platformStt, {
