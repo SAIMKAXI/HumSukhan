@@ -47,7 +47,6 @@ class ConversationEngine extends ChangeNotifier {
   Timer? _silenceTimer;
   StreamSubscription<SpeechResultEvent>? _subscription;
   Future<void> _commandTail = Future<void>.value();
-  bool _speechStarted = false;
   bool _turnStopping = false;
   int _turnGeneration = 0;
   String _latestTranscript = '';
@@ -119,7 +118,6 @@ class ConversationEngine extends ChangeNotifier {
       _cancelSilenceTimer();
       _turnGeneration++;
       _turnStopping = false;
-      _speechStarted = false;
       _latestTranscript = '';
       _settledTurnText = '';
       _latestLanguage = 'English';
@@ -150,7 +148,6 @@ class ConversationEngine extends ChangeNotifier {
     _cancelSilenceTimer();
     final generation = ++_turnGeneration;
     _turnStopping = false;
-    _speechStarted = false;
     _latestTranscript = '';
     _settledTurnText = '';
     _latestLanguage = 'English';
@@ -197,7 +194,6 @@ class ConversationEngine extends ChangeNotifier {
       // could re-post the previous utterance as a duplicate caption.
       _latestTranscript = '';
       _settledTurnText = '';
-      _speechStarted = false;
       _state = ConversationEngineState.idle;
       _errorMessage = null;
     } catch (e) {
@@ -230,7 +226,6 @@ class ConversationEngine extends ChangeNotifier {
     conversation.commitSpeakerTurn();
     _latestTranscript = '';
     _settledTurnText = '';
-    _speechStarted = false;
 
     final stillListening =
         speech.isListening && conversation.state == ConversationState.active;
@@ -287,7 +282,6 @@ class ConversationEngine extends ChangeNotifier {
     if (_state == ConversationEngineState.listening) {
       _state = ConversationEngineState.speechActive;
     }
-    _speechStarted = true;
     if (event.isFinal) {
       _cancelSilenceTimer();
       if (_pauseThreshold == Duration.zero) {
