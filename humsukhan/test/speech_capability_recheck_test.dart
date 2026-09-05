@@ -16,8 +16,7 @@ import 'package:speech_to_text_platform_interface/speech_to_text_platform_interf
 import 'package:humsukhan/services/speech_capability.dart';
 
 /// A fake platform implementation that reports only English initially, then
-/// "installs" Urdu to simulate the user adding a language pack between app
-/// resumes.
+/// "installs" Urdu to simulate the user adding a language pack between app resumes.
 class _FakeSpeechToTextPlatform extends SpeechToTextPlatform
     with MockPlatformInterfaceMixin {
   List<String> localeStrings = ['en-US:English (US)'];
@@ -42,6 +41,8 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    final capability = SpeechCapability.instance;
+    capability.resetForTesting();
     fakePlatform = _FakeSpeechToTextPlatform();
     SpeechToTextPlatform.instance = fakePlatform;
     platformStt = SpeechToText.withMethodChannel();
