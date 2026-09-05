@@ -97,7 +97,9 @@ class ConversationEngine extends ChangeNotifier {
         _pauseThreshold = Duration(milliseconds: value.clamp(800, 4000));
       }
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('ConversationEngine pause preference load failed: $e');
+    }
   }
 
   Future<void> setPauseThreshold(Duration duration) async {
@@ -111,7 +113,9 @@ class ConversationEngine extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_pausePreferenceKey, clamped.inMilliseconds);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('ConversationEngine pause preference save failed: $e');
+    }
   }
 
   void startConversation() {
