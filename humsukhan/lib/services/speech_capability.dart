@@ -84,8 +84,23 @@ class SpeechCapability {
     return result;
   }
 
-  bool get sttSupportsEnglishCached => _memoryCache['stt_english'] ?? false;
-  bool get sttSupportsUrduCached => _memoryCache['stt_urdu'] ?? false;
+  /// Nullable cache state used when the caller needs to distinguish unknown
+  /// from a verified negative capability.
+  bool? get sttSupportsEnglishCachedState => _memoryCache['stt_english'];
+  bool? get sttSupportsUrduCachedState => _memoryCache['stt_urdu'];
+
+  /// Backwards-compatible boolean getters for existing speech providers.
+  /// Unknown is intentionally not exposed through this legacy API; callers
+  /// that need to distinguish unknown must use the nullable *State getters.
+  bool get sttSupportsEnglishCached => sttSupportsEnglishCachedState ?? false;
+  bool get sttSupportsUrduCached => sttSupportsUrduCachedState ?? false;
+
+  /// Clears process-local and preference state for isolated unit tests.
+  @visibleForTesting
+  void resetForTesting() {
+    _memoryCache.clear();
+    _prefs = null;
+  }
 
   Future<bool> probeStt(
     SpeechToText platformStt, {
@@ -194,17 +209,15 @@ class SpeechCapability {
     FlutterTts? nativeTts,
   }) async {
     if (platformStt != null) {
-      // Recheck when *any* tracked sub-capability is a cached negative, not
-      // only when the recognizer itself was unavailable. A device can have
-      // `stt_available == true` (the recognizer exists) while a specific
-      // language pack (e.g. Urdu) was missing at the time it was probed;
-      // that language should be rediscovered once installed, not left
-      // permanently false just because the recognizer overall works.
+      // Recheck when *any* tracked sub-capability is not yet positively known.
+      // An absent cache entry is distinct from a verified negative and must
+      // be probed before callers treat the capability as unavailable.
       final available = await _cached('stt_available');
       final english = await _cached('stt_english');
       final urdu = await _cached('stt_urdu');
-      final hasNegative = available == false || english == false || urdu == false;
-      if (hasNegative) {
+      final hasMissing =
+          available != true || english != true || urdu != true;
+      if (hasMissing) {
         await probeStt(platformStt, recheckNegative: true);
       }
     }
@@ -213,7 +226,7 @@ class SpeechCapability {
       for (final language in const ['english', 'urdu']) {
         final capability = 'tts_engine_${engineId}_$language';
         final cached = await _cached(capability);
-        if (cached == false) {
+        if (cached != true) {
           await recheckTtsIfMissing(nativeTts, language);
         }
       }

@@ -16,8 +16,7 @@ import 'package:speech_to_text_platform_interface/speech_to_text_platform_interf
 import 'package:humsukhan/services/speech_capability.dart';
 
 /// A fake platform implementation that reports only English initially, then
-/// "installs" Urdu to simulate the user adding a language pack between app
-/// resumes.
+/// "installs" Urdu to simulate the user adding a language pack between app resumes.
 class _FakeSpeechToTextPlatform extends SpeechToTextPlatform
     with MockPlatformInterfaceMixin {
   List<String> localeStrings = ['en-US:English (US)'];
@@ -42,9 +41,18 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    final capability = SpeechCapability.instance;
+    capability.resetForTesting();
     fakePlatform = _FakeSpeechToTextPlatform();
     SpeechToTextPlatform.instance = fakePlatform;
     platformStt = SpeechToText.withMethodChannel();
+  });
+
+  test('cached getters remain unknown until the capability has been probed', () async {
+    final capability = SpeechCapability.instance;
+
+    expect(capability.sttSupportsEnglishCachedState, isNull);
+    expect(capability.sttSupportsUrduCachedState, isNull);
   });
 
   test('probeStt caches per-language availability from installed locales', () async {
@@ -52,8 +60,8 @@ void main() {
     final available = await capability.probeStt(platformStt);
 
     expect(available, isTrue);
-    expect(capability.sttSupportsEnglishCached, isTrue);
-    expect(capability.sttSupportsUrduCached, isFalse);
+    expect(capability.sttSupportsEnglishCachedState, isTrue);
+    expect(capability.sttSupportsUrduCachedState, isFalse);
   });
 
   test(
@@ -64,8 +72,8 @@ void main() {
     // First probe: only English is installed. Recognizer overall is
     // available, but Urdu is a cached negative.
     await capability.probeStt(platformStt);
-    expect(capability.sttSupportsEnglishCached, isTrue);
-    expect(capability.sttSupportsUrduCached, isFalse);
+    expect(capability.sttSupportsEnglishCachedState, isTrue);
+    expect(capability.sttSupportsUrduCachedState, isFalse);
 
     // The user installs the Urdu language pack for the device recognizer.
     fakePlatform.localeStrings = ['en-US:English (US)', 'ur-PK:Urdu (Pakistan)'];
@@ -75,7 +83,7 @@ void main() {
     await capability.recheckIfMissing(platformStt: platformStt);
 
     expect(
-      capability.sttSupportsUrduCached,
+      capability.sttSupportsUrduCachedState,
       isTrue,
       reason: 'A newly installed language pack must be rediscovered on '
           'resume even when the recognizer overall was already usable.',
@@ -93,7 +101,7 @@ void main() {
     fakePlatform.localeStrings = [];
     await capability.recheckIfMissing(platformStt: platformStt);
 
-    expect(capability.sttSupportsEnglishCached, isTrue);
-    expect(capability.sttSupportsUrduCached, isTrue);
+    expect(capability.sttSupportsEnglishCachedState, isTrue);
+    expect(capability.sttSupportsUrduCachedState, isTrue);
   });
 }
