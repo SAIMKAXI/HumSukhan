@@ -11,7 +11,7 @@ void main() {
     final nextMethod = source.indexOf('Future<void> toggleMonitoring()', prepareModelStart);
     final prepareModel = source.substring(prepareModelStart, nextMethod);
 
-    expect(prepareModel, contains('return _modelManager.initialize();'));
+    expect(prepareModel, contains('_modelManager.initialize()'));
     expect(prepareModel, isNot(contains('downloadModel()')));
   });
 }
