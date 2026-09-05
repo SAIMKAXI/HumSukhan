@@ -14,7 +14,9 @@ import 'package:speech_to_text/speech_to_text.dart';
 /// therefore intentionally not done. TTS capability is verified with a real
 /// short synthesis and completion callback.
 ///
-/// Persisted results are scoped by platform + OS version. Negative results are
+/// Persisted results are scoped by platform + OS version. TTS results are also
+/// scoped by the active engine so changing the Android TTS engine cannot reuse
+/// a capability result produced by a different engine. Negative results are
 /// rechecked after app resume so newly installed language packs are discovered
 /// without paying the full probe cost on every app launch.
 class SpeechCapability {
@@ -154,14 +156,29 @@ class SpeechCapability {
     }
   }
 
+  Future<String> _ttsEngineId(FlutterTts native) async {
+    if (!Platform.isAndroid) return 'default';
+    try {
+      final engine = await native.getDefaultEngine;
+      if (engine != null && engine.toString().trim().isNotEmpty) {
+        return engine.toString().trim();
+      }
+    } catch (e) {
+      debugPrint('TTS engine lookup failed; using default cache scope: $e');
+    }
+    return 'default';
+  }
+
   Future<bool> ttsReliable(
     FlutterTts native,
     String deliveryLanguage, {
     bool recheckNegative = false,
   }) async {
     final language = deliveryLanguage.toLowerCase();
+    final engineId = await _ttsEngineId(native);
+    final capability = 'tts_engine_${engineId}_$language';
     return _readOrProbe(
-      'tts_$language',
+      capability,
       () => _probeTts(native, language),
       recheckNegative: recheckNegative,
     );
@@ -192,8 +209,10 @@ class SpeechCapability {
       }
     }
     if (nativeTts != null) {
+      final engineId = await _ttsEngineId(nativeTts);
       for (final language in const ['english', 'urdu']) {
-        final cached = await _cached('tts_$language');
+        final capability = 'tts_engine_${engineId}_$language';
+        final cached = await _cached(capability);
         if (cached == false) {
           await recheckTtsIfMissing(nativeTts, language);
         }
