@@ -35,6 +35,7 @@ class EnvironmentalProvider extends ChangeNotifier {
   SettingsProvider? _settingsProvider;
   bool _bridgeInitialized = false;
   bool _usingInAppFallback = false;
+  bool _disposed = false;
   String? _errorMessage;
   Future<void> _historyWriteQueue = Future.value();
 
@@ -76,6 +77,7 @@ class EnvironmentalProvider extends ChangeNotifier {
   Future<void> _loadAlertHistory() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (_disposed) return;
       final raw = prefs.getString(_historyKey);
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw);
@@ -88,6 +90,7 @@ class EnvironmentalProvider extends ChangeNotifier {
                   .map((item) => SoundEvent.fromJson(Map<String, dynamic>.from(item)))
                   .where((event) => SoundDetectionService.supportedEvents.contains(event.type)),
             );
+          if (_disposed) return;
           _alertHistory.sort((a, b) => b.timestamp.compareTo(a.timestamp));
           if (_alertHistory.isNotEmpty) {
             _lastAlertType = _alertHistory.first.type;
@@ -104,13 +107,16 @@ class EnvironmentalProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Environmental alert history load error: $e');
     }
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<void> _saveAlertHistory() async {
+    if (_disposed) return;
     _historyWriteQueue = _historyWriteQueue.then((_) async {
+      if (_disposed) return;
       try {
         final prefs = await SharedPreferences.getInstance();
+        if (_disposed) return;
         await prefs.setString(
           _historyKey,
           jsonEncode(
@@ -125,22 +131,23 @@ class EnvironmentalProvider extends ChangeNotifier {
   }
 
   Future<void> _initializeNativeBridge() async {
-    if (_bridgeInitialized) return;
+    if (_bridgeInitialized || _disposed) return;
     _bridgeInitialized = true;
     await _bridge.initialize(onChange: (state, event) {
+      if (_disposed) return;
       if (_usingInAppFallback && state != 'OFF') return;
       _monitoringState = state;
       if (event != null) {
         final type = event['type']?.toString();
         final confidence = (event['confidence'] as num?)?.toDouble();
         final severity = event['severity']?.toString() ?? 'warning';
-        if (type != null && confidence != null) {
+        if (type != null && confidence != null && !_disposed) {
           processSoundEvent(
             SoundEvent(type: type, confidence: confidence, severity: severity),
           );
         }
       } else {
-        notifyListeners();
+        if (!_disposed) notifyListeners();
       }
     });
   }
@@ -151,7 +158,7 @@ class EnvironmentalProvider extends ChangeNotifier {
   Future<bool> _prepareModel() => _modelManager.initialize();
 
   Future<void> toggleMonitoring() async {
-    if (isStarting || isStopping) return;
+    if (_disposed || isStarting || isStopping) return;
 
     if (_monitoringState == 'ACTIVE') {
       _monitoringState = 'STOPPING';
@@ -165,6 +172,7 @@ class EnvironmentalProvider extends ChangeNotifier {
           _monitoringState = 'OFF';
         } else {
           final stopped = await _bridge.stop();
+          if (_disposed) return;
           if (!stopped) {
             _monitoringState = 'ERROR';
             _errorMessage = 'Environmental monitoring could not be stopped safely. Try again.';
@@ -174,12 +182,13 @@ class EnvironmentalProvider extends ChangeNotifier {
         _soundService.stopMonitoring();
         _monitoringState = 'OFF';
       }
-      notifyListeners();
+      if (!_disposed) notifyListeners();
       return;
     }
 
     _errorMessage = null;
     final permission = await Permission.microphone.request();
+    if (_disposed) return;
     if (!permission.isGranted) {
       _monitoringState = 'ERROR';
       _errorMessage = permission.isPermanentlyDenied
@@ -194,6 +203,7 @@ class EnvironmentalProvider extends ChangeNotifier {
       _usingInAppFallback = false;
       notifyListeners();
       final modelReady = await _prepareModel();
+      if (_disposed) return;
       if (!modelReady) {
         _monitoringState = 'ERROR';
         _errorMessage = 'The environmental sound model is not installed. Connect to the internet and complete model setup, then try again.';
@@ -202,6 +212,7 @@ class EnvironmentalProvider extends ChangeNotifier {
       }
 
       final started = await _bridge.start();
+      if (_disposed) return;
       if (started && _bridge.state == 'ACTIVE') {
         _usingInAppFallback = false;
         _monitoringState = 'ACTIVE';
@@ -217,9 +228,11 @@ class EnvironmentalProvider extends ChangeNotifier {
       }
 
       final initialized = await _soundService.initialize(requestPermission: false);
+      if (_disposed) return;
       if (initialized && _soundService.isMicrophoneReady) {
         _soundService.onSoundDetected = processSoundEvent;
         final fallbackStarted = await _soundService.startMonitoring(permissionAlreadyGranted: true);
+        if (_disposed) return;
         if (fallbackStarted) {
           _usingInAppFallback = true;
           _monitoringState = 'ACTIVE';
@@ -238,6 +251,7 @@ class EnvironmentalProvider extends ChangeNotifier {
     _monitoringState = 'STARTING';
     notifyListeners();
     final initialized = await _soundService.initialize(requestPermission: false);
+    if (_disposed) return;
     if (!initialized || !_soundService.isMicrophoneReady) {
       _monitoringState = 'ERROR';
       _errorMessage = 'Microphone access is unavailable. Allow microphone access in App Settings, then try again.';
@@ -246,6 +260,7 @@ class EnvironmentalProvider extends ChangeNotifier {
     }
 
     final modelReady = await _prepareModel();
+    if (_disposed) return;
     if (!modelReady) {
       _monitoringState = 'ERROR';
       _errorMessage = 'The environmental sound model is not installed. Connect to the internet and complete model setup, then try again.';
@@ -255,6 +270,7 @@ class EnvironmentalProvider extends ChangeNotifier {
 
     _soundService.onSoundDetected = processSoundEvent;
     final started = await _soundService.startMonitoring(permissionAlreadyGranted: true);
+    if (_disposed) return;
     if (started) {
       _monitoringState = 'ACTIVE';
     } else if (!_soundService.isModelReady) {
@@ -272,7 +288,8 @@ class EnvironmentalProvider extends ChangeNotifier {
   }
 
   bool processSoundEvent(SoundEvent event) {
-    if (!monitoringEnabled ||
+    if (_disposed ||
+        !monitoringEnabled ||
         !SoundDetectionService.supportedEvents.contains(event.type) ||
         event.confidence < _minConfidence) {
       return false;
@@ -301,12 +318,13 @@ class EnvironmentalProvider extends ChangeNotifier {
         severity: event.severity,
       );
     }
-    notifyListeners();
+    if (!_disposed) notifyListeners();
     unawaited(_saveAlertHistory());
     return true;
   }
 
   void dismissAlert() {
+    if (_disposed) return;
     if (_currentAlert != null) {
       final idx = _alertHistory.indexWhere((a) => a.id == _currentAlert!.id);
       if (idx != -1) {
@@ -319,6 +337,7 @@ class EnvironmentalProvider extends ChangeNotifier {
   }
 
   void clearHistory() {
+    if (_disposed) return;
     _alertHistory.clear();
     _currentAlert = null;
     unawaited(_saveAlertHistory());
@@ -326,7 +345,14 @@ class EnvironmentalProvider extends ChangeNotifier {
   }
 
   @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
+  @override
   void dispose() {
+    _disposed = true;
     _soundService.stopMonitoring();
     unawaited(_bridge.dispose());
     AlertService.instance.stopAll();
