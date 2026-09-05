@@ -120,12 +120,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   }
 
   Future<void> startListening({String language = 'English'}) async {
-    // Guard set synchronously, before any `await`, so two rapid calls (a
-    // double tap on the mic button, or a resume racing a manual tap) cannot
-    // both pass this check and open two microphone/socket sessions. Without
-    // this, `_listening` is only flipped true deep inside the async start
-    // sequence below, leaving a window where a second call would see
-    // `_listening == false` and start a second recognizer session.
     if (_listening || _startingListening) return;
     _startingListening = true;
     try {
@@ -249,6 +243,10 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   @override
   Future<void> stopListening() async {
+    // Invalidate any in-flight speak() before awaiting plugin cleanup. Otherwise
+    // an older speak() can observe the same generation after this stop and
+    // restart listening when its TTS future completes.
+    ++_speechGeneration;
     await _bilingual.stop();
     await _fallbackStt.stopListening();
     _listening = false;
