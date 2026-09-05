@@ -98,7 +98,6 @@ class SettingsProvider extends ChangeNotifier {
     _visualAlerts = prefs.getBool('visualAlerts') ?? true;
     _flashAlerts = prefs.getBool('flashAlerts') ?? false;
     _screenFlashAlerts = prefs.getBool('screenFlashAlerts') ?? true;
-    // Remove the retired setting so old installs stop carrying dead product state.
     await prefs.remove('simplifiedLanguage');
     _captionLanguage = prefs.getString('captionLanguage') ?? 'English';
     _appLanguage = prefs.getString('appLanguage') ?? 'en';
@@ -123,12 +122,8 @@ class SettingsProvider extends ChangeNotifier {
         _applySettings({'allowedAlerts': jsonDecode(storedAlerts)});
       } catch (_) {}
     }
-    // Rewrite the stored map using only the supported alert catalog so retired
-    // preferences are physically removed from existing installs.
     await prefs.setString('allowedAlerts', jsonEncode(_allowedAlerts));
 
-    // Local settings are sufficient for startup. Remote synchronization is
-    // deliberately moved off the first-frame critical path.
     _isLoaded = true;
     if (!_disposed) notifyListeners();
 
@@ -194,8 +189,18 @@ class SettingsProvider extends ChangeNotifier {
   void toggleVisualAlerts() { _visualAlerts = !_visualAlerts; notifyListeners(); _persistChange('visualAlerts', _visualAlerts); }
   void toggleFlashAlerts() { _flashAlerts = !_flashAlerts; notifyListeners(); _persistChange('flashAlerts', _flashAlerts); }
   void toggleScreenFlashAlerts() { _screenFlashAlerts = !_screenFlashAlerts; notifyListeners(); _persistChange('screenFlashAlerts', _screenFlashAlerts); }
-  void setCaptionLanguage(String lang) { _captionLanguage = lang; notifyListeners(); _persistChange('captionLanguage', lang); }
-  void setAppLanguage(String langCode) { _appLanguage = langCode; notifyListeners(); _persistChange('appLanguage', langCode); }
+  void setCaptionLanguage(String lang) {
+    if (!const ['English', 'Roman Urdu', 'Urdu'].contains(lang)) return;
+    _captionLanguage = lang;
+    notifyListeners();
+    _persistChange('captionLanguage', lang);
+  }
+  void setAppLanguage(String langCode) {
+    if (!const ['en', 'ur'].contains(langCode)) return;
+    _appLanguage = langCode;
+    notifyListeners();
+    _persistChange('appLanguage', langCode);
+  }
   void setDefaultRetentionDays(int days) { _defaultRetentionDays = days.clamp(1, 15); notifyListeners(); _persistChange('defaultRetentionDays', _defaultRetentionDays); }
   void toggleMonitoring() { _monitoringEnabled = !_monitoringEnabled; notifyListeners(); _persistChange('monitoringEnabled', _monitoringEnabled); }
   void toggleAllowedAlert(String alertType) {
