@@ -57,6 +57,7 @@ class ConversationEngine extends ChangeNotifier {
   String _settledTurnText = '';
   String _latestLanguage = 'English';
   String? _errorMessage;
+  bool _disposed = false;
 
   String get errorMessage => _errorMessage ?? '';
   String get latestTranscript => _latestTranscript;
@@ -259,6 +260,7 @@ class ConversationEngine extends ChangeNotifier {
       settled.isEmpty ? addition : '$settled $addition';
 
   void _handleSpeechResult(SpeechResultEvent event) {
+    if (_disposed) return;
     final text = event.text.trim();
     if (text.isEmpty) return;
     _latestTranscript = _joinTurn(_settledTurnText, text);
@@ -302,7 +304,14 @@ class ConversationEngine extends ChangeNotifier {
   }
 
   @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
+  @override
   void dispose() {
+    _disposed = true;
     _cancelSilenceTimer();
     unawaited(_subscription?.cancel());
     _subscription = null;
@@ -310,7 +319,12 @@ class ConversationEngine extends ChangeNotifier {
   }
 
   void _enqueue(Future<void> Function() command) {
-    _commandTail = _commandTail.then((_) => command()).catchError((Object error, StackTrace stack) {
+    if (_disposed) return;
+    _commandTail = _commandTail.then((_) async {
+      if (_disposed) return;
+      await command();
+    }).catchError((Object error, StackTrace stack) {
+      if (_disposed) return;
       _errorMessage = 'Speech control failed.';
       _state = ConversationEngineState.error;
       debugPrint('ConversationEngine command error: $error\n$stack');
