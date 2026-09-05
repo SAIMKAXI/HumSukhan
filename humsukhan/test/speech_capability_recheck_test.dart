@@ -47,6 +47,13 @@ void main() {
     platformStt = SpeechToText.withMethodChannel();
   });
 
+  test('cached getters remain unknown until the capability has been probed', () async {
+    final capability = SpeechCapability.instance;
+
+    expect(capability.sttSupportsEnglishCached, isNull);
+    expect(capability.sttSupportsUrduCached, isNull);
+  });
+
   test('probeStt caches per-language availability from installed locales', () async {
     final capability = SpeechCapability.instance;
     final available = await capability.probeStt(platformStt);
