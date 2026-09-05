@@ -47,7 +47,6 @@ class ConversationEngine extends ChangeNotifier {
   Timer? _silenceTimer;
   StreamSubscription<SpeechResultEvent>? _subscription;
   Future<void> _commandTail = Future<void>.value();
-  bool _speechStarted = false;
   bool _turnStopping = false;
   int _turnGeneration = 0;
   String _latestTranscript = '';
@@ -119,7 +118,6 @@ class ConversationEngine extends ChangeNotifier {
       _cancelSilenceTimer();
       _turnGeneration++;
       _turnStopping = false;
-      _speechStarted = false;
       _latestTranscript = '';
       _settledTurnText = '';
       _latestLanguage = 'English';
@@ -150,7 +148,6 @@ class ConversationEngine extends ChangeNotifier {
     _cancelSilenceTimer();
     final generation = ++_turnGeneration;
     _turnStopping = false;
-    _speechStarted = false;
     _latestTranscript = '';
     _settledTurnText = '';
     _latestLanguage = 'English';
@@ -193,11 +190,8 @@ class ConversationEngine extends ChangeNotifier {
         conversation.updateSpeakerTurn(_latestTranscript, language: _latestLanguage);
       }
       conversation.commitSpeakerTurn();
-      // Clear after committing: leaving the text here meant a later commit
-      // could re-post the previous utterance as a duplicate caption.
       _latestTranscript = '';
       _settledTurnText = '';
-      _speechStarted = false;
       _state = ConversationEngineState.idle;
       _errorMessage = null;
     } catch (e) {
@@ -213,13 +207,6 @@ class ConversationEngine extends ChangeNotifier {
 
   /// Commits the utterance that just ended and immediately opens the next one,
   /// leaving the microphone running.
-  ///
-  /// A pause in speech ends an *utterance*, not the listening session: the UI
-  /// says "Pause detected — speak again to continue", and the pause menu offers
-  /// "Manual only — no auto-stop" as the alternative, so auto-stop is meant to
-  /// segment turns rather than close the microphone. Wiring the silence timer
-  /// straight to _stopListening() closed the microphone after the very first
-  /// final result, so continuing to speak produced no further captions.
   Future<void> _finalizeTurn() async {
     if (_turnStopping) return;
     _cancelSilenceTimer();
@@ -230,13 +217,10 @@ class ConversationEngine extends ChangeNotifier {
     conversation.commitSpeakerTurn();
     _latestTranscript = '';
     _settledTurnText = '';
-    _speechStarted = false;
 
     final stillListening =
         speech.isListening && conversation.state == ConversationState.active;
     if (stillListening) {
-      // Open a fresh draft so the next utterance becomes its own caption
-      // instead of appending to the one just committed.
       conversation.beginSpeakerTurn(language: 'Auto');
       _state = ConversationEngineState.listening;
     } else {
@@ -277,25 +261,18 @@ class ConversationEngine extends ChangeNotifier {
   void _handleSpeechResult(SpeechResultEvent event) {
     final text = event.text.trim();
     if (text.isEmpty) return;
-    // The recognizer clears its own buffer after each final result, so a final
-    // carries only the utterance that just ended. Accumulate finals into the
-    // turn instead of overwriting: replacing meant that speaking again before
-    // the pause threshold elapsed silently discarded the previous utterance.
     _latestTranscript = _joinTurn(_settledTurnText, text);
     if (event.isFinal) _settledTurnText = _latestTranscript;
     _latestLanguage = event.language;
     if (_state == ConversationEngineState.listening) {
       _state = ConversationEngineState.speechActive;
     }
-    _speechStarted = true;
     if (event.isFinal) {
       _cancelSilenceTimer();
       if (_pauseThreshold == Duration.zero) {
         _state = ConversationEngineState.speechActive;
       } else {
         _state = ConversationEngineState.waitingForTurnEnd;
-        // Ends the utterance, not the microphone. Queued rather than called
-        // directly so it serialises against start/stop/speak commands.
         _silenceTimer = Timer(_pauseThreshold, () => _enqueue(_finalizeTurn));
       }
     } else {
@@ -324,6 +301,7 @@ class ConversationEngine extends ChangeNotifier {
     });
   }
 
+  @override
   void dispose() {
     _cancelSilenceTimer();
     unawaited(_subscription?.cancel());
