@@ -9,13 +9,17 @@ void main() {
         'Siren',
         'Doorbell',
         'Knock',
-        'Phone',
         'Baby Cry',
-        'Alarm Clock',
-        'Vehicle Horn',
-        'Glass Break',
-        'Dog Bark',
       ]),
     );
+  });
+
+  test('retired environmental alerts are absent from the catalog', () {
+    expect(SoundDetectionService.supportedEvents, isNot(contains('Smoke Alarm')));
+    expect(SoundDetectionService.supportedEvents, isNot(contains('Phone')));
+    expect(SoundDetectionService.supportedEvents, isNot(contains('Vehicle Horn')));
+    expect(SoundDetectionService.supportedEvents, isNot(contains('Glass Break')));
+    expect(SoundDetectionService.supportedEvents, isNot(contains('Alarm Clock')));
+    expect(SoundDetectionService.supportedEvents, isNot(contains('Dog Bark')));
   });
 }

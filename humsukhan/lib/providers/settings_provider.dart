@@ -17,9 +17,10 @@ class SettingsProvider extends ChangeNotifier {
   bool _disposed = false;
   final Set<String> _onboardedUsers = <String>{};
   final Map<String, bool> _allowedAlerts = {
-    'Fire Alarm': true, 'Smoke Alarm': true, 'Siren': true, 'Doorbell': true,
-    'Knock': true, 'Phone': true, 'Alarm Clock': true, 'Baby Cry': true,
-    'Vehicle Horn': true, 'Glass Break': true, 'Dog Bark': true,
+    'Siren': true,
+    'Doorbell': true,
+    'Knock': true,
+    'Baby Cry': true,
   };
 
   bool get isDarkMode => _isDarkMode;
@@ -122,6 +123,9 @@ class SettingsProvider extends ChangeNotifier {
         _applySettings({'allowedAlerts': jsonDecode(storedAlerts)});
       } catch (_) {}
     }
+    // Rewrite the stored map using only the supported alert catalog so retired
+    // preferences are physically removed from existing installs.
+    await prefs.setString('allowedAlerts', jsonEncode(_allowedAlerts));
 
     // Local settings are sufficient for startup. Remote synchronization is
     // deliberately moved off the first-frame critical path.
@@ -194,7 +198,12 @@ class SettingsProvider extends ChangeNotifier {
   void setAppLanguage(String langCode) { _appLanguage = langCode; notifyListeners(); _persistChange('appLanguage', langCode); }
   void setDefaultRetentionDays(int days) { _defaultRetentionDays = days.clamp(1, 15); notifyListeners(); _persistChange('defaultRetentionDays', _defaultRetentionDays); }
   void toggleMonitoring() { _monitoringEnabled = !_monitoringEnabled; notifyListeners(); _persistChange('monitoringEnabled', _monitoringEnabled); }
-  void toggleAllowedAlert(String alertType) { _allowedAlerts[alertType] = !(_allowedAlerts[alertType] ?? true); notifyListeners(); _persistChange('allowedAlerts', jsonEncode(_allowedAlerts)); }
+  void toggleAllowedAlert(String alertType) {
+    if (!_allowedAlerts.containsKey(alertType)) return;
+    _allowedAlerts[alertType] = !(_allowedAlerts[alertType] ?? true);
+    notifyListeners();
+    _persistChange('allowedAlerts', jsonEncode(_allowedAlerts));
+  }
 
   Future<bool> hasCompletedOnboardingForUser(String userId) async {
     if (userId.isEmpty) return false;

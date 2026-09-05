@@ -67,17 +67,10 @@ class EnvironmentalProvider extends ChangeNotifier {
   }
 
   static const Map<String, String> alertDescriptions = {
-    'Fire Alarm': 'A possible fire alarm was detected. Please check your surroundings.',
     'Siren': 'A siren sound was detected nearby.',
     'Doorbell': 'A doorbell sound was detected.',
     'Knock': 'A knocking sound was detected at a door.',
-    'Phone': 'A phone ringtone was detected.',
-    'Phone/Ringtone': 'A phone ringtone was detected.',
-    'Alarm Clock': 'An alarm clock sound was detected.',
     'Baby Cry': 'A baby crying sound was detected.',
-    'Vehicle Horn': 'A vehicle horn was detected.',
-    'Glass Break': 'A possible glass break was detected.',
-    'Dog Bark': 'A dog bark was detected.',
   };
 
   Future<void> _loadAlertHistory() async {
@@ -92,13 +85,20 @@ class EnvironmentalProvider extends ChangeNotifier {
             ..addAll(
               decoded
                   .whereType<Map>()
-                  .map((item) => SoundEvent.fromJson(Map<String, dynamic>.from(item))),
+                  .map((item) => SoundEvent.fromJson(Map<String, dynamic>.from(item)))
+                  .where((event) => SoundDetectionService.supportedEvents.contains(event.type)),
             );
           _alertHistory.sort((a, b) => b.timestamp.compareTo(a.timestamp));
           if (_alertHistory.isNotEmpty) {
             _lastAlertType = _alertHistory.first.type;
             _lastAlertTime = _alertHistory.first.timestamp;
           }
+          await prefs.setString(
+            _historyKey,
+            jsonEncode(
+              _alertHistory.take(_maxHistoryEntries).map((event) => event.toJson()).toList(),
+            ),
+          );
         }
       }
     } catch (e) {
@@ -281,7 +281,11 @@ class EnvironmentalProvider extends ChangeNotifier {
   }
 
   bool processSoundEvent(SoundEvent event) {
-    if (!monitoringEnabled || event.confidence < _minConfidence) return false;
+    if (!monitoringEnabled ||
+        !SoundDetectionService.supportedEvents.contains(event.type) ||
+        event.confidence < _minConfidence) {
+      return false;
+    }
     final settings = _settingsProvider;
     if (settings != null && settings.allowedAlerts[event.type] == false) return false;
     if (_lastAlertType == event.type &&

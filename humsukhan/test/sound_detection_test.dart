@@ -3,8 +3,8 @@ import 'package:humsukhan/services/sound_detection_service.dart';
 
 /// Tests for the environmental acoustic event catalog and service lifecycle.
 ///
-/// These tests validate the remaining supported event pipeline without
-/// requiring microphone access or sherpa-ONNX model loading.
+/// These tests validate the supported event pipeline without requiring
+/// microphone access or sherpa-ONNX model loading.
 void main() {
   group('SoundDetectionService', () {
     test('supportedEvents contains only supported event types', () {
@@ -13,14 +13,14 @@ void main() {
       expect(events, contains('Siren'));
       expect(events, contains('Doorbell'));
       expect(events, contains('Knock'));
-      expect(events, contains('Phone'));
       expect(events, contains('Baby Cry'));
-      expect(events, contains('Alarm Clock'));
-      expect(events, contains('Vehicle Horn'));
-      expect(events, contains('Glass Break'));
-      expect(events, contains('Dog Bark'));
+      expect(events, isNot(contains('Phone')));
+      expect(events, isNot(contains('Vehicle Horn')));
+      expect(events, isNot(contains('Glass Break')));
+      expect(events, isNot(contains('Dog Bark')));
+      expect(events, isNot(contains('Alarm Clock')));
+      expect(events, isNot(contains('Smoke Alarm')));
       expect(events, isNot(contains('Fire Alarm')));
-      expect(events, isNot(contains('Smoke')));
     });
 
     test('singleton instance is consistent type', () {
@@ -42,7 +42,7 @@ void main() {
     });
 
     test('supportedEvents count matches the active catalog', () {
-      expect(SoundDetectionService.supportedEvents.length, 9);
+      expect(SoundDetectionService.supportedEvents.length, 4);
     });
 
     test('label count is zero before initialization', () {
@@ -56,8 +56,8 @@ void main() {
     });
   });
 
-  group('Label Mapping — real AudioSet labels', () {
-    test('Siren maps siren, police, ambulance, fire engine, civil defense', () {
+  group('Label Mapping — supported AudioSet labels', () {
+    test('Siren maps supported siren labels', () {
       expect(SoundDetectionService.supportedEvents, contains('Siren'));
     });
 
@@ -69,47 +69,24 @@ void main() {
       expect(SoundDetectionService.supportedEvents, contains('Knock'));
     });
 
-    test('Phone maps telephone, ringtone, and car alarm', () {
-      expect(SoundDetectionService.supportedEvents, contains('Phone'));
-    });
-
     test('Baby Cry maps baby cry, crying/sobbing, and whimper', () {
       expect(SoundDetectionService.supportedEvents, contains('Baby Cry'));
-    });
-
-    test('Alarm Clock maps alarm clock, alarm, buzzer', () {
-      expect(SoundDetectionService.supportedEvents, contains('Alarm Clock'));
-    });
-
-    test('Vehicle Horn maps vehicle horn, air horn, honk', () {
-      expect(SoundDetectionService.supportedEvents, contains('Vehicle Horn'));
-    });
-
-    test('Glass Break maps glass and shatter', () {
-      expect(SoundDetectionService.supportedEvents, contains('Glass Break'));
-    });
-
-    test('Dog Bark maps bark only', () {
-      expect(SoundDetectionService.supportedEvents, contains('Dog Bark'));
     });
   });
 
   group('Label Mapping Coverage', () {
     test('critical events contain only Siren', () {
       expect(SoundDetectionService.supportedEvents, contains('Siren'));
-      expect(SoundDetectionService.supportedEvents, isNot(contains('Fire Alarm')));
     });
 
-    test('non-critical events remain available', () {
+    test('retired events are not available', () {
       final events = SoundDetectionService.supportedEvents;
-      expect(events, contains('Doorbell'));
-      expect(events, contains('Knock'));
-      expect(events, contains('Phone'));
-      expect(events, contains('Baby Cry'));
-      expect(events, contains('Alarm Clock'));
-      expect(events, contains('Vehicle Horn'));
-      expect(events, contains('Glass Break'));
-      expect(events, contains('Dog Bark'));
+      expect(events, isNot(contains('Phone')));
+      expect(events, isNot(contains('Alarm Clock')));
+      expect(events, isNot(contains('Vehicle Horn')));
+      expect(events, isNot(contains('Glass Break')));
+      expect(events, isNot(contains('Dog Bark')));
+      expect(events, isNot(contains('Smoke Alarm')));
     });
   });
 

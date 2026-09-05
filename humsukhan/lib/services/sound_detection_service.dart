@@ -37,12 +37,7 @@ class SoundDetectionService {
     'Siren': ['siren', 'police car (siren)', 'ambulance (siren)', 'fire engine, fire truck (siren)', 'civil defense siren', 'emergency vehicle'],
     'Doorbell': ['doorbell', 'chime'],
     'Knock': ['knock', 'tap'],
-    'Phone': ['telephone', 'telephone bell ringing', 'ringtone', 'car alarm'],
     'Baby Cry': ['baby cry, infant cry', 'crying, sobbing', 'whimper'],
-    'Alarm Clock': ['alarm clock', 'alarm', 'buzzer'],
-    'Vehicle Horn': ['vehicle horn, car horn, honking', 'air horn, truck horn', 'honk'],
-    'Glass Break': ['glass', 'shatter'],
-    'Dog Bark': ['bark'],
   };
   static const Set<String> _criticalEvents = {'Siren'};
   static const double _criticalThreshold = 0.70;
@@ -236,8 +231,8 @@ class SoundDetectionService {
   }
 
   String _getSeverity(String eventType) {
-    if (eventType == 'Siren' || eventType == 'Glass Break') return 'critical';
-    if (eventType == 'Doorbell' || eventType == 'Knock' || eventType == 'Phone' || eventType == 'Baby Cry') return 'warning';
+    if (eventType == 'Siren') return 'critical';
+    if (eventType == 'Doorbell' || eventType == 'Knock' || eventType == 'Baby Cry') return 'warning';
     return 'info';
   }
 

@@ -54,7 +54,7 @@ class AppStrings {
   String get onboardingProfessional => _isUrdu ? 'پیشہ ورانہ سننا' : 'Professional Listening';
   String get onboardingProfessionalDesc => _isUrdu ? 'لیکچرز اور میٹنگز کیپچر کریں۔ AI سے چلائی جانے والی خلاصے، اعمال کے اقدامات، اور بصیرت حاصل کریں۔' : 'Capture lectures and meetings. Get AI-powered summaries, action items, and insights.';
   String get onboardingEnvironmental => _isUrdu ? 'ماحولیاتی آگاہی' : 'Environmental Awareness';
-  String get onboardingEnvironmentalDesc => _isUrdu ? 'اپنے آس پاس اہم آوازوں کے بارے میں جانیں — فائر الارم، دروازے کی گھنٹی، فون کالز، اور بہت کچھ۔' : 'Know about important sounds around you — fire alarms, doorbells, phone calls, and more.';
+  String get onboardingEnvironmentalDesc => _isUrdu ? 'اپنے آس پاس اہم آوازوں کے بارے میں جانیں — سائرن، دروازے کی گھنٹی، دستک، اور بچے کے رونے کی آوازیں۔' : 'Know about important sounds around you — sirens, doorbells, knocks, and baby cries.';
   String get onboardingPrivacy => _isUrdu ? 'رازداری پہلے' : 'Privacy First';
   String get onboardingPrivacyDesc => _isUrdu ? 'آڈیو عارضی طور پر پروسیس ہوتا ہے اور ریلیز ہو جاتا ہے۔ خام آڈیو کبھی محفوظ نہیں کیا جاتا۔' : 'Audio is processed temporarily and released. No raw audio is ever stored.';
 
@@ -76,7 +76,7 @@ class AppStrings {
   String get professionalTitle => _isUrdu ? 'پیشہ ورانہ' : 'Professional';
   String get newSession => _isUrdu ? 'نیا اجلاس' : 'New Session';
   String get sessionsTab => _isUrdu ? 'اجلاس' : 'Sessions';
-  String get foldersTab => _isUrdu ? 'فولڈرز' : 'Folders';
+  String get foldersTab => _isUrdu ? 'فولڈر' : 'Folders';
   String get classesTab => _isUrdu ? 'کلاسز' : 'Classes';
   String get meetingsTab => _isUrdu ? 'میٹنگز' : 'Meetings';
   String get lecturesTab => _isUrdu ? 'لیکچرز' : 'Lectures';
@@ -156,13 +156,9 @@ class AppStrings {
   String get clearAll => _isUrdu ? 'سب صاف کریں' : 'Clear All';
   String get noAlertsYet => _isUrdu ? 'ابھی تک کوئی الرٹس نہیں' : 'No alerts yet';
   String get noAlertsDesc => _isUrdu ? 'آوازوں کا پتہ لگنے پر الرٹ کی تاریخ یہاں ظاہر ہوگی۔' : 'Alert history will appear here when sounds are detected.';
-  String get fireAlarm => _isUrdu ? 'آگ کی الرٹ' : 'Fire Alarm';
-  String get smokeAlarm => _isUrdu ? 'دھوئیں کی الرٹ' : 'Smoke Alarm';
   String get siren => _isUrdu ? 'سائرن' : 'Siren';
   String get doorbell => _isUrdu ? 'دروازے کی گھنٹی' : 'Doorbell';
   String get knock => _isUrdu ? 'دستک' : 'Knock';
-  String get phone => _isUrdu ? 'فون' : 'Phone';
-  String get alarmClock => _isUrdu ? 'الارم گھڑی' : 'Alarm Clock';
   String get babyCry => _isUrdu ? 'بچے کی رو' : 'Baby Cry';
   String get detected => _isUrdu ? 'پتہ لگا' : 'DETECTED';
   String get confidence => _isUrdu ? 'اعتماد' : 'confidence';
