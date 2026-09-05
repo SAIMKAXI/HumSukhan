@@ -96,13 +96,14 @@ class ResilientTtsProvider implements TtsProvider {
       _capability.ttsCandidates(deliveryLanguage);
 
   Future<bool> _setNativeLocale(String deliveryLanguage) async {
+    // ttsReliable() already performs a real synthesis probe against the same
+    // locale candidates. Do not add a second, potentially inconsistent
+    // isLanguageAvailable() gate here: some Android TTS engines can reject
+    // that metadata query even though setLanguage() + synthesis works.
     for (final locale in _nativeLocaleCandidates(deliveryLanguage)) {
       try {
-        final available = await _native.isLanguageAvailable(locale);
-        if (available == true || available.toString().toLowerCase() == 'true') {
-          await _native.setLanguage(locale);
-          return true;
-        }
+        await _native.setLanguage(locale);
+        return true;
       } catch (_) {}
     }
 
