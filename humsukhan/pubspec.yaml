@@ -1,11 +1,10 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 2.4.3+33
+version: 2.4.4+34
 
-# Release v2.4.3
-# Reliability: bundled local environmental model, retired Baby Cry alert,
-# canonical HumSukhan launcher/onboarding branding, and provider/test cleanup.
+# Release v2.4.4
+# Reliability: native Android environmental PCM capture and lifecycle-safe local monitoring.
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
