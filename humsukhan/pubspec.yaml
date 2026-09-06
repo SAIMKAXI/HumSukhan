@@ -1,11 +1,11 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 2.4.1+31
+version: 2.4.2+32
 
-# Release v2.4.1
-# On-device fixes: continuous Everyday captions, mid-session recognizer
-# recovery, silent TTS capability probing, and Environmental model recovery.
+# Release v2.4.2
+# Reliability: guarded ConversationEngine lifecycle callbacks and contained
+# asynchronous SettingsProvider persistence failures.
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
