@@ -45,6 +45,15 @@ class EnvironmentalMonitoringBridge {
   Future<bool> start() async {
     if (!Platform.isAndroid && !Platform.isIOS) return false;
     try {
+      // Clear a stale service state before acquiring the microphone again.
+      try {
+        final current = await _channel.invokeMethod<String>('getState');
+        if (current != null) _state = current;
+      } catch (_) {}
+      if (_state != 'OFF') {
+        if (!await _requestStopAndWaitForOff()) return false;
+      }
+
       final result = await _channel.invokeMethod<bool>('start');
       if (result != true) return false;
       for (var attempt = 0; attempt < 60; attempt++) {
@@ -56,8 +65,6 @@ class EnvironmentalMonitoringBridge {
         if (_state == 'ACTIVE') return true;
         if (_state == 'ERROR' || _state == 'OFF') return false;
       }
-      // Never let an unresolved native transition race an in-app fallback.
-      // The caller must observe OFF before it can start another microphone.
       await _requestStopAndWaitForOff();
       return false;
     } on PlatformException catch (e) {
@@ -68,23 +75,19 @@ class EnvironmentalMonitoringBridge {
 
   Future<bool> stop() async {
     if (!Platform.isAndroid && !Platform.isIOS) return false;
+    return _requestStopAndWaitForOff();
+  }
+
+  /// Foreground speech and environmental monitoring cannot safely contend for
+  /// the same microphone. Release the environmental capture path first.
+  Future<bool> releaseForForegroundSpeech() async {
+    if (!Platform.isAndroid) return true;
     try {
-      final result = await _channel.invokeMethod<bool>('stop');
-      if (result != true) return false;
-      _state = 'STOPPING';
-      for (var attempt = 0; attempt < 30; attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-        try {
-          final nextState = await _channel.invokeMethod<String>('getState');
-          if (nextState != null) _state = nextState;
-        } catch (_) {}
-        if (_state == 'OFF' || _state == 'ERROR') return _state == 'OFF';
-      }
-      return false;
-    } catch (e) {
-      debugPrint('Environmental bridge stop error: $e');
-      return false;
-    }
+      final current = await _channel.invokeMethod<String>('getState');
+      if (current != null) _state = current;
+    } catch (_) {}
+    if (_state == 'OFF') return true;
+    return _requestStopAndWaitForOff();
   }
 
   Future<bool> _requestStopAndWaitForOff() async {
