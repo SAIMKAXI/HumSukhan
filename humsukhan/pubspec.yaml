@@ -56,6 +56,8 @@ flutter:
     - assets/icon_mark.png
     - assets/logo_rectangle.png
     - assets/logo_rectangle_transparent.png
+    - assets/environmental/model.int8.onnx
+    - assets/environmental/class_labels_indices.csv
   fonts:
     - family: NotoNastaliqUrdu
       fonts:
