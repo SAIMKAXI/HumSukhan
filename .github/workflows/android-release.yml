@@ -36,6 +36,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Prepare bundled environmental model
+        run: bash tool/prepare_environmental_model.sh
+
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
