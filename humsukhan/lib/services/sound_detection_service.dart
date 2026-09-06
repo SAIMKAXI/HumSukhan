@@ -30,6 +30,7 @@ class SoundDetectionService {
   final Float32List _windowFloat = Float32List(_windowSamples);
   int _pcmWritePos = 0;
   int _totalSamplesCollected = 0;
+  int _nextProcessSampleCount = _windowSamples;
   final Map<String, DateTime> _lastDetectionTime = {};
   final Map<String, List<DateTime>> _temporalBuffer = {};
 
@@ -81,9 +82,6 @@ class SoundDetectionService {
   Future<bool> startMonitoring({bool permissionAlreadyGranted = false}) async {
     if (_monitoring) return true;
 
-    // The Android foreground service reaches this code through a secondary
-    // Flutter engine. Permission has already been checked by MainActivity, so
-    // do not depend on permission_handler's secondary-isolate state here.
     if (!_initialized) {
       if (permissionAlreadyGranted) {
         _audioRecorder ??= AudioRecorder();
@@ -110,9 +108,11 @@ class SoundDetectionService {
       final stream = await _audioRecorder!.startStream(config);
       _pcmWritePos = 0;
       _totalSamplesCollected = 0;
+      _nextProcessSampleCount = _windowSamples;
       _clearTemporalBuffer();
       _audioSubscription = stream.listen(
         _onAudioData,
+        onDone: () => debugPrint('SoundDetection: audio stream ended'),
         onError: (e) => debugPrint('SoundDetection stream error: $e'),
       );
       _monitoring = true;
@@ -138,6 +138,7 @@ class SoundDetectionService {
     _tagger.release();
     _pcmWritePos = 0;
     _totalSamplesCollected = 0;
+    _nextProcessSampleCount = _windowSamples;
   }
 
   void _onAudioData(Uint8List data) {
@@ -149,10 +150,13 @@ class SoundDetectionService {
       _pcmWritePos = (_pcmWritePos + 1) % _windowSamples;
       _totalSamplesCollected++;
     }
-    if (_totalSamplesCollected >= _windowSamples &&
-        (_totalSamplesCollected - _windowSamples) % _hopSamples == 0) {
-      _processWindow();
-    }
+
+    if (_totalSamplesCollected < _nextProcessSampleCount) return;
+
+    _processWindow();
+    do {
+      _nextProcessSampleCount += _hopSamples;
+    } while (_nextProcessSampleCount <= _totalSamplesCollected);
   }
 
   void _processWindow() {
