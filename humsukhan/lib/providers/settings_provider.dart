@@ -177,8 +177,12 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   Future<void> _persistChange(String key, dynamic value) async {
-    await _save(key, value);
-    await _saveToCloud();
+    try {
+      await _save(key, value);
+      await _saveToCloud();
+    } catch (e) {
+      if (!_disposed) debugPrint('Settings persistence error: $e');
+    }
   }
 
   void toggleDarkMode() { _isDarkMode = !_isDarkMode; notifyListeners(); _persistChange('darkMode', _isDarkMode); }
