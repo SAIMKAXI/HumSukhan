@@ -48,6 +48,7 @@ class EnvironmentalMonitoringService : Service() {
     @Volatile private var dartPcmFlowing = false
     private var audioRecord: AudioRecord? = null
     private var captureThread: Thread? = null
+    private val pcmWatchdogToken = Any()
 
     override fun onCreate() { super.onCreate(); createNotificationChannel() }
 
@@ -103,8 +104,8 @@ class EnvironmentalMonitoringService : Service() {
                                     dartPcmFlowing = false
                                     bytesCaptured = 0L
                                     lastPcmReadAtMs = 0L
-                                    EnvironmentalMonitoringState.set(this, "CAPTURING")
-                                    updateMonitoringNotification("CAPTURING")
+                                    EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.STARTING)
+                                    updateMonitoringNotification(EnvironmentalMonitoringState.STARTING)
                                     schedulePcmFlowWatchdog()
                                     result.success(true)
                                 } else {
@@ -115,6 +116,7 @@ class EnvironmentalMonitoringService : Service() {
                             }
                             "PCM_FLOWING" -> {
                                 dartPcmFlowing = true
+                                mainHandler.removeCallbacksAndMessages(pcmWatchdogToken)
                                 EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ACTIVE)
                                 updateMonitoringNotification(EnvironmentalMonitoringState.ACTIVE)
                                 result.success(true)
@@ -150,7 +152,7 @@ class EnvironmentalMonitoringService : Service() {
     private fun hasLiveEngine(): Boolean = engine != null && channel != null && !stopping
 
     private fun schedulePcmFlowWatchdog() {
-        mainHandler.removeCallbacksAndMessages(PCM_WATCHDOG_TOKEN)
+        mainHandler.removeCallbacksAndMessages(pcmWatchdogToken)
         mainHandler.postAtTime({
             if (!captureRunning || stopping || dartPcmFlowing) return@postAtTime
             val now = System.currentTimeMillis()
@@ -161,10 +163,8 @@ class EnvironmentalMonitoringService : Service() {
                 updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
                 stopNativeAudioCapture()
             }
-        }, PCM_WATCHDOG_TOKEN, System.currentTimeMillis() + PCM_FLOW_TIMEOUT_MS)
+        }, pcmWatchdogToken, System.currentTimeMillis() + PCM_FLOW_TIMEOUT_MS)
     }
-
-    private val PCM_WATCHDOG_TOKEN = Any()
 
     private fun startNativeAudioCapture(): Boolean {
         if (captureRunning) return true
@@ -219,7 +219,7 @@ class EnvironmentalMonitoringService : Service() {
                     if (captureRunning) debugPrint("Environmental native audio capture error: $e")
                 } finally {
                     captureRunning = false
-                    mainHandler.removeCallbacksAndMessages(PCM_WATCHDOG_TOKEN)
+                    mainHandler.removeCallbacksAndMessages(pcmWatchdogToken)
                     try { recorder.stop() } catch (_: Exception) {}
                     try { recorder.release() } catch (_: Exception) {}
                     if (audioRecord === recorder) audioRecord = null
@@ -232,7 +232,7 @@ class EnvironmentalMonitoringService : Service() {
         } catch (e: Exception) {
             debugPrint("Environmental native AudioRecord start error: $e")
             captureRunning = false
-            mainHandler.removeCallbacksAndMessages(PCM_WATCHDOG_TOKEN)
+            mainHandler.removeCallbacksAndMessages(pcmWatchdogToken)
             try { audioRecord?.release() } catch (_: Exception) {}
             audioRecord = null
             false
@@ -241,7 +241,7 @@ class EnvironmentalMonitoringService : Service() {
 
     private fun stopNativeAudioCapture() {
         captureRunning = false
-        mainHandler.removeCallbacksAndMessages(PCM_WATCHDOG_TOKEN)
+        mainHandler.removeCallbacksAndMessages(pcmWatchdogToken)
         try { audioRecord?.stop() } catch (_: Exception) {}
         try { audioRecord?.release() } catch (_: Exception) {}
         audioRecord = null
@@ -306,7 +306,6 @@ class EnvironmentalMonitoringService : Service() {
             EnvironmentalMonitoringState.ACTIVE -> "Environmental monitoring: Offline / Local"
             EnvironmentalMonitoringState.ERROR -> "Environmental monitoring: unavailable"
             EnvironmentalMonitoringState.STARTING -> "Environmental monitoring: starting"
-            "CAPTURING" -> "Environmental monitoring: capturing audio"
             else -> "Environmental monitoring: $state"
         }
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildMonitoringNotification(text))
