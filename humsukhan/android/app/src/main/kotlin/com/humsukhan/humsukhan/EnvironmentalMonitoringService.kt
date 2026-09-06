@@ -8,6 +8,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -29,12 +32,18 @@ class EnvironmentalMonitoringService : Service() {
         const val CHANNEL_ID = "environmental_monitoring"
         const val NOTIFICATION_ID = 4107
         private const val METHOD_CHANNEL = "com.humsukhan/environmental_monitor"
+        private const val SAMPLE_RATE = 16000
+        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
+        private const val AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT
     }
 
     private var engine: FlutterEngine? = null
     private var channel: MethodChannel? = null
     private var stopping = false
     private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var captureRunning = false
+    private var audioRecord: AudioRecord? = null
+    private var captureThread: Thread? = null
 
     override fun onCreate() { super.onCreate(); createNotificationChannel() }
 
@@ -48,7 +57,7 @@ class EnvironmentalMonitoringService : Service() {
     }
 
     private fun startMonitoring() {
-        if (EnvironmentalMonitoringState.get(this) == EnvironmentalMonitoringState.ACTIVE && engine != null) return
+        if (EnvironmentalMonitoringState.get(this) == EnvironmentalMonitoringState.ACTIVE && engine != null && captureRunning) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
             stopSelf()
@@ -84,13 +93,24 @@ class EnvironmentalMonitoringService : Service() {
                 when (call.method) {
                     "pipelineState" -> {
                         val state = call.argument<String>("state") ?: EnvironmentalMonitoringState.ERROR
-                        if (state == EnvironmentalMonitoringState.ACTIVE && !hasLiveEngine()) {
+                        if (state == "READY") {
+                            if (startNativeAudioCapture()) {
+                                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ACTIVE)
+                                updateMonitoringNotification(EnvironmentalMonitoringState.ACTIVE)
+                                result.success(true)
+                            } else {
+                                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
+                                updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
+                                result.success(false)
+                            }
+                        } else if (state == EnvironmentalMonitoringState.ACTIVE && !hasLiveEngine()) {
                             EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
+                            result.success(false)
                         } else {
                             EnvironmentalMonitoringState.set(this, state)
                             updateMonitoringNotification(state)
+                            result.success(true)
                         }
-                        result.success(true)
                     }
                     "event" -> {
                         val type = call.argument<String>("type") ?: "Environmental sound"
@@ -112,16 +132,88 @@ class EnvironmentalMonitoringService : Service() {
 
     private fun hasLiveEngine(): Boolean = engine != null && channel != null && !stopping
 
+    private fun startNativeAudioCapture(): Boolean {
+        if (captureRunning) return true
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return false
+        return try {
+            val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_ENCODING)
+            if (minBuffer <= 0) return false
+            val bufferSize = maxOf(minBuffer * 2, 8192)
+            val recorder = AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                SAMPLE_RATE,
+                CHANNEL_CONFIG,
+                AUDIO_ENCODING,
+                bufferSize,
+            )
+            if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+                recorder.release()
+                return false
+            }
+            recorder.startRecording()
+            if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                recorder.release()
+                return false
+            }
+            audioRecord = recorder
+            captureRunning = true
+            captureThread = Thread {
+                val pcm = ByteArray(bufferSize)
+                try {
+                    while (captureRunning && !Thread.currentThread().isInterrupted) {
+                        val count = recorder.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
+                        if (count > 0 && captureRunning) {
+                            channel?.invokeMethod("audioData", pcm.copyOf(count))
+                        } else if (count < 0) {
+                            debugPrint("Environmental native AudioRecord read error: $count")
+                            break
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (captureRunning) debugPrint("Environmental native audio capture error: $e")
+                } finally {
+                    captureRunning = false
+                    try { recorder.stop() } catch (_: Exception) {}
+                    try { recorder.release() } catch (_: Exception) {}
+                    if (audioRecord === recorder) audioRecord = null
+                }
+            }.also {
+                it.name = "HumSukhan-EnvironmentalAudio"
+                it.start()
+            }
+            true
+        } catch (e: Exception) {
+            debugPrint("Environmental native AudioRecord start error: $e")
+            captureRunning = false
+            try { audioRecord?.release() } catch (_: Exception) {}
+            audioRecord = null
+            false
+        }
+    }
+
+    private fun stopNativeAudioCapture() {
+        captureRunning = false
+        try { audioRecord?.stop() } catch (_: Exception) {}
+        try { audioRecord?.release() } catch (_: Exception) {}
+        audioRecord = null
+        captureThread?.interrupt()
+        captureThread = null
+    }
+
+    private fun debugPrint(message: String) { android.util.Log.d("HumSukhanEnv", message) }
+
     private fun stopMonitoring() {
         if (stopping) return
         stopping = true
         EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.STOPPING)
+        stopNativeAudioCapture()
         try { channel?.invokeMethod("stop", null) } catch (_: Exception) {}
         mainHandler.postDelayed({ cleanupAndStop() }, 500L)
     }
 
     private fun cleanupAndStop() {
         mainHandler.removeCallbacksAndMessages(null)
+        stopNativeAudioCapture()
         channel = null
         engine?.destroy()
         engine = null
@@ -182,6 +274,7 @@ class EnvironmentalMonitoringService : Service() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        stopNativeAudioCapture()
         channel = null
         engine?.destroy()
         engine = null
