@@ -35,6 +35,7 @@ class EnvironmentalMonitoringService : Service() {
         private const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT
+        private const val PCM_FLOW_TIMEOUT_MS = 5000L
     }
 
     private var engine: FlutterEngine? = null
@@ -42,6 +43,9 @@ class EnvironmentalMonitoringService : Service() {
     private var stopping = false
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var captureRunning = false
+    @Volatile private var bytesCaptured = 0L
+    @Volatile private var lastPcmReadAtMs = 0L
+    @Volatile private var dartPcmFlowing = false
     private var audioRecord: AudioRecord? = null
     private var captureThread: Thread? = null
 
@@ -93,23 +97,36 @@ class EnvironmentalMonitoringService : Service() {
                 when (call.method) {
                     "pipelineState" -> {
                         val state = call.argument<String>("state") ?: EnvironmentalMonitoringState.ERROR
-                        if (state == "READY") {
-                            if (startNativeAudioCapture()) {
+                        when (state) {
+                            "READY" -> {
+                                if (startNativeAudioCapture()) {
+                                    dartPcmFlowing = false
+                                    bytesCaptured = 0L
+                                    lastPcmReadAtMs = 0L
+                                    EnvironmentalMonitoringState.set(this, "CAPTURING")
+                                    updateMonitoringNotification("CAPTURING")
+                                    schedulePcmFlowWatchdog()
+                                    result.success(true)
+                                } else {
+                                    EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
+                                    updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
+                                    result.success(false)
+                                }
+                            }
+                            "PCM_FLOWING" -> {
+                                dartPcmFlowing = true
                                 EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ACTIVE)
                                 updateMonitoringNotification(EnvironmentalMonitoringState.ACTIVE)
                                 result.success(true)
-                            } else {
-                                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
-                                updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
-                                result.success(false)
                             }
-                        } else if (state == EnvironmentalMonitoringState.ACTIVE && !hasLiveEngine()) {
-                            EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
-                            result.success(false)
-                        } else {
-                            EnvironmentalMonitoringState.set(this, state)
-                            updateMonitoringNotification(state)
-                            result.success(true)
+                            else -> if (state == EnvironmentalMonitoringState.ACTIVE && !hasLiveEngine()) {
+                                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
+                                result.success(false)
+                            } else {
+                                EnvironmentalMonitoringState.set(this, state)
+                                updateMonitoringNotification(state)
+                                result.success(true)
+                            }
                         }
                     }
                     "event" -> {
@@ -131,6 +148,23 @@ class EnvironmentalMonitoringService : Service() {
     }
 
     private fun hasLiveEngine(): Boolean = engine != null && channel != null && !stopping
+
+    private fun schedulePcmFlowWatchdog() {
+        mainHandler.removeCallbacksAndMessages(PCM_WATCHDOG_TOKEN)
+        mainHandler.postAtTime({
+            if (!captureRunning || stopping || dartPcmFlowing) return@postAtTime
+            val now = System.currentTimeMillis()
+            val lastRead = lastPcmReadAtMs
+            if (bytesCaptured <= 0L || lastRead <= 0L || now - lastRead > PCM_FLOW_TIMEOUT_MS) {
+                debugPrint("Environmental PCM watchdog failed: bytesCaptured=$bytesCaptured lastPcmReadAtMs=$lastRead")
+                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
+                updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
+                stopNativeAudioCapture()
+            }
+        }, PCM_WATCHDOG_TOKEN, System.currentTimeMillis() + PCM_FLOW_TIMEOUT_MS)
+    }
+
+    private val PCM_WATCHDOG_TOKEN = Any()
 
     private fun startNativeAudioCapture(): Boolean {
         if (captureRunning) return true
@@ -155,6 +189,9 @@ class EnvironmentalMonitoringService : Service() {
                 recorder.release()
                 return false
             }
+            bytesCaptured = 0L
+            lastPcmReadAtMs = 0L
+            dartPcmFlowing = false
             audioRecord = recorder
             captureRunning = true
             captureThread = Thread {
@@ -163,7 +200,16 @@ class EnvironmentalMonitoringService : Service() {
                     while (captureRunning && !Thread.currentThread().isInterrupted) {
                         val count = recorder.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
                         if (count > 0 && captureRunning) {
-                            channel?.invokeMethod("audioData", pcm.copyOf(count))
+                            bytesCaptured += count
+                            lastPcmReadAtMs = System.currentTimeMillis()
+                            val payload = pcm.copyOf(count)
+                            // AudioRecord runs on a dedicated capture thread. Flutter's
+                            // MethodChannel invocation must be marshalled to the main thread.
+                            mainHandler.post {
+                                if (captureRunning && !stopping) {
+                                    channel?.invokeMethod("audioData", payload)
+                                }
+                            }
                         } else if (count < 0) {
                             debugPrint("Environmental native AudioRecord read error: $count")
                             break
@@ -173,6 +219,7 @@ class EnvironmentalMonitoringService : Service() {
                     if (captureRunning) debugPrint("Environmental native audio capture error: $e")
                 } finally {
                     captureRunning = false
+                    mainHandler.removeCallbacksAndMessages(PCM_WATCHDOG_TOKEN)
                     try { recorder.stop() } catch (_: Exception) {}
                     try { recorder.release() } catch (_: Exception) {}
                     if (audioRecord === recorder) audioRecord = null
@@ -185,6 +232,7 @@ class EnvironmentalMonitoringService : Service() {
         } catch (e: Exception) {
             debugPrint("Environmental native AudioRecord start error: $e")
             captureRunning = false
+            mainHandler.removeCallbacksAndMessages(PCM_WATCHDOG_TOKEN)
             try { audioRecord?.release() } catch (_: Exception) {}
             audioRecord = null
             false
@@ -193,6 +241,7 @@ class EnvironmentalMonitoringService : Service() {
 
     private fun stopNativeAudioCapture() {
         captureRunning = false
+        mainHandler.removeCallbacksAndMessages(PCM_WATCHDOG_TOKEN)
         try { audioRecord?.stop() } catch (_: Exception) {}
         try { audioRecord?.release() } catch (_: Exception) {}
         audioRecord = null
@@ -257,6 +306,7 @@ class EnvironmentalMonitoringService : Service() {
             EnvironmentalMonitoringState.ACTIVE -> "Environmental monitoring: Offline / Local"
             EnvironmentalMonitoringState.ERROR -> "Environmental monitoring: unavailable"
             EnvironmentalMonitoringState.STARTING -> "Environmental monitoring: starting"
+            "CAPTURING" -> "Environmental monitoring: capturing audio"
             else -> "Environmental monitoring: $state"
         }
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildMonitoringNotification(text))
