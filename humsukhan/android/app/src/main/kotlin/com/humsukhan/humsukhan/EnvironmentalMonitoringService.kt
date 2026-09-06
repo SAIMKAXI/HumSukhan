@@ -157,8 +157,13 @@ class EnvironmentalMonitoringService : Service() {
             if (!captureRunning || stopping || dartPcmFlowing) return@postAtTime
             val now = System.currentTimeMillis()
             val lastRead = lastPcmReadAtMs
-            if (bytesCaptured <= 0L || lastRead <= 0L || now - lastRead > PCM_FLOW_TIMEOUT_MS) {
-                debugPrint("Environmental PCM watchdog failed: bytesCaptured=$bytesCaptured lastPcmReadAtMs=$lastRead")
+            if (!dartPcmFlowing) {
+                debugPrint("Environmental PCM watchdog failed: Dart received no PCM (bytesCaptured=$bytesCaptured lastPcmReadAtMs=$lastRead)")
+                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
+                updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
+                stopNativeAudioCapture()
+            } else if (lastRead <= 0L || now - lastRead > PCM_FLOW_TIMEOUT_MS) {
+                debugPrint("Environmental PCM watchdog failed: native capture stalled (bytesCaptured=$bytesCaptured lastPcmReadAtMs=$lastRead)")
                 EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
                 updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
                 stopNativeAudioCapture()
@@ -223,6 +228,15 @@ class EnvironmentalMonitoringService : Service() {
                     try { recorder.stop() } catch (_: Exception) {}
                     try { recorder.release() } catch (_: Exception) {}
                     if (audioRecord === recorder) audioRecord = null
+                    if (!stopping && EnvironmentalMonitoringState.get(this@EnvironmentalMonitoringService) == EnvironmentalMonitoringState.STARTING) {
+                        mainHandler.post {
+                            if (!stopping && !dartPcmFlowing) {
+                                debugPrint("Environmental native audio capture stopped before PCM reached Dart")
+                                EnvironmentalMonitoringState.set(this@EnvironmentalMonitoringService, EnvironmentalMonitoringState.ERROR)
+                                updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
+                            }
+                        }
+                    }
                 }
             }.also {
                 it.name = "HumSukhan-EnvironmentalAudio"
