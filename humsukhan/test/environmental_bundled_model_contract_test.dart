@@ -10,8 +10,9 @@ void main() {
 
     expect(pubspec, contains('assets/environmental/model.int8.onnx'));
     expect(pubspec, contains('assets/environmental/class_labels_indices.csv'));
-    expect(manager, contains("rootBundle.load(_modelAsset)"));
-    expect(manager, contains("rootBundle.load(_labelsAsset)"));
+    expect(manager, contains('rootBundle.load(assetPath)'));
+    expect(manager, contains('await _copyBundledFile(_modelAsset, modelFile)'));
+    expect(manager, contains('await _copyBundledFile(_labelsAsset, labelsFile)'));
     expect(manager, isNot(contains('package:http/http.dart')));
     expect(manager, isNot(contains('huggingface.co')));
     expect(detector, contains('AudioModelManager.instance.initialize()'));
