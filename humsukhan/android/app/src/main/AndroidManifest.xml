@@ -69,9 +69,6 @@
         <intent>
             <action android:name="android.speech.tts.engine.CHECK_TTS_DATA"/>
         </intent>
-        <!-- Android 11+ package visibility: without this the app cannot see the
-             device speech recognizer, so speech_to_text reports no installed
-             locales and the platform STT fallback is treated as unavailable. -->
         <intent>
             <action android:name="android.speech.RecognitionService"/>
         </intent>
