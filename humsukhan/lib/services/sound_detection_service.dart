@@ -7,6 +7,54 @@ import '../models/models.dart';
 import 'audio_model_manager.dart';
 import 'sherpa_audio_tagger.dart';
 
+class PcmWindowAccumulator {
+  PcmWindowAccumulator({this.windowSamples = 48000, this.hopSamples = 16000})
+      : assert(windowSamples > 0),
+        assert(hopSamples > 0),
+        _buffer = Int16List(windowSamples),
+        _nextWindowSampleCount = windowSamples;
+
+  final int windowSamples;
+  final int hopSamples;
+  final Int16List _buffer;
+  int _writePos = 0;
+  int _totalSamples = 0;
+  int _nextWindowSampleCount;
+  int _windowsEmitted = 0;
+
+  int get totalSamples => _totalSamples;
+  int get windowsEmitted => _windowsEmitted;
+
+  void reset() {
+    _writePos = 0;
+    _totalSamples = 0;
+    _nextWindowSampleCount = windowSamples;
+    _windowsEmitted = 0;
+  }
+
+  void add(Uint8List data, void Function(Float32List window) onWindow) {
+    if (data.lengthInBytes < 2) return;
+    final length = data.lengthInBytes - (data.lengthInBytes % 2);
+    final samples = Int16List.view(data.buffer, data.offsetInBytes, length ~/ 2);
+    for (final sample in samples) {
+      _buffer[_writePos] = sample;
+      _writePos = (_writePos + 1) % windowSamples;
+      _totalSamples++;
+    }
+
+    while (_totalSamples >= _nextWindowSampleCount) {
+      final start = _writePos;
+      final window = Float32List(windowSamples);
+      for (var i = 0; i < windowSamples; i++) {
+        window[i] = _buffer[(start + i) % windowSamples] / 32768.0;
+      }
+      _windowsEmitted++;
+      onWindow(window);
+      _nextWindowSampleCount += hopSamples;
+    }
+  }
+}
+
 class SoundDetectionService {
   SoundDetectionService._();
   static SoundDetectionService? _instance;
@@ -26,6 +74,10 @@ class SoundDetectionService {
   static const int _hopSamples = 1 * _sampleRate;
   static const double _rmsGateThreshold = 200.0;
   static const Duration _temporalWindow = Duration(seconds: 8);
+  final PcmWindowAccumulator _externalPcm = PcmWindowAccumulator(
+    windowSamples: _windowSamples,
+    hopSamples: _hopSamples,
+  );
   final Int16List _pcmBuffer = Int16List(_windowSamples);
   final Float32List _windowFloat = Float32List(_windowSamples);
   int _pcmWritePos = 0;
@@ -79,6 +131,39 @@ class SoundDetectionService {
 
   Future<bool> _hasPermission() async => (await Permission.microphone.status).isGranted;
 
+  Future<bool> _initializeModel() async {
+    _modelReady = await AudioModelManager.instance.initialize() && await _tagger.initialize();
+    if (!_modelReady) debugPrint('SoundDetection bundled model is unavailable');
+    return _modelReady;
+  }
+
+  Future<bool> startExternalMonitoring({bool permissionAlreadyGranted = false}) async {
+    if (_monitoring) return _modelReady;
+    if (!_initialized) {
+      if (permissionAlreadyGranted) {
+        _microphoneReady = true;
+        _initialized = true;
+      } else if (!await initialize(requestPermission: true)) {
+        return false;
+      }
+    }
+    if (!_microphoneReady) return false;
+    try {
+      if (!await _initializeModel()) return false;
+      _pcmWritePos = 0;
+      _totalSamplesCollected = 0;
+      _nextProcessSampleCount = _windowSamples;
+      _externalPcm.reset();
+      _clearTemporalBuffer();
+      _monitoring = true;
+      return true;
+    } catch (e) {
+      debugPrint('SoundDetection external monitoring start error: $e');
+      _monitoring = false;
+      return false;
+    }
+  }
+
   Future<bool> startMonitoring({bool permissionAlreadyGranted = false}) async {
     if (_monitoring) return true;
 
@@ -94,11 +179,7 @@ class SoundDetectionService {
     if (!_microphoneReady || _audioRecorder == null) return false;
 
     try {
-      _modelReady = await AudioModelManager.instance.initialize() && await _tagger.initialize();
-      if (!_modelReady) {
-        debugPrint('SoundDetection bundled model is unavailable');
-        return false;
-      }
+      if (!await _initializeModel()) return false;
 
       const config = RecordConfig(
         encoder: AudioEncoder.pcm16bits,
@@ -109,6 +190,7 @@ class SoundDetectionService {
       _pcmWritePos = 0;
       _totalSamplesCollected = 0;
       _nextProcessSampleCount = _windowSamples;
+      _externalPcm.reset();
       _clearTemporalBuffer();
       _audioSubscription = stream.listen(
         _onAudioData,
@@ -139,6 +221,28 @@ class SoundDetectionService {
     _pcmWritePos = 0;
     _totalSamplesCollected = 0;
     _nextProcessSampleCount = _windowSamples;
+    _externalPcm.reset();
+  }
+
+  void processExternalAudio(Uint8List data) {
+    if (!_monitoring || data.lengthInBytes < 2) return;
+    _externalPcm.add(data, _processExternalWindow);
+  }
+
+  void _processExternalWindow(Float32List window) {
+    if (!_tagger.isInitialized) return;
+    var sumSq = 0.0;
+    for (final sample in window) {
+      final value = sample * 32768.0;
+      sumSq += value * value;
+    }
+    if (sumSq / _windowSamples < _rmsGateThreshold * _rmsGateThreshold) return;
+    for (var i = 0; i < window.length; i++) {
+      _windowFloat[i] = window[i];
+    }
+    for (final result in _tagger.classify(samples: _windowFloat, topK: 10)) {
+      _processDetection(result.label, result.probability);
+    }
   }
 
   void _onAudioData(Uint8List data) {
@@ -152,7 +256,6 @@ class SoundDetectionService {
     }
 
     if (_totalSamplesCollected < _nextProcessSampleCount) return;
-
     _processWindow();
     do {
       _nextProcessSampleCount += _hopSamples;
@@ -197,9 +300,7 @@ class SoundDetectionService {
   }
 
   void _clearTemporalBuffer() {
-    for (final list in _temporalBuffer.values) {
-      list.clear();
-    }
+    for (final list in _temporalBuffer.values) list.clear();
   }
 
   void _emitEvent(String eventType, double confidence) {

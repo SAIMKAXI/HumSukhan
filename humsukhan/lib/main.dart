@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -19,11 +20,27 @@ Future<void> environmentalMonitoringBackgroundMain() async {
   WidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('com.humsukhan/environmental_monitor');
   final detector = SoundDetectionService.instance;
+  var pcmFlowSignaled = false;
 
   channel.setMethodCallHandler((call) async {
     if (call.method == 'stop') {
+      pcmFlowSignaled = false;
       detector.stopMonitoring();
       await channel.invokeMethod('pipelineState', {'state': 'OFF'});
+      return true;
+    }
+    if (call.method == 'audioData') {
+      final raw = call.arguments;
+      if (raw is Uint8List && raw.lengthInBytes >= 2) {
+        detector.processExternalAudio(raw);
+        if (!pcmFlowSignaled) {
+          pcmFlowSignaled = true;
+          await channel.invokeMethod('pipelineState', {
+            'state': 'PCM_FLOWING',
+            'bytes': raw.lengthInBytes,
+          });
+        }
+      }
       return true;
     }
     return null;
@@ -38,8 +55,8 @@ Future<void> environmentalMonitoringBackgroundMain() async {
     });
   };
 
-  final started = await detector.startMonitoring(permissionAlreadyGranted: true);
-  await channel.invokeMethod('pipelineState', {'state': started ? 'ACTIVE' : 'ERROR'});
+  final started = await detector.startExternalMonitoring(permissionAlreadyGranted: true);
+  await channel.invokeMethod('pipelineState', {'state': started ? 'READY' : 'ERROR'});
 }
 
 void main() {
