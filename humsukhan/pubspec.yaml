@@ -1,11 +1,11 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 2.4.2+32
+version: 2.4.3+33
 
-# Release v2.4.2
-# Reliability: guarded ConversationEngine lifecycle callbacks and contained
-# asynchronous SettingsProvider persistence failures.
+# Release v2.4.3
+# Reliability: bundled local environmental model, retired Baby Cry alert,
+# canonical HumSukhan launcher/onboarding branding, and provider/test cleanup.
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
