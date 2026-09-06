@@ -6,7 +6,7 @@ void main() {
   test('environmental detector schedules windows without exact callback boundaries', () {
     final source = File('lib/services/sound_detection_service.dart').readAsStringSync();
     expect(source, contains('int _nextProcessSampleCount = _windowSamples;'));
-    expect(source, contains('if (_totalSamplesCollected < _windowSamples ||'));
+    expect(source, contains('if (_totalSamplesCollected < _nextProcessSampleCount) return;'));
     expect(source, contains('_processWindow();'));
     expect(source, isNot(contains('(_totalSamplesCollected - _windowSamples) % _hopSamples == 0')));
   });
@@ -19,7 +19,7 @@ void main() {
     expect(classifyEnd, greaterThan(classifyStart));
     final classifyBody = source.substring(classifyStart, classifyEnd);
     expect(classifyBody, contains('createStream()'));
-    expect(classifyBody, contains('stream.free()'));
+    expect(classifyBody, contains('stream?.free'));
     expect(classifyBody, contains('acceptWaveform'));
     expect(classifyBody, contains('compute'));
     expect(classifyBody, isNot(contains('_stream!.acceptWaveform')));
