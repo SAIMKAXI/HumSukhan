@@ -39,6 +39,38 @@ void main() {
     expect(source, contains('dartPcmFlowing'));
     expect(source, contains('"PCM_FLOWING"'));
     expect(source, contains('EnvironmentalMonitoringState.ERROR'));
+    expect(source, contains('stopNativeAudioCapture()'));
+  });
+
+  test('Quick Settings tile delegates to the same environmental state machine', () {
+    final tile = File(
+      'android/app/src/main/kotlin/com/humsukhan/humsukhan/EnvironmentalMonitoringTileService.kt',
+    ).readAsStringSync();
+    final state = File(
+      'android/app/src/main/kotlin/com/humsukhan/humsukhan/EnvironmentalMonitoringState.kt',
+    ).readAsStringSync();
+    expect(tile, contains('EnvironmentalMonitoringState.requestStart(this)'));
+    expect(tile, contains('EnvironmentalMonitoringState.requestStop(this)'));
+    expect(state, contains('ACTION_START'));
+    expect(state, contains('ACTION_STOP'));
+  });
+
+  test('environmental bridge clears stale native state and releases the mic for speech', () {
+    final source = File('lib/services/environmental_monitoring_bridge.dart').readAsStringSync();
+    expect(source, contains('releaseForForegroundSpeech()'));
+    expect(source, contains('if (_state != \'OFF\')'));
+    expect(source, contains('_requestStopAndWaitForOff()'));
+    expect(source, contains("invokeMethod<String>('getState')"));
+  });
+
+  test('foreground speech explicitly releases environmental microphone capture', () {
+    final source = File('lib/providers/everyday_speech_provider.dart').readAsStringSync();
+    expect(source, contains('EnvironmentalMonitoringBridge'));
+    expect(source, contains('releaseForForegroundSpeech()'));
+    final releaseIndex = source.indexOf('releaseForForegroundSpeech()');
+    final bilingualIndex = source.indexOf('_bilingual.start', releaseIndex);
+    expect(releaseIndex, greaterThanOrEqualTo(0));
+    expect(bilingualIndex, greaterThan(releaseIndex));
   });
 
   test('background environmental Dart entrypoint consumes external PCM and confirms flow', () {
