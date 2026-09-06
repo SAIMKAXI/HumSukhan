@@ -7,6 +7,50 @@ import '../models/models.dart';
 import 'audio_model_manager.dart';
 import 'sherpa_audio_tagger.dart';
 
+class PcmWindowAccumulator {
+  PcmWindowAccumulator({this.windowSamples = 48000, this.hopSamples = 16000})
+      : assert(windowSamples > 0),
+        assert(hopSamples > 0),
+        _buffer = Int16List(windowSamples);
+
+  final int windowSamples;
+  final int hopSamples;
+  final Int16List _buffer;
+  int _writePos = 0;
+  int _totalSamples = 0;
+  int _nextWindowSampleCount;
+
+  int get totalSamples => _totalSamples;
+  int get windowsReady => _nextWindowSampleCount == 0 ? 0 : (_totalSamples ~/ hopSamples);
+
+  void reset() {
+    _writePos = 0;
+    _totalSamples = 0;
+    _nextWindowSampleCount = windowSamples;
+  }
+
+  void add(Uint8List data, void Function(Float32List window) onWindow) {
+    if (data.lengthInBytes < 2) return;
+    final length = data.lengthInBytes - (data.lengthInBytes % 2);
+    final samples = Int16List.view(data.buffer, data.offsetInBytes, length ~/ 2);
+    for (final sample in samples) {
+      _buffer[_writePos] = sample;
+      _writePos = (_writePos + 1) % windowSamples;
+      _totalSamples++;
+    }
+
+    while (_totalSamples >= _nextWindowSampleCount) {
+      final start = _writePos;
+      final window = Float32List(windowSamples);
+      for (var i = 0; i < windowSamples; i++) {
+        window[i] = _buffer[(start + i) % windowSamples] / 32768.0;
+      }
+      onWindow(window);
+      _nextWindowSampleCount += hopSamples;
+    }
+  }
+}
+
 class SoundDetectionService {
   SoundDetectionService._();
   static SoundDetectionService? _instance;
@@ -26,6 +70,10 @@ class SoundDetectionService {
   static const int _hopSamples = 1 * _sampleRate;
   static const double _rmsGateThreshold = 200.0;
   static const Duration _temporalWindow = Duration(seconds: 8);
+  final PcmWindowAccumulator _externalPcm = PcmWindowAccumulator(
+    windowSamples: _windowSamples,
+    hopSamples: _hopSamples,
+  );
   final Int16List _pcmBuffer = Int16List(_windowSamples);
   final Float32List _windowFloat = Float32List(_windowSamples);
   int _pcmWritePos = 0;
@@ -101,6 +149,7 @@ class SoundDetectionService {
       _pcmWritePos = 0;
       _totalSamplesCollected = 0;
       _nextProcessSampleCount = _windowSamples;
+      _externalPcm.reset();
       _clearTemporalBuffer();
       _monitoring = true;
       return true;
@@ -137,6 +186,7 @@ class SoundDetectionService {
       _pcmWritePos = 0;
       _totalSamplesCollected = 0;
       _nextProcessSampleCount = _windowSamples;
+      _externalPcm.reset();
       _clearTemporalBuffer();
       _audioSubscription = stream.listen(
         _onAudioData,
@@ -167,6 +217,7 @@ class SoundDetectionService {
     _pcmWritePos = 0;
     _totalSamplesCollected = 0;
     _nextProcessSampleCount = _windowSamples;
+    _externalPcm.reset();
   }
 
   void processExternalAudio(Uint8List data) {
