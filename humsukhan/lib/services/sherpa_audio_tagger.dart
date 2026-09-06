@@ -7,7 +7,6 @@ import 'audio_model_manager.dart';
 
 class SherpaAudioTagger {
   sherpa_onnx.AudioTagging? _tagger;
-  sherpa_onnx.OfflineStream? _stream;
   List<String> _labels = [];
   bool _initialized = false;
 
@@ -31,7 +30,6 @@ class SherpaAudioTagger {
         labels: mm.labelsPath!,
       );
       _tagger = sherpa_onnx.AudioTagging(config: config);
-      _stream = _tagger!.createStream();
       _initialized = true;
       debugPrint('SherpaAudioTagger: ready (${_labels.length} labels)');
       return true;
@@ -43,8 +41,6 @@ class SherpaAudioTagger {
   }
 
   void release() {
-    try { _stream?.free(); } catch (_) {}
-    _stream = null;
     try { _tagger?.free(); } catch (_) {}
     _tagger = null;
     _labels = [];
@@ -52,14 +48,23 @@ class SherpaAudioTagger {
   }
 
   List<SherpaAudioResult> classify({required Float32List samples, int sampleRate = 16000, int topK = 10}) {
-    if (_tagger == null || _stream == null) return const <SherpaAudioResult>[];
+    final tagger = _tagger;
+    if (tagger == null) return const <SherpaAudioResult>[];
+
+    // CED audio tagging is an offline computation. Each microphone window is
+    // an independent classification request, so never reuse one OfflineStream
+    // across windows or the stream will accumulate prior audio.
+    sherpa_onnx.OfflineStream? stream;
     try {
-      _stream!.acceptWaveform(samples: samples, sampleRate: sampleRate);
-      final events = _tagger!.compute(stream: _stream!, topK: topK);
+      stream = tagger.createStream();
+      stream.acceptWaveform(samples: samples, sampleRate: sampleRate);
+      final events = tagger.compute(stream: stream, topK: topK);
       return events.map((e) => SherpaAudioResult(label: e.name, probability: e.prob)).toList();
     } catch (e) {
       debugPrint('SherpaAudioTagger classify error: $e');
       return const <SherpaAudioResult>[];
+    } finally {
+      try { stream?.free(); } catch (_) {}
     }
   }
 
