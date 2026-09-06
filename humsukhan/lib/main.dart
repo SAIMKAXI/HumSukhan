@@ -26,6 +26,11 @@ Future<void> environmentalMonitoringBackgroundMain() async {
       await channel.invokeMethod('pipelineState', {'state': 'OFF'});
       return true;
     }
+    if (call.method == 'audioData') {
+      final raw = call.arguments;
+      if (raw is Uint8List) detector.processExternalAudio(raw);
+      return true;
+    }
     return null;
   });
 
@@ -38,8 +43,8 @@ Future<void> environmentalMonitoringBackgroundMain() async {
     });
   };
 
-  final started = await detector.startMonitoring(permissionAlreadyGranted: true);
-  await channel.invokeMethod('pipelineState', {'state': started ? 'ACTIVE' : 'ERROR'});
+  final started = await detector.startExternalMonitoring(permissionAlreadyGranted: true);
+  await channel.invokeMethod('pipelineState', {'state': started ? 'READY' : 'ERROR'});
 }
 
 void main() {
