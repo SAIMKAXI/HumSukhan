@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../services/everyday_bilingual_stt.dart';
 import '../services/everyday_language_policy.dart';
+import '../services/environmental_monitoring_bridge.dart';
 import '../services/roman_urdu_detector.dart';
 import '../services/speech_capability.dart';
 import '../services/speech_engine.dart';
@@ -25,6 +26,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   final StreamController<SpeechResultEvent> _results = StreamController<SpeechResultEvent>.broadcast();
   final ModelManager _modelManager = ModelManager.instance;
   final SpeechCapability _capability = SpeechCapability.instance;
+  final EnvironmentalMonitoringBridge _environmentalBridge = EnvironmentalMonitoringBridge.instance;
 
   StreamSubscription<EverydayBilingualResult>? _bilingualSubscription;
   StreamSubscription<SpeechResultEvent>? _fallbackSubscription;
@@ -125,6 +127,14 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     try {
       await initialize(preferredLanguage: language);
       if (_listening) return;
+
+      // Environmental monitoring uses a dedicated native microphone capture
+      // path, including when it was started from Quick Settings. Release that
+      // capture completely before opening foreground speech recognition.
+      final released = await _environmentalBridge.releaseForForegroundSpeech();
+      if (!released) {
+        throw StateError('Environmental monitoring could not release the microphone for speech recognition.');
+      }
 
       _language = _normalizeLanguage(language);
       _lastStartError = null;
@@ -243,9 +253,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   @override
   Future<void> stopListening() async {
-    // Invalidate any in-flight speak() before awaiting plugin cleanup. Otherwise
-    // an older speak() can observe the same generation after this stop and
-    // restart listening when its TTS future completes.
     ++_speechGeneration;
     await _bilingual.stop();
     await _fallbackStt.stopListening();
