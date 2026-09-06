@@ -3,12 +3,19 @@
 ## 2.4.4+34
 
 ### Environmental Alerts
-- Android background monitoring now captures 16 kHz mono PCM natively with `AudioRecord` instead of relying on the Flutter recorder inside the background engine.
-- Actual PCM delivery is forwarded through the existing environmental MethodChannel so the local Sherpa ONNX classifier receives real microphone samples while monitoring runs in the background.
-- Added audio-flow watchdog/observability and stronger regression coverage around the native capture handoff and 3-second inference windows.
+- Android background monitoring now captures 16 kHz mono PCM natively through `AudioRecord` instead of relying on the background `record` stream.
+- PCM delivery to the background Flutter engine is monitored so monitoring cannot remain falsely marked active when audio stops flowing.
+- Native capture and Dart handoff regression coverage was strengthened for background monitoring.
 
-### Reliability
-- Preserved the fully local bundled environmental model path introduced in v2.4.3 while replacing the Android background audio transport with the native capture path.
+## 2.4.3+33
+
+### Environmental Alerts
+- Bundled the environmental sound model for fully local monitoring.
+- Removed the retired Baby Cry alert from the supported alert catalog.
+
+### Branding
+- Standardized the HumSukhan launcher and onboarding branding on the canonical logo assets.
+- Removed obsolete launcher and temporary logo resources.
 
 ## 2.4.1+31
 
