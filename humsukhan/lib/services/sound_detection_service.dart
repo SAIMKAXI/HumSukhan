@@ -11,7 +11,8 @@ class PcmWindowAccumulator {
   PcmWindowAccumulator({this.windowSamples = 48000, this.hopSamples = 16000})
       : assert(windowSamples > 0),
         assert(hopSamples > 0),
-        _buffer = Int16List(windowSamples);
+        _buffer = Int16List(windowSamples),
+        _nextWindowSampleCount = windowSamples;
 
   final int windowSamples;
   final int hopSamples;
@@ -19,14 +20,16 @@ class PcmWindowAccumulator {
   int _writePos = 0;
   int _totalSamples = 0;
   int _nextWindowSampleCount;
+  int _windowsEmitted = 0;
 
   int get totalSamples => _totalSamples;
-  int get windowsReady => _nextWindowSampleCount == 0 ? 0 : (_totalSamples ~/ hopSamples);
+  int get windowsEmitted => _windowsEmitted;
 
   void reset() {
     _writePos = 0;
     _totalSamples = 0;
     _nextWindowSampleCount = windowSamples;
+    _windowsEmitted = 0;
   }
 
   void add(Uint8List data, void Function(Float32List window) onWindow) {
@@ -45,6 +48,7 @@ class PcmWindowAccumulator {
       for (var i = 0; i < windowSamples; i++) {
         window[i] = _buffer[(start + i) % windowSamples] / 32768.0;
       }
+      _windowsEmitted++;
       onWindow(window);
       _nextWindowSampleCount += hopSamples;
     }
@@ -222,7 +226,23 @@ class SoundDetectionService {
 
   void processExternalAudio(Uint8List data) {
     if (!_monitoring || data.lengthInBytes < 2) return;
-    _onAudioData(data);
+    _externalPcm.add(data, _processExternalWindow);
+  }
+
+  void _processExternalWindow(Float32List window) {
+    if (!_tagger.isInitialized) return;
+    var sumSq = 0.0;
+    for (final sample in window) {
+      final value = sample * 32768.0;
+      sumSq += value * value;
+    }
+    if (sumSq / _windowSamples < _rmsGateThreshold * _rmsGateThreshold) return;
+    for (var i = 0; i < window.length; i++) {
+      _windowFloat[i] = window[i];
+    }
+    for (final result in _tagger.classify(samples: _windowFloat, topK: 10)) {
+      _processDetection(result.label, result.probability);
+    }
   }
 
   void _onAudioData(Uint8List data) {
