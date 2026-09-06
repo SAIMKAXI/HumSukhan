@@ -1,4 +1,6 @@
 /// Public entry point for Environmental Alerts.
+library;
+
 export '../../screens/environmental_screen.dart';
 export '../../providers/environmental_provider.dart';
 export '../../services/sound_detection_service.dart';
