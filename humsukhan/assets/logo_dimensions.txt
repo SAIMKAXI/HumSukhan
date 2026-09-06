@@ -1,1 +1,0 @@
-Canonical supplied logo is square RGBA. Repository integrations should use assets/logo.png as the branded logo source.
