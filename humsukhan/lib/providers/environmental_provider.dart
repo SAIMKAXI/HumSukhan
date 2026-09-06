@@ -152,9 +152,8 @@ class EnvironmentalProvider extends ChangeNotifier {
     });
   }
 
-  /// Monitoring startup is local-only. The model download is an explicit
-  /// setup operation and must never become a hidden network side effect of
-  /// pressing Start Monitoring.
+  /// Monitoring startup is local-only. Model initialization copies the model
+  /// from the app package into app-private storage and never uses the network.
   Future<bool> _prepareModel() => _modelManager.initialize();
 
   Future<void> toggleMonitoring() async {
@@ -206,7 +205,7 @@ class EnvironmentalProvider extends ChangeNotifier {
       if (_disposed) return;
       if (!modelReady) {
         _monitoringState = 'ERROR';
-        _errorMessage = 'The environmental sound model is not installed. Connect to the internet and complete model setup, then try again.';
+        _errorMessage = 'Environmental sound detection could not load its built-in local model. Please update or reinstall the app.';
         notifyListeners();
         return;
       }
@@ -263,7 +262,7 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (_disposed) return;
     if (!modelReady) {
       _monitoringState = 'ERROR';
-      _errorMessage = 'The environmental sound model is not installed. Connect to the internet and complete model setup, then try again.';
+      _errorMessage = 'Environmental sound detection could not load its built-in local model. Please update or reinstall the app.';
       notifyListeners();
       return;
     }
@@ -275,7 +274,7 @@ class EnvironmentalProvider extends ChangeNotifier {
       _monitoringState = 'ACTIVE';
     } else if (!_soundService.isModelReady) {
       _monitoringState = 'ERROR';
-      _errorMessage = 'The environmental sound model is unavailable. Try model setup, then start monitoring again.';
+      _errorMessage = 'Environmental sound detection could not load its built-in local model. Please update or reinstall the app.';
     } else {
       _monitoringState = 'ERROR';
       _errorMessage = 'The microphone recorder could not start. Check microphone access and try again.';

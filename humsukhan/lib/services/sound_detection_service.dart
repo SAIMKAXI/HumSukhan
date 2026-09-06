@@ -37,7 +37,6 @@ class SoundDetectionService {
     'Siren': ['siren', 'police car (siren)', 'ambulance (siren)', 'fire engine, fire truck (siren)', 'civil defense siren', 'emergency vehicle'],
     'Doorbell': ['doorbell', 'chime'],
     'Knock': ['knock', 'tap'],
-    'Baby Cry': ['baby cry, infant cry', 'crying, sobbing', 'whimper'],
   };
   static const Set<String> _criticalEvents = {'Siren'};
   static const double _criticalThreshold = 0.70;
@@ -97,24 +96,9 @@ class SoundDetectionService {
     if (!_microphoneReady || _audioRecorder == null) return false;
 
     try {
-      final manager = AudioModelManager.instance;
-      _modelReady = await manager.initialize();
+      _modelReady = await AudioModelManager.instance.initialize() && await _tagger.initialize();
       if (!_modelReady) {
-        _modelReady = await manager.downloadModel();
-      }
-      final filesLookedReady = _modelReady;
-      _modelReady = _modelReady && await _tagger.initialize();
-      if (!_modelReady) {
-        debugPrint('SoundDetection model is unavailable');
-        if (filesLookedReady) {
-          // The cached files exist but the tagger cannot load them, so they are
-          // unusable (a corrupt or partial download). Without discarding them
-          // this is a permanent trap: initialize() keeps reporting ready, so
-          // downloadModel() short-circuits and monitoring can never start
-          // again. Dropping them lets the next attempt re-download.
-          debugPrint('SoundDetection: discarding unusable cached model');
-          await manager.deleteModel();
-        }
+        debugPrint('SoundDetection bundled model is unavailable');
         return false;
       }
 
@@ -232,7 +216,7 @@ class SoundDetectionService {
 
   String _getSeverity(String eventType) {
     if (eventType == 'Siren') return 'critical';
-    if (eventType == 'Doorbell' || eventType == 'Knock' || eventType == 'Baby Cry') return 'warning';
+    if (eventType == 'Doorbell' || eventType == 'Knock') return 'warning';
     return 'info';
   }
 

@@ -13,7 +13,7 @@ void main() {
       expect(events, contains('Siren'));
       expect(events, contains('Doorbell'));
       expect(events, contains('Knock'));
-      expect(events, contains('Baby Cry'));
+      expect(events, isNot(contains('Baby Cry')));
       expect(events, isNot(contains('Phone')));
       expect(events, isNot(contains('Vehicle Horn')));
       expect(events, isNot(contains('Glass Break')));
@@ -42,7 +42,7 @@ void main() {
     });
 
     test('supportedEvents count matches the active catalog', () {
-      expect(SoundDetectionService.supportedEvents.length, 4);
+      expect(SoundDetectionService.supportedEvents.length, 3);
     });
 
     test('label count is zero before initialization', () {
@@ -68,10 +68,6 @@ void main() {
     test('Knock maps knock and tap', () {
       expect(SoundDetectionService.supportedEvents, contains('Knock'));
     });
-
-    test('Baby Cry maps baby cry, crying/sobbing, and whimper', () {
-      expect(SoundDetectionService.supportedEvents, contains('Baby Cry'));
-    });
   });
 
   group('Label Mapping Coverage', () {
@@ -87,6 +83,7 @@ void main() {
       expect(events, isNot(contains('Glass Break')));
       expect(events, isNot(contains('Dog Bark')));
       expect(events, isNot(contains('Smoke Alarm')));
+      expect(events, isNot(contains('Baby Cry')));
     });
   });
 

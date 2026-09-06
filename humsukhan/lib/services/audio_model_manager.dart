@@ -1,14 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// Manages the sherpa-onnx CED-Tiny audio tagging model.
+/// Installs and manages the bundled sherpa-onnx CED-Tiny audio tagging model.
 ///
-/// Model discovery is deliberately offline-only. Monitoring never performs a
-/// network request. A download is an explicit setup operation and is never
-/// used as an implicit fallback while monitoring is starting.
+/// The model ships inside the application package. Runtime monitoring never
+/// performs a network request and never asks the user to visit another site or
+/// complete a separate model setup step.
 class AudioModelManager {
   static AudioModelManager? _instance;
   static AudioModelManager get instance => _instance ??= AudioModelManager._();
@@ -17,122 +17,66 @@ class AudioModelManager {
   static const String _modelFileName = 'model.int8.onnx';
   static const String _labelsFileName = 'class_labels_indices.csv';
   static const String _modelDirName = 'sherpa_ced_tiny';
-
-  static const String _modelUrl =
-      'https://huggingface.co/k2-fsa/sherpa-onnx-ced-tiny-audio-tagging-2024-04-19/resolve/main/model.int8.onnx';
-  static const String _labelsUrl =
-      'https://huggingface.co/k2-fsa/sherpa-onnx-ced-tiny-audio-tagging-2024-04-19/resolve/main/class_labels_indices.csv';
+  static const String _modelAsset = 'assets/environmental/model.int8.onnx';
+  static const String _labelsAsset = 'assets/environmental/class_labels_indices.csv';
 
   bool _initialized = false;
-  bool _downloading = false;
+  bool _installing = false;
   String? _modelPath;
   String? _labelsPath;
 
   bool get isReady => _modelPath != null && _labelsPath != null;
-  bool get isDownloading => _downloading;
+  bool get isDownloading => _installing;
   String? get modelPath => _modelPath;
   String? get labelsPath => _labelsPath;
 
-  /// Only checks the local app-private cache. Never touches the network.
+  /// Ensures the app-private model files exist by copying them from the APK.
+  /// No network access is used here.
   Future<bool> initialize() async {
     if (_initialized) return isReady;
+    if (_installing) return false;
+    _installing = true;
     try {
       final dir = await _getModelDirectory();
       final modelFile = File('${dir.path}/$_modelFileName');
       final labelsFile = File('${dir.path}/$_labelsFileName');
 
+      if (!await modelFile.exists() || !await labelsFile.exists()) {
+        await _copyBundledFile(_modelAsset, modelFile);
+        await _copyBundledFile(_labelsAsset, labelsFile);
+      }
+
       if (await modelFile.exists() && await labelsFile.exists()) {
         _modelPath = modelFile.path;
         _labelsPath = labelsFile.path;
       } else {
-        debugPrint('AudioModelManager: local model is not installed');
+        debugPrint('AudioModelManager: bundled environmental model is unavailable');
       }
 
       _initialized = true;
       return isReady;
     } catch (e) {
-      debugPrint('AudioModelManager local initialization error: $e');
+      debugPrint('AudioModelManager bundled model initialization error: $e');
       _initialized = true;
-      return false;
-    }
-  }
-
-  /// Explicit setup action. Monitoring must not call this method.
-  Future<bool> downloadModel() async {
-    if (isReady) return true;
-    if (_downloading) return false;
-    _downloading = true;
-    try {
-      final dir = await _getModelDirectory();
-      if (!await _downloadFile(_modelUrl, '${dir.path}/$_modelFileName')) {
-        return false;
-      }
-      if (!await _downloadFile(_labelsUrl, '${dir.path}/$_labelsFileName')) {
-        // Never leave a model without its matching label file.
-        final model = File('${dir.path}/$_modelFileName');
-        if (await model.exists()) await model.delete();
-        return false;
-      }
-      _modelPath = '${dir.path}/$_modelFileName';
-      _labelsPath = '${dir.path}/$_labelsFileName';
-      _initialized = true;
-      return true;
-    } catch (e) {
-      debugPrint('AudioModelManager download error: $e');
       return false;
     } finally {
-      _downloading = false;
+      _installing = false;
     }
   }
 
-  Future<bool> _downloadFile(String url, String targetPath) async {
-    final partPath = '$targetPath.part';
-    final partFile = File(partPath);
-    final targetFile = File(targetPath);
-    if (await targetFile.exists()) return true;
-    if (await partFile.exists()) await partFile.delete();
-
-    try {
-      final client = http.Client();
-      try {
-        final request = http.Request('GET', Uri.parse(url));
-        final response = await client.send(request);
-        if (response.statusCode != 200) return false;
-
-        final sink = partFile.openWrite();
-        await for (final chunk in response.stream) {
-          sink.add(chunk);
-        }
-        await sink.close();
-
-        final stat = await partFile.stat();
-        if (stat.size == 0) {
-          await partFile.delete();
-          return false;
-        }
-        // A server that closes early ends the stream without throwing, which
-        // would otherwise rename a truncated model into place and leave the
-        // feature permanently broken. Only accept a complete download.
-        final expected = response.contentLength;
-        if (expected != null && stat.size != expected) {
-          debugPrint(
-            'AudioModelManager: truncated download for $url '
-            '(${stat.size} of $expected bytes)',
-          );
-          await partFile.delete();
-          return false;
-        }
-        await partFile.rename(targetPath);
-        return true;
-      } finally {
-        client.close();
-      }
-    } catch (e) {
-      debugPrint('AudioModelManager file download error: $e');
-      if (await partFile.exists()) await partFile.delete();
-      return false;
-    }
+  Future<void> _copyBundledFile(String assetPath, File target) async {
+    final data = await rootBundle.load(assetPath);
+    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final part = File('${target.path}.part');
+    if (await part.exists()) await part.delete();
+    await part.writeAsBytes(bytes, flush: true);
+    if (await target.exists()) await target.delete();
+    await part.rename(target.path);
   }
+
+  /// Kept for source compatibility with older callers. The model is bundled,
+  /// so there is no runtime download or external setup anymore.
+  Future<bool> downloadModel() => initialize();
 
   Future<Directory> _getModelDirectory() async {
     final appDir = await getApplicationSupportDirectory();
@@ -153,14 +97,11 @@ class AudioModelManager {
     }
   }
 
-  /// Backwards-compatible explicit setup helper. Never call from monitoring.
-  Future<bool> ensureModelAvailable() async {
-    if (await initialize()) return true;
-    return downloadModel();
-  }
+  Future<bool> ensureModelAvailable() => initialize();
 
   void dispose() {
     _modelPath = null;
     _labelsPath = null;
+    _initialized = false;
   }
 }
