@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.4+34
+
+### Environmental Alerts
+- Android background monitoring now captures 16 kHz mono PCM natively with `AudioRecord` instead of relying on the Flutter recorder inside the background engine.
+- Actual PCM delivery is forwarded through the existing environmental MethodChannel so the local Sherpa ONNX classifier receives real microphone samples while monitoring runs in the background.
+- Added audio-flow watchdog/observability and stronger regression coverage around the native capture handoff and 3-second inference windows.
+
+### Reliability
+- Preserved the fully local bundled environmental model path introduced in v2.4.3 while replacing the Android background audio transport with the native capture path.
+
 ## 2.4.1+31
 
 ### Everyday Mode
