@@ -1,1 +1,0 @@
-Logo source is maintained from the user-supplied square artwork. The actual binary asset should remain assets/logo.png; this file is only a provenance note.

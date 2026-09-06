@@ -1,1 +1,0 @@
-This repository records the canonical logo source supplied for the release. See assets/logo.png for the binary application asset.
