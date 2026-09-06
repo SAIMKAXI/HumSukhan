@@ -79,6 +79,38 @@ class SoundDetectionService {
 
   Future<bool> _hasPermission() async => (await Permission.microphone.status).isGranted;
 
+  Future<bool> _initializeModel() async {
+    _modelReady = await AudioModelManager.instance.initialize() && await _tagger.initialize();
+    if (!_modelReady) debugPrint('SoundDetection bundled model is unavailable');
+    return _modelReady;
+  }
+
+  Future<bool> startExternalMonitoring({bool permissionAlreadyGranted = false}) async {
+    if (_monitoring) return _modelReady;
+    if (!_initialized) {
+      if (permissionAlreadyGranted) {
+        _microphoneReady = true;
+        _initialized = true;
+      } else if (!await initialize(requestPermission: true)) {
+        return false;
+      }
+    }
+    if (!_microphoneReady) return false;
+    try {
+      if (!await _initializeModel()) return false;
+      _pcmWritePos = 0;
+      _totalSamplesCollected = 0;
+      _nextProcessSampleCount = _windowSamples;
+      _clearTemporalBuffer();
+      _monitoring = true;
+      return true;
+    } catch (e) {
+      debugPrint('SoundDetection external monitoring start error: $e');
+      _monitoring = false;
+      return false;
+    }
+  }
+
   Future<bool> startMonitoring({bool permissionAlreadyGranted = false}) async {
     if (_monitoring) return true;
 
@@ -94,11 +126,7 @@ class SoundDetectionService {
     if (!_microphoneReady || _audioRecorder == null) return false;
 
     try {
-      _modelReady = await AudioModelManager.instance.initialize() && await _tagger.initialize();
-      if (!_modelReady) {
-        debugPrint('SoundDetection bundled model is unavailable');
-        return false;
-      }
+      if (!await _initializeModel()) return false;
 
       const config = RecordConfig(
         encoder: AudioEncoder.pcm16bits,
@@ -141,6 +169,11 @@ class SoundDetectionService {
     _nextProcessSampleCount = _windowSamples;
   }
 
+  void processExternalAudio(Uint8List data) {
+    if (!_monitoring || data.lengthInBytes < 2) return;
+    _onAudioData(data);
+  }
+
   void _onAudioData(Uint8List data) {
     if (!_monitoring || data.lengthInBytes < 2) return;
     final length = data.lengthInBytes - (data.lengthInBytes % 2);
@@ -152,7 +185,6 @@ class SoundDetectionService {
     }
 
     if (_totalSamplesCollected < _nextProcessSampleCount) return;
-
     _processWindow();
     do {
       _nextProcessSampleCount += _hopSamples;
@@ -197,9 +229,7 @@ class SoundDetectionService {
   }
 
   void _clearTemporalBuffer() {
-    for (final list in _temporalBuffer.values) {
-      list.clear();
-    }
+    for (final list in _temporalBuffer.values) list.clear();
   }
 
   void _emitEvent(String eventType, double confidence) {
