@@ -341,10 +341,14 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     final safe = EverydayLanguagePolicy.sanitizeHindi(text).trim();
     if (safe.isEmpty) return;
     await initialize(preferredLanguage: language);
-    final generation = ++_speechGeneration;
     final wasListening = _listening;
     final resumeLanguage = _language;
     if (wasListening) await stopListening();
+
+    // stopListening() advances _speechGeneration to invalidate recognizer work
+    // from the previous listening session. The TTS operation owns a fresh
+    // generation so its completion may safely resume that same session.
+    final generation = ++_speechGeneration;
 
     _lastSpoken = safe;
     _speaking = true;
@@ -454,36 +458,54 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   }
 
   String _normalizeLanguage(String language) {
-    switch (language.toLowerCase().trim()) {
+    final safe = language.trim();
+    if (safe.isEmpty) return 'English';
+    switch (safe.toLowerCase()) {
       case 'english':
       case 'en':
         return 'English';
       case 'urdu':
       case 'ur':
-      case 'roman urdu':
         return 'Urdu';
-      default:
+      case 'roman urdu':
+      case 'roman_urdu':
+        return 'Roman Urdu';
+      case 'auto':
         return 'Auto';
+      default:
+        return safe;
     }
   }
 
   @override
   void dispose() {
-    _speechGeneration++;
+    _disposed = true;
+    _cancelSubscriptions();
+    unawaited(_results.close());
+    _bilingual.stop();
+    _fallbackStt.stopListening();
+    _ttsProvider.dispose();
+    _fallbackStt.dispose();
+    super.dispose();
+  }
+
+  bool _disposed = false;
+
+  void _cancelSubscriptions() {
     unawaited(_bilingualSubscription?.cancel());
     unawaited(_fallbackSubscription?.cancel());
-    unawaited(_bilingual.stop());
-    unawaited(_fallbackStt.stopListening());
-    _ttsProvider.dispose();
-    _results.close();
-    super.dispose();
+    _bilingualSubscription = null;
+    _fallbackSubscription = null;
   }
 }
 
-final class _SpeechSegment {
-  const _SpeechSegment(this.text, this.language);
+class _SpeechSegment {
   final String text;
   final String language;
+  const _SpeechSegment(this.text, this.language);
 }
 
+/// Backwards-compatible constructor/type for existing screens and tests.
+/// This is only a thin compatibility wrapper around the canonical Everyday
+/// speech implementation; it contains no separate speech logic.
 class SpeechProvider extends EverydaySpeechProvider {}
