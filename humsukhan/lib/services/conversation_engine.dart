@@ -51,9 +51,6 @@ class ConversationEngine extends ChangeNotifier {
   int _turnGeneration = 0;
   String _latestTranscript = '';
 
-  /// Finalized utterances in the current turn that have not been committed
-  /// as a caption yet. Interim results are appended to this rather than
-  /// replacing it, so a turn can span several utterances.
   String _settledTurnText = '';
   String _latestLanguage = 'English';
   String? _errorMessage;
@@ -210,8 +207,6 @@ class ConversationEngine extends ChangeNotifier {
     }
   }
 
-  /// Commits the utterance that just ended and immediately opens the next one,
-  /// leaving the microphone running.
   Future<void> _finalizeTurn() async {
     if (_turnStopping) return;
     _cancelSilenceTimer();
@@ -254,8 +249,20 @@ class ConversationEngine extends ChangeNotifier {
     notifyListeners();
     try {
       await speech.speak(lastSpeakerCaption.text, language: lastSpeakerCaption.language);
+      await speech.startListening(language: 'Auto');
+      if (speech.isListening && conversation.state == ConversationState.active) {
+        conversation.beginSpeakerTurn(language: 'Auto');
+        _state = ConversationEngineState.listening;
+        _errorMessage = null;
+      } else {
+        _state = ConversationEngineState.error;
+        _errorMessage = speech.lastStartError ?? 'Listening could not be resumed after speaking.';
+      }
+    } catch (e) {
+      _state = ConversationEngineState.error;
+      _errorMessage = 'Listening could not be resumed after speaking.';
+      debugPrint('ConversationEngine replay/resume error: $e');
     } finally {
-      _state = ConversationEngineState.idle;
       notifyListeners();
     }
   }
@@ -268,9 +275,6 @@ class ConversationEngine extends ChangeNotifier {
     if (_state != ConversationEngineState.listening &&
         _state != ConversationEngineState.speechActive &&
         _state != ConversationEngineState.waitingForTurnEnd) {
-      // The recognizer can legally deliver a queued result while stop()
-      // is flushing/finalizing. Once the engine enters processingFinal we
-      // must not let that stale result mutate the caption being committed.
       return;
     }
 
