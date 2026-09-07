@@ -71,13 +71,17 @@ void main() {
     'flutter_tts',
   ];
 
-  setUp(() {
+  // Keep the channel mocks installed for the whole test suite. Flutter's
+  // addTearDown callbacks may dispose the speech provider after per-test
+  // teardown hooks have already run; removing these handlers in tearDown made
+  // a clean test fail with a MissingPluginException during disposal.
+  setUpAll(() {
     for (final name in audioChannels) {
       messenger.setMockMethodCallHandler(MethodChannel(name), (_) async => null);
     }
   });
 
-  tearDown(() {
+  tearDownAll(() {
     for (final name in audioChannels) {
       messenger.setMockMethodCallHandler(MethodChannel(name), null);
     }
