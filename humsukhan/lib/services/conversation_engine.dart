@@ -265,6 +265,15 @@ class ConversationEngine extends ChangeNotifier {
 
   void _handleSpeechResult(SpeechResultEvent event) {
     if (_disposed) return;
+    if (_state != ConversationEngineState.listening &&
+        _state != ConversationEngineState.speechActive &&
+        _state != ConversationEngineState.waitingForTurnEnd) {
+      // The recognizer can legally deliver a queued result while stop()
+      // is flushing/finalizing. Once the engine enters processingFinal we
+      // must not let that stale result mutate the caption being committed.
+      return;
+    }
+
     final text = event.text.trim();
     if (text.isEmpty) return;
     _latestTranscript = _joinTurn(_settledTurnText, text);
