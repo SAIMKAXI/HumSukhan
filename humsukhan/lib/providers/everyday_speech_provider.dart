@@ -422,6 +422,41 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     return result;
   }
 
+  Future<void> stopSpeaking() async {
+    ++_speechGeneration;
+    await _ttsProvider.stop();
+    _speaking = false;
+    notifyListeners();
+  }
+
+  void detectLanguage(String text) {
+    final safe = EverydayLanguagePolicy.normalizeRomanUrdu(text).trim();
+    final hasUrdu = EverydayLanguagePolicy.containsUrduScript(safe);
+    final hasEnglish = EverydayLanguagePolicy.containsLatin(safe);
+    final hasRomanUrdu = !hasUrdu && RomanUrduDetector.isRomanUrdu(safe);
+    final language = hasUrdu && hasEnglish
+        ? 'Auto'
+        : hasUrdu
+            ? 'Urdu'
+            : hasRomanUrdu
+                ? 'Roman Urdu'
+                : 'English';
+    _detected = LanguageResult(
+      language: language,
+      confidence: hasUrdu && hasEnglish ? 0.85 : hasRomanUrdu ? 0.92 : 0.9,
+      script: hasUrdu && hasEnglish ? 'Mixed' : hasUrdu ? 'Arabic' : 'Latin',
+    );
+    notifyListeners();
+  }
+
+  String _detectCaptionLanguage(String text, {required String fallback}) {
+    final hasUrdu = EverydayLanguagePolicy.containsUrduScript(text);
+    if (hasUrdu && EverydayLanguagePolicy.containsLatin(text)) return 'Auto';
+    if (hasUrdu) return 'Urdu';
+    if (RomanUrduDetector.isRomanUrdu(text)) return 'Roman Urdu';
+    return fallback == 'Auto' ? 'English' : fallback;
+  }
+
   String _normalizeLanguage(String language) {
     final safe = language.trim();
     if (safe.isEmpty) return 'English';
@@ -440,13 +475,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       default:
         return safe;
     }
-  }
-
-  String _detectCaptionLanguage(String text, {required String fallback}) {
-    final safe = text.trim();
-    if (EverydayLanguagePolicy.containsUrduScript(safe)) return 'Urdu';
-    if (RomanUrduDetector.isRomanUrdu(safe)) return 'Roman Urdu';
-    return fallback == 'Auto' ? 'English' : fallback;
   }
 
   @override
@@ -476,3 +504,8 @@ class _SpeechSegment {
   final String language;
   const _SpeechSegment(this.text, this.language);
 }
+
+/// Backwards-compatible constructor/type for existing screens and tests.
+/// This is only a thin compatibility wrapper around the canonical Everyday
+/// speech implementation; it contains no separate speech logic.
+class SpeechProvider extends EverydaySpeechProvider {}
