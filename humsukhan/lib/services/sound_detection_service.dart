@@ -73,7 +73,6 @@ class SoundDetectionService {
   static const int _windowSamples = 3 * _sampleRate;
   static const int _hopSamples = 1 * _sampleRate;
   static const double _rmsGateThreshold = 200.0;
-  static const Duration _temporalWindow = Duration(seconds: 8);
   final PcmWindowAccumulator _externalPcm = PcmWindowAccumulator(
     windowSamples: _windowSamples,
     hopSamples: _hopSamples,
@@ -84,7 +83,6 @@ class SoundDetectionService {
   int _totalSamplesCollected = 0;
   int _nextProcessSampleCount = _windowSamples;
   final Map<String, DateTime> _lastDetectionTime = {};
-  final Map<String, List<DateTime>> _temporalBuffer = {};
 
   static const Map<String, List<String>> _labelMapping = {
     'Siren': ['siren', 'police car (siren)', 'ambulance (siren)', 'fire engine, fire truck (siren)', 'civil defense siren', 'emergency vehicle'],
@@ -154,7 +152,7 @@ class SoundDetectionService {
       _totalSamplesCollected = 0;
       _nextProcessSampleCount = _windowSamples;
       _externalPcm.reset();
-      _clearTemporalBuffer();
+      _lastDetectionTime.clear();
       _monitoring = true;
       return true;
     } catch (e) {
@@ -191,7 +189,7 @@ class SoundDetectionService {
       _totalSamplesCollected = 0;
       _nextProcessSampleCount = _windowSamples;
       _externalPcm.reset();
-      _clearTemporalBuffer();
+      _lastDetectionTime.clear();
       _audioSubscription = stream.listen(
         _onAudioData,
         onDone: () => debugPrint('SoundDetection: audio stream ended'),
@@ -222,6 +220,7 @@ class SoundDetectionService {
     _totalSamplesCollected = 0;
     _nextProcessSampleCount = _windowSamples;
     _externalPcm.reset();
+    _lastDetectionTime.clear();
   }
 
   void processExternalAudio(Uint8List data) {
@@ -288,19 +287,7 @@ class SoundDetectionService {
     final now = DateTime.now();
     final last = _lastDetectionTime[eventType];
     if (last != null && now.difference(last) < cooldownDuration) return;
-    if (!_criticalEvents.contains(eventType) && !_passesTemporalConfirmation(eventType, now)) return;
     _emitEvent(eventType, confidence);
-  }
-
-  bool _passesTemporalConfirmation(String eventType, DateTime now) {
-    final events = _temporalBuffer.putIfAbsent(eventType, () => <DateTime>[]);
-    events.removeWhere((t) => now.difference(t) > _temporalWindow);
-    events.add(now);
-    return events.length >= 2;
-  }
-
-  void _clearTemporalBuffer() {
-    for (final list in _temporalBuffer.values) list.clear();
   }
 
   void _emitEvent(String eventType, double confidence) {
@@ -334,7 +321,6 @@ class SoundDetectionService {
     final now = DateTime.now();
     final last = _lastDetectionTime[eventType];
     if (last != null && now.difference(last) < cooldownDuration) return false;
-    if (!_criticalEvents.contains(eventType) && !_passesTemporalConfirmation(eventType, now)) return false;
     _emitEvent(eventType, confidence);
     return true;
   }
@@ -342,6 +328,5 @@ class SoundDetectionService {
   void dispose() {
     stopMonitoring();
     _lastDetectionTime.clear();
-    _clearTemporalBuffer();
   }
 }
