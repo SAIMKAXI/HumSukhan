@@ -1,3 +1,5 @@
+import 'everyday_speech_provider.dart';
+
 export 'settings_provider.dart';
 export 'user_provider.dart';
 export 'conversation_provider.dart';
