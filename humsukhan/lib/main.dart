@@ -26,7 +26,10 @@ Future<void> environmentalMonitoringBackgroundMain() async {
     if (call.method == 'stop') {
       pcmFlowSignaled = false;
       detector.stopMonitoring();
-      await channel.invokeMethod('pipelineState', {'state': 'OFF'});
+      // The Android service is the authoritative owner of microphone teardown.
+      // It releases AudioRecord/FlutterEngine first and only then persists OFF.
+      // Do not publish OFF from the Dart isolate while native resources are
+      // still being destroyed; foreground speech waits for the native OFF state.
       return true;
     }
     if (call.method == 'audioData') {
