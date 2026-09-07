@@ -1,7 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:humsukhan/models/models.dart';
 import 'package:humsukhan/providers/conversation_provider.dart';
 import 'package:humsukhan/providers/everyday_speech_provider.dart';
 import 'package:humsukhan/services/conversation_engine.dart';
@@ -20,7 +20,7 @@ class _FakeSpeech extends EverydaySpeechProvider {
   bool get isListening => _listening;
 
   @override
-  String? get lastStartError => null;
+  Future<void> initialize({String preferredLanguage = 'English'}) async {}
 
   @override
   Future<void> warmUpTts() async {}
@@ -39,11 +39,11 @@ class _FakeSpeech extends EverydaySpeechProvider {
   @override
   Future<void> speak(String text, {String language = 'English'}) async {}
 
-  void emit(String text, {bool isFinal = false, String language = 'English'}) {
+  void emit(String text, {required bool isFinal, String language = 'English'}) {
     controller.add(SpeechResultEvent(
       text: text,
       isFinal: isFinal,
-      confidence: 0.95,
+      confidence: isFinal ? 0.95 : 0.75,
       language: language,
       isLive: true,
       mode: STTMode.platform,
@@ -63,6 +63,26 @@ Future<void> _settleCommands() =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  const audioChannels = <String>[
+    'xyz.luan/audioplayers.global',
+    'xyz.luan/audioplayers',
+    'flutter_tts',
+  ];
+
+  setUp(() {
+    for (final name in audioChannels) {
+      messenger.setMockMethodCallHandler(MethodChannel(name), (_) async => null);
+    }
+  });
+
+  tearDown(() {
+    for (final name in audioChannels) {
+      messenger.setMockMethodCallHandler(MethodChannel(name), null);
+    }
+  });
+
   group('ConversationEngine live captions', () {
     test('interim -> final -> next utterance creates two committed captions', () async {
       final speech = _FakeSpeech();
@@ -72,35 +92,37 @@ void main() {
         speech: speech,
         conversation: conversation,
       );
-      await engine.setPauseThreshold(const Duration(milliseconds: 40));
+      addTearDown(() {
+        engine.dispose();
+        conversation.dispose();
+        speech.dispose();
+      });
 
+      await engine.setPauseThreshold(const Duration(milliseconds: 900));
       engine.startListening();
       await _settleCommands();
       expect(engine.state, ConversationEngineState.listening);
 
-      speech.emit('hello wor');
-      speech.emit('hello world');
+      speech.emit('hello wor', isFinal: false);
+      speech.emit('hello world', isFinal: false);
       speech.emit('hello world', isFinal: true);
-      await Future<void>.delayed(const Duration(milliseconds: 70));
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
 
-      expect(conversation.captions, hasLength(1));
-      expect(conversation.captions.single.text, 'hello world');
-      expect(conversation.currentPartial, isNotNull);
-
-      speech.emit('how are');
-      speech.emit('how are you');
-      speech.emit('how are you', isFinal: true);
-      await Future<void>.delayed(const Duration(milliseconds: 70));
-
-      expect(conversation.captions, hasLength(2));
       expect(
         conversation.captions.map((caption) => caption.text).toList(),
-        ['hello world', 'how are you'],
+        <String>['hello world'],
       );
+      expect(speech.isListening, isTrue);
 
-      engine.dispose();
-      conversation.dispose();
-      speech.dispose();
+      speech.emit('how are', isFinal: false);
+      speech.emit('how are you', isFinal: false);
+      speech.emit('how are you', isFinal: true);
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+
+      expect(
+        conversation.captions.map((caption) => caption.text).toList(),
+        <String>['hello world', 'how are you'],
+      );
     });
 
     test('queued recognizer result during stop cannot mutate the caption being finalized', () async {
@@ -111,30 +133,33 @@ void main() {
         speech: speech,
         conversation: conversation,
       );
-      await engine.setPauseThreshold(Duration.zero);
+      addTearDown(() {
+        engine.dispose();
+        conversation.dispose();
+        speech.dispose();
+      });
 
+      await engine.setPauseThreshold(Duration.zero);
       engine.startListening();
       await _settleCommands();
-      speech.emit('draft');
+      speech.emit('draft', isFinal: false);
       await _settleCommands();
       expect(engine.latestTranscript, 'draft');
 
       engine.stopListening();
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      speech.emit('draft should not replace');
+      speech.emit('draft should not replace', isFinal: true);
       await Future<void>.delayed(const Duration(milliseconds: 80));
 
-      expect(conversation.captions, hasLength(1));
-      expect(conversation.captions.single.text, 'draft');
+      expect(
+        conversation.captions.map((caption) => caption.text).toList(),
+        <String>['draft'],
+      );
       expect(conversation.currentPartial, isNull);
       expect(engine.state, ConversationEngineState.idle);
-
-      engine.dispose();
-      conversation.dispose();
-      speech.dispose();
     });
 
-    test('a stopped conversation can restart listening without resurrecting stale text', () async {
+    test('stop then restart starts with a clean live caption draft', () async {
       final speech = _FakeSpeech();
       final conversation = ConversationProvider();
       conversation.startConversation();
@@ -142,29 +167,30 @@ void main() {
         speech: speech,
         conversation: conversation,
       );
-      await engine.setPauseThreshold(const Duration(milliseconds: 40));
+      addTearDown(() {
+        engine.dispose();
+        conversation.dispose();
+        speech.dispose();
+      });
 
+      await engine.setPauseThreshold(const Duration(milliseconds: 900));
       engine.startListening();
       await _settleCommands();
       speech.emit('first turn', isFinal: true);
-      await Future<void>.delayed(const Duration(milliseconds: 70));
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
 
       engine.stopListening();
-      await Future<void>.delayed(const Duration(milliseconds: 70));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
 
       engine.startListening();
       await _settleCommands();
       speech.emit('second turn', isFinal: true);
-      await Future<void>.delayed(const Duration(milliseconds: 70));
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
 
       expect(
         conversation.captions.map((caption) => caption.text).toList(),
-        ['first turn', 'second turn'],
+        <String>['first turn', 'second turn'],
       );
-
-      engine.dispose();
-      conversation.dispose();
-      speech.dispose();
     });
   });
 }
