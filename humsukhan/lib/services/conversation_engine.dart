@@ -48,6 +48,7 @@ class ConversationEngine extends ChangeNotifier {
   StreamSubscription<SpeechResultEvent>? _subscription;
   Future<void> _commandTail = Future<void>.value();
   bool _turnStopping = false;
+  bool _isEndingConversation = false;
   int _turnGeneration = 0;
   String _latestTranscript = '';
 
@@ -60,7 +61,8 @@ class ConversationEngine extends ChangeNotifier {
   String get latestTranscript => _latestTranscript;
   bool get isListening => speech.isListening;
   bool get isManualPauseMode => _pauseThreshold == Duration.zero;
-  bool get isBusy => _state == ConversationEngineState.startingMic || _state == ConversationEngineState.processingFinal;
+  bool get isEndingConversation => _isEndingConversation;
+  bool get isBusy => _state == ConversationEngineState.startingMic || _state == ConversationEngineState.processingFinal || _isEndingConversation;
 
   String get statusLabel {
     switch (_state) {
@@ -132,6 +134,7 @@ class ConversationEngine extends ChangeNotifier {
   }
 
   void toggleListening() {
+    if (_isEndingConversation) return;
     if (speech.isListening ||
         _state == ConversationEngineState.speechActive ||
         _state == ConversationEngineState.waitingForTurnEnd ||
@@ -145,7 +148,7 @@ class ConversationEngine extends ChangeNotifier {
   void startListening() => _enqueue(_startListening);
 
   Future<void> _startListening() async {
-    if (conversation.state != ConversationState.active || speech.isListening || _turnStopping) return;
+    if (conversation.state != ConversationState.active || speech.isListening || _turnStopping || _isEndingConversation) return;
 
     _cancelSilenceTimer();
     final generation = ++_turnGeneration;
@@ -306,17 +309,31 @@ class ConversationEngine extends ChangeNotifier {
   }
 
   void stopAndEndConversation() {
+    if (_disposed || _isEndingConversation) return;
+
+    // Publish the busy state immediately so the screen disables Stop and
+    // speech controls before asynchronous microphone teardown begins.
+    _isEndingConversation = true;
+    _state = ConversationEngineState.processingFinal;
+    _errorMessage = null;
+    _cancelSilenceTimer();
+    notifyListeners();
+
     _enqueue(() async {
-      _cancelSilenceTimer();
-      _turnGeneration++;
-      await speech.stopListening();
-      conversation.stopConversation();
-      _latestTranscript = '';
-      _settledTurnText = '';
-      _latestLanguage = 'English';
-      _state = ConversationEngineState.idle;
-      _errorMessage = null;
-      notifyListeners();
+      try {
+        _turnGeneration++;
+        await speech.stopListening();
+        if (_disposed) return;
+        conversation.stopConversation();
+        _latestTranscript = '';
+        _settledTurnText = '';
+        _latestLanguage = 'English';
+        _state = ConversationEngineState.idle;
+        _errorMessage = null;
+      } finally {
+        _isEndingConversation = false;
+        notifyListeners();
+      }
     });
   }
 
