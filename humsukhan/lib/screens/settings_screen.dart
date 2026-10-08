@@ -202,19 +202,179 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-class _SpeechModelsSection extends StatelessWidget {
+class _SpeechModelsSection extends StatefulWidget {
   const _SpeechModelsSection();
+
+  @override
+  State<_SpeechModelsSection> createState() => _SpeechModelsSectionState();
+}
+
+class _SpeechModelsSectionState extends State<_SpeechModelsSection> {
+  bool _modelsInitializing = true;
+  String? _deletingLanguage;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initializeModels());
+  }
+
+  Future<void> _initializeModels() async {
+    if (!mounted) return;
+    setState(() => _modelsInitializing = true);
+    try {
+      await context.read<SpeechProvider>().initializeOfflineModels();
+    } catch (_) {
+      // An unavailable storage/platform service is surfaced by the retry row.
+    }
+    if (mounted) setState(() => _modelsInitializing = false);
+  }
+
+  Future<void> _downloadModel(String language) async {
+    final speech = context.read<SpeechProvider>();
+    final s = AppStrings.of(context);
+    try {
+      final success = await speech.downloadOfflineModel(language);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? s.modelDownloadComplete(language)
+                : s.modelDownloadFailed(language),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.modelDownloadFailed(language))),
+      );
+    }
+  }
+
+  Future<void> _deleteModel(String language) async {
+    final s = AppStrings.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(s.modelDeleteConfirm),
+        content: Text(s.deleteModelDesc(
+          context.read<SpeechProvider>().getModelStatus(language)?.model.sizeMB ?? 0,
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(s.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(s.removeDownload),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
+    setState(() => _deletingLanguage = language);
+    try {
+      final success = await context.read<SpeechProvider>().deleteModel(language);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success ? s.modelRemoved(language) : s.modelRemoveFailed(language),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.modelRemoveFailed(language))),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingLanguage = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final speech = context.watch<SpeechProvider>();
     final s = AppStrings.of(context);
-    return Column(children: [
-      ListTile(leading: Icon(speech.isOfflineMode ? Icons.wifi_off : Icons.wifi, color: Theme.of(context).colorScheme.primary), title: Text(s.currentMode), subtitle: Text(speech.sttModeLabel), trailing: Text(speech.currentLanguage, style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600))),
-      const Divider(height: 1),
-      _ModelTile(title: s.englishModelTitle, description: s.englishModelDesc, language: s.englishLabel, sizeMB: 80, isReady: speech.isModelReady('English'), onDownload: () => speech.downloadOfflineModel('English'), onDelete: () => speech.deleteModel('English'), s: s),
-      _ModelTile(title: s.urduModelTitle, description: s.urduModelDesc, language: s.urduLabel, sizeMB: 239, isReady: speech.isModelReady('Urdu'), onDownload: () => speech.downloadOfflineModel('Urdu'), onDelete: () => speech.deleteModel('Urdu'), s: s),
-      Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: Text(s.offlineModelsInfo, style: Theme.of(context).textTheme.bodySmall)),
-    ]);
+    final theme = Theme.of(context);
+    final englishStatus = speech.getModelStatus('English');
+
+    return Column(
+      children: [
+        ListTile(
+          leading: Icon(
+            speech.isOfflineMode ? Icons.wifi_off : Icons.wifi,
+            color: theme.colorScheme.primary,
+          ),
+          title: Text(s.currentMode),
+          subtitle: Text(speech.sttModeLabel),
+          trailing: Text(
+            speech.currentLanguage,
+            style: TextStyle(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const Divider(height: 1),
+        if (_modelsInitializing && englishStatus == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            child: LinearProgressIndicator(),
+          )
+        else if (englishStatus == null)
+          ListTile(
+            leading: const Icon(Icons.error_outline),
+            title: Text(s.englishModelTitle),
+            subtitle: Text(s.modelDownloadFailed(s.englishLabel)),
+            trailing: IconButton(
+              tooltip: s.retry,
+              onPressed: _initializeModels,
+              icon: const Icon(Icons.refresh),
+            ),
+          )
+        else
+          _ModelTile(
+            title: s.englishModelTitle,
+            description: s.englishModelDesc,
+            language: s.englishLabel,
+            sizeMB: englishStatus.model.sizeMB,
+            isReady: englishStatus.isDownloaded,
+            isDownloading: englishStatus.isDownloading,
+            downloadProgress: englishStatus.downloadProgress,
+            isWorking: englishStatus.isDownloading || _deletingLanguage == 'English',
+            onDownload: englishStatus.isDownloading || _deletingLanguage != null
+                ? null
+                : () => _downloadModel('English'),
+            onDelete: englishStatus.isDownloaded && _deletingLanguage == null
+                ? () => _deleteModel('English')
+                : null,
+            s: s,
+          ),
+        ListTile(
+          leading: CircleAvatar(
+            backgroundColor: theme.colorScheme.surfaceContainerHighest,
+            child: Icon(Icons.cloud_off_outlined, color: theme.colorScheme.outline),
+          ),
+          title: Text(s.urduModelTitle),
+          subtitle: Text(s.urduModelDesc),
+          trailing: Tooltip(
+            message: s.urduModelDesc,
+            child: const Icon(Icons.info_outline_rounded),
+          ),
+          isThreeLine: true,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Text(s.offlineModelsInfo, style: theme.textTheme.bodySmall),
+        ),
+      ],
+    );
   }
 }
 
@@ -222,17 +382,84 @@ class _ModelTile extends StatelessWidget {
   final String title, description, language;
   final int sizeMB;
   final bool isReady;
-  final VoidCallback onDownload, onDelete;
+  final bool isDownloading;
+  final double downloadProgress;
+  final bool isWorking;
+  final VoidCallback? onDownload;
+  final VoidCallback? onDelete;
   final AppStrings s;
-  const _ModelTile({required this.title, required this.description, required this.language, required this.sizeMB, required this.isReady, required this.onDownload, required this.onDelete, required this.s});
+
+  const _ModelTile({
+    required this.title,
+    required this.description,
+    required this.language,
+    required this.sizeMB,
+    required this.isReady,
+    required this.isDownloading,
+    required this.downloadProgress,
+    required this.isWorking,
+    required this.onDownload,
+    required this.onDelete,
+    required this.s,
+  });
+
   @override
-  Widget build(BuildContext context) => ListTile(
-        leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest, child: Icon(isReady ? Icons.check_circle : Icons.download_outlined, color: Theme.of(context).colorScheme.primary, size: 20)),
-        title: Text(title),
-        subtitle: Text('${description}\n${isReady ? s.ready : s.notDownloadedStatus} · $sizeMB MB'),
-        isThreeLine: true,
-        trailing: isReady ? IconButton(tooltip: s.removeDownload, icon: const Icon(Icons.delete_outline), onPressed: onDelete) : TextButton(onPressed: onDownload, child: Text(s.downloadLabel)),
-      );
+  Widget build(BuildContext context) {
+    final percent = (downloadProgress * 100).round();
+    final status = isDownloading
+        ? '${s.modelDownloading} $percent%'
+        : isWorking
+            ? s.modelWorking
+            : '${isReady ? s.ready : s.notDownloadedStatus} · $sizeMB MB';
+
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: Icon(
+          isReady ? Icons.check_circle : Icons.download_outlined,
+          color: Theme.of(context).colorScheme.primary,
+          size: 20,
+        ),
+      ),
+      title: Text(title),
+      subtitle: Text('${description}\n$status'),
+      isThreeLine: true,
+      trailing: isWorking
+          ? SizedBox(
+              width: 72,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      value: isDownloading ? downloadProgress : null,
+                      strokeWidth: 3,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isDownloading ? '$percent%' : s.modelWorking,
+                    style: Theme.of(context).textTheme.labelSmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            )
+          : isReady
+              ? IconButton(
+                  tooltip: s.removeDownload,
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: onDelete,
+                )
+              : TextButton(
+                  onPressed: onDownload,
+                  child: Text(s.downloadLabel),
+                ),
+    );
+  }
 }
 
 class _AboutSection extends StatelessWidget {
