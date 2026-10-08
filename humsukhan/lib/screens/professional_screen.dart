@@ -13,10 +13,136 @@ class _ProfessionalScreenState extends State<ProfessionalScreen> {
   Widget _folders(BuildContext context,ProfessionalProvider pro,AppStrings s){final general=pro.getSessionsForFolder(null)..sort((a,b)=>b.createdAt.compareTo(a.createdAt));return ListView(padding:const EdgeInsets.only(top:8,bottom:96),children:[ListTile(leading:const Icon(Icons.folder,size:32),title:Text(s.generalFolder),subtitle:Text('${general.length} ${s.sessionsCount}'),trailing:const Icon(Icons.chevron_right),onTap:()=>_showFolderSessions(context,s.generalFolder,general)),const Divider(),if(pro.folders.isEmpty)EmptyState(icon:Icons.folder_open,title:s.noFoldersYet,subtitle:s.noFoldersDesc,buttonText:s.createFolder,onButtonPressed:()=>_createFolder(context,s)) else ...pro.folders.map((folder){final sessions=pro.getSessionsForFolder(folder.id)..sort((a,b)=>b.createdAt.compareTo(a.createdAt));return ListTile(leading:const Icon(Icons.folder_outlined,size:30),title:Text(folder.name,maxLines:1,overflow:TextOverflow.ellipsis),subtitle:Text('${sessions.length} ${s.sessionsCount}'),trailing:PopupMenuButton<String>(onSelected:(v){if(v=='delete')_deleteFolder(context,folder,s);},itemBuilder:(_)=>[const PopupMenuItem(value:'delete',child:Text('Delete'))]),onTap:()=>_showFolderSessions(context,folder.name,sessions));})]);}
   Widget _types(BuildContext context,ProfessionalProvider pro,SessionType type,String title,IconData icon){final sessions=pro.sessions.where((x)=>x.type==type).toList()..sort((a,b)=>b.createdAt.compareTo(a.createdAt));final s=AppStrings.of(context);return ListView(padding:const EdgeInsets.only(top:8,bottom:96),children:[if(sessions.isEmpty)Padding(padding:const EdgeInsets.all(24),child:EmptyState(icon:icon,title:'No $title yet',subtitle:'Start a new $title session and your transcript will appear here.',buttonText:s.startSession,onButtonPressed:()=>_createSession(context,s,presetType:type))) else ...sessions.map((session)=>SessionCard(session:session,insight:pro.getInsightForSession(session.id),onTap:()=>Navigator.pushNamed(context,AppRouter.sessionDetail,arguments:session.id),onDelete:()=>_confirmDelete(context,session,s))) ]);}
   void _showFolderSessions(BuildContext context,String name,List<ProfessionalSession> sessions){final pro=context.read<ProfessionalProvider>();final s=AppStrings.of(context);showModalBottomSheet<void>(context:context,isScrollControlled:true,showDragHandle:true,builder:(ctx)=>SizedBox(height:MediaQuery.of(ctx).size.height*.75,child:Column(children:[Padding(padding:const EdgeInsets.fromLTRB(20,8,12,8),child:Row(children:[const Icon(Icons.folder,size:24),const SizedBox(width:8),Expanded(child:Text(name,style:Theme.of(ctx).textTheme.titleLarge))])),Expanded(child:sessions.isEmpty?EmptyState(icon:Icons.inbox_outlined,title:s.noSavedSessions,subtitle:s.noSavedSessionsDesc):ListView.builder(itemCount:sessions.length,itemBuilder:(_,i){final session=sessions[i];return SessionCard(session:session,insight:pro.getInsightForSession(session.id),onTap:(){Navigator.pop(ctx);Navigator.pushNamed(context,AppRouter.sessionDetail,arguments:session.id);});}))])));}
-  void _createSession(BuildContext context,AppStrings s,{SessionType? presetType}){final title=TextEditingController();final settings=context.read<SettingsProvider>();final pro=context.read<ProfessionalProvider>();var type=presetType??SessionType.meeting;var retention=settings.defaultRetentionDays;String? folder;var language='Auto';showModalBottomSheet<void>(context:context,isScrollControlled:true,showDragHandle:true,builder:(ctx)=>StatefulBuilder(builder:(ctx,setState)=>Padding(padding:EdgeInsets.fromLTRB(24,12,24,MediaQuery.of(ctx).viewInsets.bottom+24),child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(presetType==null?s.newSession:'New ${_typeLabel(type)}',style:Theme.of(ctx).textTheme.headlineSmall),const SizedBox(height:20),TextField(controller:title,decoration:InputDecoration(labelText:s.sessionTitle,hintText:s.sessionTitleHint),autofocus:true),const SizedBox(height:16),DropdownButtonFormField<SessionType>(initialValue:type,decoration:InputDecoration(labelText:s.sessionType),items:const[DropdownMenuItem(value:SessionType.meeting,child:Text('Meeting')),DropdownMenuItem(value:SessionType.lecture,child:Text('Lecture')),DropdownMenuItem(value:SessionType.class_,child:Text('Class'))],onChanged:(v)=>setState(()=>type=v??type)),const SizedBox(height:16),DropdownButtonFormField<String>(initialValue:language,decoration:const InputDecoration(labelText:'Speech language',helperText:'Preference only. Professional transcripts keep mixed English, Urdu and Roman Urdu.'),items:const[DropdownMenuItem(value:'Auto',child:Text('Auto — detect language')),DropdownMenuItem(value:'English',child:Text('English')),DropdownMenuItem(value:'Urdu',child:Text('Urdu')),DropdownMenuItem(value:'Roman Urdu',child:Text('Roman Urdu'))],onChanged:(v)=>setState(()=>language=v??language)),const SizedBox(height:16),DropdownButtonFormField<String?>(initialValue:folder,decoration:const InputDecoration(labelText:'Folder'),items:[const DropdownMenuItem<String?>(value:null,child:Text('General')),...pro.folders.map((f)=>DropdownMenuItem<String?>(value:f.id,child:Text(f.name,maxLines:1,overflow:TextOverflow.ellipsis)))],onChanged:(v)=>setState(()=>folder=v)),const SizedBox(height:16),DropdownButtonFormField<int>(initialValue:retention,decoration:InputDecoration(labelText:s.retentionPeriod),items:[DropdownMenuItem(value:1,child:Text(s.retention1Day)),DropdownMenuItem(value:7,child:Text(s.retention7Days)),DropdownMenuItem(value:15,child:Text(s.retention15Days))],onChanged:(v)=>setState(()=>retention=v??retention)),const SizedBox(height:24),PrimaryActionButton(label:s.startSession,icon:Icons.play_arrow,onPressed:()async{final value=title.text.trim();if(value.isEmpty){ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content:Text('Add a session title to continue.')));return;}final session=await pro.createSession(title:value,type:type,folderId:folder,captionLanguage:language,retentionDays:retention);if(ctx.mounted)Navigator.pop(ctx);if(context.mounted)Navigator.pushNamed(context,AppRouter.sessionLive,arguments:session.id);})]))))).whenComplete(title.dispose);}
+  void _createSession(BuildContext context,AppStrings s,{SessionType? presetType}){final title=TextEditingController();final settings=context.read<SettingsProvider>();final pro=context.read<ProfessionalProvider>();var type=presetType??SessionType.meeting;var retention=settings.defaultRetentionDays;String? folder;var language='Auto';var isCreating=false;showModalBottomSheet<void>(context:context,isScrollControlled:true,showDragHandle:true,builder:(ctx)=>StatefulBuilder(builder:(ctx,setState)=>Padding(padding:EdgeInsets.fromLTRB(24,12,24,MediaQuery.of(ctx).viewInsets.bottom+24),child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(presetType==null?s.newSession:'New ${_typeLabel(type)}',style:Theme.of(ctx).textTheme.headlineSmall),const SizedBox(height:20),TextField(controller:title,decoration:InputDecoration(labelText:s.sessionTitle,hintText:s.sessionTitleHint),autofocus:true),const SizedBox(height:16),DropdownButtonFormField<SessionType>(initialValue:type,decoration:InputDecoration(labelText:s.sessionType),items:const[DropdownMenuItem(value:SessionType.meeting,child:Text('Meeting')),DropdownMenuItem(value:SessionType.lecture,child:Text('Lecture')),DropdownMenuItem(value:SessionType.class_,child:Text('Class'))],onChanged:(v)=>setState(()=>type=v??type)),const SizedBox(height:16),DropdownButtonFormField<String>(initialValue:language,decoration:const InputDecoration(labelText:'Speech language',helperText:'Preference only. Professional transcripts keep mixed English, Urdu and Roman Urdu.'),items:const[DropdownMenuItem(value:'Auto',child:Text('Auto — detect language')),DropdownMenuItem(value:'English',child:Text('English')),DropdownMenuItem(value:'Urdu',child:Text('Urdu')),DropdownMenuItem(value:'Roman Urdu',child:Text('Roman Urdu'))],onChanged:(v)=>setState(()=>language=v??language)),const SizedBox(height:16),DropdownButtonFormField<String?>(initialValue:folder,decoration:const InputDecoration(labelText:'Folder'),items:[const DropdownMenuItem<String?>(value:null,child:Text('General')),...pro.folders.map((f)=>DropdownMenuItem<String?>(value:f.id,child:Text(f.name,maxLines:1,overflow:TextOverflow.ellipsis)))],onChanged:(v)=>setState(()=>folder=v)),const SizedBox(height:16),DropdownButtonFormField<int>(initialValue:retention,decoration:InputDecoration(labelText:s.retentionPeriod),items:[DropdownMenuItem(value:1,child:Text(s.retention1Day)),DropdownMenuItem(value:7,child:Text(s.retention7Days)),DropdownMenuItem(value:15,child:Text(s.retention15Days))],onChanged:(v)=>setState(()=>retention=v??retention)),const SizedBox(height:24),PrimaryActionButton(
+  label: isCreating ? 'Creating session…' : s.startSession,
+  icon: isCreating ? Icons.hourglass_empty : Icons.play_arrow,
+  onPressed: isCreating ? null : () async {
+    final value = title.text.trim();
+    if (value.isEmpty) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(content: Text('Add a session title to continue.')),
+      );
+      return;
+    }
+    setState(() => isCreating = true);
+    try {
+      final session = await pro.createSession(
+        title: value,
+        type: type,
+        folderId: folder,
+        captionLanguage: language,
+        retentionDays: retention,
+      );
+      if (!ctx.mounted) return;
+      Navigator.pop(ctx);
+      if (context.mounted) {
+        Navigator.pushNamed(context, AppRouter.sessionLive, arguments: session.id);
+      }
+    } catch (error) {
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(content: Text('Could not create session: $error')),
+        );
+      }
+    } finally {
+      if (ctx.mounted) setState(() => isCreating = false);
+    }
+  },
+)]))))).whenComplete(title.dispose);}
   String _typeLabel(SessionType type)=>switch(type){SessionType.class_=>'Class',SessionType.meeting=>'Meeting',SessionType.lecture=>'Lecture'};
-  void _createFolder(BuildContext context,AppStrings s){final c=TextEditingController();showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:Text(s.createFolder),content:TextField(controller:c,decoration:InputDecoration(hintText:s.folderName),autofocus:true),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:Text(s.cancel)),TextButton(onPressed:()async{final n=c.text.trim();if(n.isEmpty)return;await context.read<ProfessionalProvider>().createFolder(n);if(ctx.mounted)Navigator.pop(ctx);},child:Text(s.create))])).whenComplete(c.dispose);}
+  void _createFolder(BuildContext context, AppStrings s) {
+    final controller = TextEditingController();
+    var isCreating = false;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(s.createFolder),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            onChanged: (_) => setDialogState(() {}),
+            decoration: InputDecoration(hintText: s.folderName),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isCreating ? null : () => Navigator.pop(dialogContext),
+              child: Text(s.cancel),
+            ),
+            TextButton(
+              onPressed: isCreating || controller.text.trim().isEmpty
+                  ? null
+                  : () async {
+                      setDialogState(() => isCreating = true);
+                      try {
+                        await context.read<ProfessionalProvider>().createFolder(
+                              controller.text.trim(),
+                            );
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      } catch (error) {
+                        if (dialogContext.mounted) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(content: Text('Could not create folder: $error')),
+                          );
+                        }
+                      } finally {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => isCreating = false);
+                        }
+                      }
+                    },
+              child: Text(isCreating ? 'Creating…' : s.create),
+            ),
+          ],
+        ),
+      ),
+    ).whenComplete(controller.dispose);
+  }
+
   void _deleteFolder(BuildContext context,Folder folder,AppStrings s){final sessions=context.read<ProfessionalProvider>().getSessionsForFolder(folder.id);showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:Text('Delete ${folder.name}?'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.stretch,children:[Text('Choose what to delete. ${sessions.length} session${sessions.length==1?'':'s'} are currently in this folder.'),const SizedBox(height:12),ListTile(contentPadding:EdgeInsets.zero,leading:const Icon(Icons.drive_file_move_outline),title:const Text('Delete folder only'),subtitle:const Text('Keep all sessions and move them to General.'),onTap:()async{Navigator.pop(ctx);try{await context.read<ProfessionalProvider>().deleteFolder(folder.id,mode:FolderDeleteMode.keepSessions);if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Folder deleted. Sessions moved to General.')));}catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Could not delete folder: $e')));}}),ListTile(contentPadding:EdgeInsets.zero,leading:Icon(Icons.delete_forever_outlined,color:Theme.of(ctx).colorScheme.error),title:const Text('Delete folder + all sessions'),subtitle:const Text('Permanently delete this folder, its sessions, captions and insights.'),onTap:(){Navigator.pop(ctx);_confirmDeleteFolderAndSessions(context,folder,s);})])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:Text(s.cancel))]));}
   void _confirmDeleteFolderAndSessions(BuildContext context,Folder folder,AppStrings s){final count=context.read<ProfessionalProvider>().getSessionsForFolder(folder.id).length;showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Permanently delete folder and sessions?'),content:Text('This permanently deletes ${count} session${count==1?'':'s'}, their captions and AI insights. This cannot be undone.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:Text(s.cancel)),TextButton(onPressed:()async{try{await context.read<ProfessionalProvider>().deleteFolder(folder.id,mode:FolderDeleteMode.deleteSessions);if(ctx.mounted)Navigator.pop(ctx);if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Folder and its sessions were permanently deleted.')));}catch(e){if(ctx.mounted)ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content:Text('Could not delete folder: $e')));}},child:Text('Delete permanently',style:TextStyle(color:Theme.of(ctx).colorScheme.error,fontWeight:FontWeight.bold))) ]));}
-  void _confirmDelete(BuildContext context,ProfessionalSession session,AppStrings s){showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:Text(s.deleteSessionConfirm),content:Text(s.deleteSessionDesc),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:Text(s.cancel)),TextButton(onPressed:()async{await context.read<ProfessionalProvider>().deleteSession(session.id);if(ctx.mounted)Navigator.pop(ctx);},child:Text(s.delete,style:TextStyle(color:Theme.of(ctx).colorScheme.error))) ]));}
+  void _confirmDelete(
+    BuildContext context,
+    ProfessionalSession session,
+    AppStrings s,
+  ) {
+    var isDeleting = false;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(s.deleteSessionConfirm),
+          content: Text(s.deleteSessionDesc),
+          actions: [
+            TextButton(
+              onPressed: isDeleting ? null : () => Navigator.pop(dialogContext),
+              child: Text(s.cancel),
+            ),
+            TextButton(
+              onPressed: isDeleting
+                  ? null
+                  : () async {
+                      setDialogState(() => isDeleting = true);
+                      try {
+                        await context.read<ProfessionalProvider>().deleteSession(session.id);
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      } catch (error) {
+                        if (dialogContext.mounted) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(content: Text('Could not delete session: $error')),
+                          );
+                        }
+                      } finally {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => isDeleting = false);
+                        }
+                      }
+                    },
+              child: Text(isDeleting ? 'Deleting…' : s.delete),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
