@@ -171,6 +171,32 @@ void main() {
     });
   });
 
+  group('Conversation stop responsiveness', () {
+    test('marks the stop action busy before microphone teardown completes', () async {
+      final speech = _ScriptedSpeechProvider();
+      final conversation = ConversationProvider();
+      final engine = ConversationEngine(
+        speech: speech,
+        conversation: conversation,
+      );
+      addTearDown(() {
+        engine.dispose();
+        conversation.dispose();
+        speech.dispose();
+      });
+
+      conversation.startConversation();
+      engine.stopAndEndConversation();
+
+      expect(engine.isEndingConversation, isTrue);
+      expect(engine.isBusy, isTrue);
+
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(conversation.state, ConversationState.saveDecision);
+      expect(engine.isEndingConversation, isFalse);
+    });
+  });
+
   group('Caption commit', () {
     // Note: this guards the correct contract but does not by itself reproduce
     // the original failure, which needed
