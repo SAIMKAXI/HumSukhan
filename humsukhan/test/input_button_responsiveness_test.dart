@@ -22,6 +22,22 @@ void main() {
     expect(button.onPressed, isNull);
   });
 
+  test('native TTS playback wait does not hold the lock needed by Stop', () {
+    final source = File('lib/providers/speech_provider.dart').readAsStringSync();
+
+    expect(source, contains('await _native.awaitSpeakCompletion(false);'));
+    expect(
+      source,
+      contains(
+        'await _withNativeLock(\n        () => _startNativeSpeechLocked(text, deliveryLanguage),\n      );',
+      ),
+    );
+    expect(
+      source,
+      contains('while (_speaking && DateTime.now().isBefore(deadline))'),
+    );
+  });
+
   test('active screens contain no empty button/tap callbacks', () {
     const paths = [
       'lib/screens/onboarding_screen.dart',
