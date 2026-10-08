@@ -42,7 +42,7 @@ class ResilientTtsProvider implements TtsProvider {
   Future<bool> initialize() async {
     if (_initialized) return true;
     try {
-      await _native.awaitSpeakCompletion(true);
+      await _native.awaitSpeakCompletion(false);
       await _native.setSpeechRate(0.5);
       await _native.setVolume(1.0);
       await _native.setPitch(1.0);
@@ -127,10 +127,39 @@ class ResilientTtsProvider implements TtsProvider {
     return false;
   }
 
-  Future<void> _speakNative(String text, String deliveryLanguage) =>
-      _withNativeLock(() => _speakNativeLocked(text, deliveryLanguage));
+  Future<void> _speakNative(String text, String deliveryLanguage) async {
+    try {
+      // Hold the native lock only while configuring and starting speech.
+      // Waiting for playback completion inside the lock prevents Stop from
+      // acquiring it, leaving the UI apparently unresponsive until speech ends.
+      await _withNativeLock(
+        () => _startNativeSpeechLocked(text, deliveryLanguage),
+      );
+    } catch (_) {
+      _speaking = false;
+      rethrow;
+    }
 
-  Future<void> _speakNativeLocked(String text, String deliveryLanguage) async {
+    final deadline = DateTime.now().add(_nativeSpeechTimeout);
+    while (_speaking && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+    if (_speaking) {
+      try {
+        await _withNativeLock(() => _native.stop())
+            .timeout(const Duration(seconds: 3));
+      } catch (_) {}
+      _speaking = false;
+      throw TimeoutException(
+        'Native TTS did not complete within ${_nativeSpeechTimeout.inSeconds} seconds',
+      );
+    }
+  }
+
+  Future<void> _startNativeSpeechLocked(
+    String text,
+    String deliveryLanguage,
+  ) async {
     final reliable = await _capability.ttsReliable(_native, deliveryLanguage);
     _installPlaybackHandlers();
     if (!reliable) {
@@ -147,24 +176,7 @@ class ResilientTtsProvider implements TtsProvider {
     }
 
     _speaking = true;
-    try {
-      await _native.speak(text);
-      final deadline = DateTime.now().add(_nativeSpeechTimeout);
-      while (_speaking && DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(const Duration(milliseconds: 40));
-      }
-      if (_speaking) {
-        try {
-          await _native.stop();
-        } catch (_) {}
-        _speaking = false;
-        throw TimeoutException(
-          'Native TTS did not complete within ${_nativeSpeechTimeout.inSeconds} seconds',
-        );
-      }
-    } finally {
-      _speaking = false;
-    }
+    await _native.speak(text);
   }
 
   Future<void> _speakCloud(String text, String deliveryLanguage) async {
