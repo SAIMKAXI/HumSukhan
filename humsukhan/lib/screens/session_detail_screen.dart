@@ -248,13 +248,23 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
     if (!hasSummary) {
       final failure = provider.insightError(widget.sessionId);
+      final hasTranscript = provider.sessions.any(
+        (session) =>
+            session.id == widget.sessionId && session.captions.isNotEmpty,
+      );
       return ErrorState(
         title: failure == null
             ? strings.insightsUnavailable
             : 'AI summary unavailable',
         message: failure ?? strings.insightsUnavailableDesc,
-        buttonText: strings.viewTranscript,
-        onRetry: () => DefaultTabController.of(context).animateTo(1),
+        buttonText: hasTranscript ? strings.retry : strings.viewTranscript,
+        onRetry: hasTranscript
+            ? () => provider.generateInsights(widget.sessionId)
+            : () => DefaultTabController.of(context).animateTo(1),
+        secondaryButtonText: hasTranscript ? strings.viewTranscript : null,
+        onSecondaryPressed: hasTranscript
+            ? () => DefaultTabController.of(context).animateTo(1)
+            : null,
       );
     }
 
