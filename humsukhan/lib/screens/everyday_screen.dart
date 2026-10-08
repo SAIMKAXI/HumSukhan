@@ -42,7 +42,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
 
   void _startConversation() { _engine.startConversation(); _scrollToBottom(); }
   void _toggleSpeakerListening() { if (_engine.isBusy) return; _engine.toggleListening(); }
-  void _stop() { _engine.stopAndEndConversation(); }
+  void _stop() { if (!_engine.isEndingConversation) _engine.stopAndEndConversation(); }
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -164,7 +164,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
               ),
             ),
           if (conv.state == ConversationState.active)
-            SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(16, 2, 16, 12), child: PrimaryActionButton(label: s.stopConversation, icon: Icons.stop, onPressed: _stop))),
+            SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(16, 2, 16, 12), child: PrimaryActionButton(label: _engine.isEndingConversation ? s.stoppingConversation : s.stopConversation, icon: _engine.isEndingConversation ? Icons.hourglass_empty : Icons.stop, onPressed: _engine.isEndingConversation ? null : _stop))),
         ],
       ),
     );
