@@ -72,8 +72,22 @@ class EnvironmentalScreen extends StatelessWidget {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: env.isStarting || env.isStopping ? null : env.toggleMonitoring,
-                    icon: Icon(isActive ? Icons.stop : Icons.play_arrow),
-                    label: Text(isActive ? s.stopMonitoring : s.startMonitoring),
+                    icon: env.isStarting || env.isStopping
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(isActive ? Icons.stop : Icons.play_arrow),
+                    label: Text(
+                      env.isStarting
+                          ? 'Starting…'
+                          : env.isStopping
+                              ? 'Stopping…'
+                              : isActive
+                                  ? s.stopMonitoring
+                                  : s.startMonitoring,
+                    ),
                   ),
                 ),
                 if (env.hasError && errorText.toLowerCase().contains('settings')) ...[
