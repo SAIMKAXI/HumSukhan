@@ -55,6 +55,6 @@ void main() {
     expect(auth, contains('onPressed: auth.isLoading ? null : _handleResetRequest'));
     expect(liveSession, contains('_isStoppingSession || _sessionStarting ? null : _stopSession'));
     expect(sessionDetail, contains('onRetry: () => DefaultTabController.of(context).animateTo(1)'));
-    expect(everyday, contains('_isSavingConversation ? null'));
+    expect(everyday, matches(RegExp(r'_isSavingConversation\\s*\\?\\s*null')));
   });
 }
