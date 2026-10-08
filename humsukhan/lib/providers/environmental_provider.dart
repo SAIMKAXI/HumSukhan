@@ -159,6 +159,8 @@ class EnvironmentalProvider extends ChangeNotifier {
   Future<void> toggleMonitoring() async {
     if (_disposed || isStarting || isStopping) return;
 
+    try {
+
     if (_monitoringState == 'ACTIVE') {
       _monitoringState = 'STOPPING';
       _errorMessage = null;
@@ -280,6 +282,13 @@ class EnvironmentalProvider extends ChangeNotifier {
       _errorMessage = 'The microphone recorder could not start. Check microphone access and try again.';
     }
     notifyListeners();
+    } catch (error) {
+      if (_disposed) return;
+      _monitoringState = 'ERROR';
+      _errorMessage = 'Environmental monitoring failed. Check microphone permission and try again.';
+      debugPrint('Environmental monitoring action failed: $error');
+      notifyListeners();
+    }
   }
 
   Future<void> openMicrophoneSettings() async {
