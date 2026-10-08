@@ -224,6 +224,26 @@ class AppStrings {
   String get englishModelDesc => _isUrdu ? 'انٹرنیٹ کنکشن کے بغیر ریئل ٹائم انگریزی کیپشنز کے لیے اختیاری آف لائن ماڈل۔' : 'Optional offline model for real-time English captions without an internet connection.';
   String get urduModelTitle => _isUrdu ? 'اردو تقریر کی پہچان' : 'Urdu speech recognition';
   String get urduModelDesc => _isUrdu ? 'اردو تقریر کی پہچان اور اردو-اسکرپٹ کیپشنز کے لیے اختیاری آف لائن ماڈل۔' : 'Optional offline model for Urdu speech recognition and Urdu-script captions.';
+  String get urduOfflineUnavailable => _isUrdu
+      ? 'تصدیق شدہ اردو آف لائن ماڈل ابھی دستیاب نہیں۔ اردو شناخت کے لیے معاون آن لائن یا ڈیوائس سروس استعمال کریں۔'
+      : 'No verified Urdu-only offline model is available yet. Urdu recognition still depends on supported online or device speech services.';
+  String get modelDownloading => _isUrdu ? 'ڈاؤن لوڈ ہو رہا ہے…' : 'Downloading…';
+  String modelDownloadComplete(String language) => _isUrdu
+      ? '$language آف لائن ماڈل ڈاؤن لوڈ ہو گیا۔'
+      : '$language offline model downloaded.';
+  String modelDownloadFailed(String language) => _isUrdu
+      ? '$language ماڈل ڈاؤن لوڈ نہیں ہو سکا۔ کنکشن چیک کریں اور دوبارہ کوشش کریں۔'
+      : 'Could not download the $language model. Check your connection and try again.';
+  String modelRemoved(String language) => _isUrdu
+      ? '$language آف لائن ماڈل ہٹا دیا گیا۔'
+      : '$language offline model removed.';
+  String modelRemoveFailed(String language) => _isUrdu
+      ? '$language ماڈل ہٹایا نہیں جا سکا۔ دوبارہ کوشش کریں۔'
+      : 'Could not remove the $language model. Please try again.';
+  String get retry => _isUrdu ? 'دوبارہ کوشش کریں' : 'Retry';
+  String get modelDeleteConfirm => _isUrdu
+      ? 'ڈاؤن لوڈ شدہ آف لائن ماڈل ہٹائیں؟'
+      : 'Remove downloaded offline model?';
 
   // ── Listening ──
   String get listeningDots => _isUrdu ? 'سن رہا ہے...\nکیپشنز یہاں ظاہر ہوں گے۔' : 'Listening...\nCaptions will appear here.';
