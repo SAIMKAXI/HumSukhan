@@ -425,7 +425,17 @@ class ErrorState extends StatelessWidget {
   final String message;
   final String? buttonText;
   final VoidCallback? onRetry;
-  const ErrorState({super.key, required this.title, required this.message, this.buttonText, this.onRetry});
+  final String? secondaryButtonText;
+  final VoidCallback? onSecondaryPressed;
+  const ErrorState({
+    super.key,
+    required this.title,
+    required this.message,
+    this.buttonText,
+    this.onRetry,
+    this.secondaryButtonText,
+    this.onSecondaryPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -440,8 +450,17 @@ class ErrorState extends StatelessWidget {
           Text(message, style: const TextStyle(fontSize: 14, color: AppTokens.textMuted), textAlign: TextAlign.center),
           if (buttonText != null && onRetry != null) ...[
             const SizedBox(height: 24),
-            ElevatedButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: Text(buttonText!),),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: Text(buttonText!),
+            ),
           ],
+          if (secondaryButtonText != null && onSecondaryPressed != null)
+            TextButton(
+              onPressed: onSecondaryPressed,
+              child: Text(secondaryButtonText!),
+            ),
         ]),
       ),
     );
