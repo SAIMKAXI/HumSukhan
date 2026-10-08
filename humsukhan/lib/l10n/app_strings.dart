@@ -64,6 +64,7 @@ class AppStrings {
   String get typeResponse => _isUrdu ? 'جواب ٹائپ کریں...' : 'Type a response...';
   String get startListening => _isUrdu ? 'سننا شروع کریں' : 'Start Listening';
   String get stopConversation => _isUrdu ? 'گفتگو بند کریں' : 'Stop Conversation';
+  String get stoppingConversation => _isUrdu ? 'گفتگو بند ہو رہی ہے…' : 'Stopping conversation…';
   String get saveConversation => _isUrdu ? 'گفتگو محفوظ کریں؟' : 'Save Conversation?';
   String get saveConversationDesc => _isUrdu ? 'کیا آپ ان کیپشنز کو حوالے کے لیے محفوظ کرنا چاہیں گے؟' : 'Would you like to save these captions for reference?';
   String get save => _isUrdu ? 'محفوظ کریں' : 'Save';
