@@ -188,6 +188,8 @@ class EnvironmentalProvider extends ChangeNotifier {
     }
 
     _errorMessage = null;
+    _monitoringState = 'STARTING';
+    notifyListeners();
     final permission = await Permission.microphone.request();
     if (_disposed) return;
     if (!permission.isGranted) {
