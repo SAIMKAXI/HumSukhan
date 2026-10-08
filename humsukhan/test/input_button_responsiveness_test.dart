@@ -70,7 +70,18 @@ void main() {
     expect(auth, contains('onPressed: auth.isLoading ? null : _handleSubmit'));
     expect(auth, contains('onPressed: auth.isLoading ? null : _handleResetRequest'));
     expect(liveSession, contains('_isStoppingSession || _sessionStarting ? null : _stopSession'));
-    expect(sessionDetail, contains('onRetry: () => DefaultTabController.of(context).animateTo(1)'));
+    expect(
+      RegExp(
+        r'onRetry:\s*hasTranscript\s*\?[\s\S]*?DefaultTabController\.of\(context\)\.animateTo\(1\)',
+      ).hasMatch(sessionDetail),
+      isTrue,
+      reason: 'The summary fallback must let users open the transcript when no summary is available.',
+    );
+    expect(
+      sessionDetail,
+      contains('onSecondaryPressed: hasTranscript'),
+      reason: 'When retry is available, View transcript must remain a separate action.',
+    );
     expect(RegExp(r'_isSavingConversation\s*\?\s*null').hasMatch(everyday), isTrue);
   });
 }
