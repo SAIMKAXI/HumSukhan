@@ -35,6 +35,8 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   bool _isListening = false;
   bool _acceptSpeechResults = false;
   bool _isFinalizing = false;
+  bool _isAddingCaption = false;
+  bool _isStoppingSession = false;
 
   @override
   void initState() {
@@ -58,10 +60,9 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
       return;
     }
 
-    await pro.startSessionRecording(widget.sessionId);
-
     final speech = context.read<SpeechProvider>();
     try {
+      await pro.startSessionRecording(widget.sessionId);
       await speech.initialize(preferredLanguage: session.captionLanguage);
       await _speechSubscription?.cancel();
       _speechSubscription = speech.onResult.listen(_handleSpeechResult);
@@ -80,13 +81,13 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
         _sessionStarting = false;
         _isListening = false;
         _speechStatus = 'Microphone unavailable';
-        _startupError = 'Speech setup failed: $error';
+        _startupError = 'Session setup failed: $error';
       });
     }
   }
 
   Future<void> _toggleListening() async {
-    if (!mounted || _sessionStarting || _isFinalizing) return;
+    if (!mounted || _sessionStarting || _isFinalizing || _isStoppingSession) return;
 
     final pro = context.read<ProfessionalProvider>();
     final session = pro.sessions.where((s) => s.id == widget.sessionId).firstOrNull;
@@ -245,47 +246,78 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
 
   Future<void> _addManualCaption(String text) async {
     final value = text.trim();
-    if (value.isEmpty) return;
+    if (value.isEmpty || _isAddingCaption || _isStoppingSession) return;
 
     final session = context
         .read<ProfessionalProvider>()
         .sessions
         .where((s) => s.id == widget.sessionId)
         .firstOrNull;
-    if (session == null) return;
-
-    await context.read<ProfessionalProvider>().addCaptionToSession(
-          widget.sessionId,
-          Caption(
-            text: value,
-            speaker: 'You',
-            language: session.captionLanguage,
-            isOwn: true,
-          ),
+    if (session == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This session is no longer available.')),
         );
-    if (!mounted) return;
-    _captionController.clear();
-    setState(() {});
-    _scrollToBottom();
+      }
+      return;
+    }
+
+    setState(() => _isAddingCaption = true);
+    try {
+      await context.read<ProfessionalProvider>().addCaptionToSession(
+            widget.sessionId,
+            Caption(
+              text: value,
+              speaker: 'You',
+              language: session.captionLanguage,
+              isOwn: true,
+            ),
+          );
+      if (!mounted) return;
+      _captionController.clear();
+      setState(() {});
+      _scrollToBottom();
+    } catch (error) {
+      if (mounted) {
+        setState(() => _startupError = 'Could not save this caption: $error');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save caption: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAddingCaption = false);
+    }
   }
 
   Future<void> _stopSession() async {
-    if (_isFinalizing) return;
-    final speech = context.read<SpeechProvider>();
-    if (speech.isListening || _isListening) {
-      await _stopListeningSegment(speech);
-    }
-    await _flushHiddenDraft();
-    await context.read<ProfessionalProvider>().stopSession(widget.sessionId);
-    if (!mounted) return;
+    if (_isStoppingSession || _sessionStarting) return;
+    setState(() => _isStoppingSession = true);
+    try {
+      final speech = context.read<SpeechProvider>();
+      if (speech.isListening || _isListening) {
+        await _stopListeningSegment(speech);
+      }
+      await _flushHiddenDraft();
+      await context.read<ProfessionalProvider>().stopSession(widget.sessionId);
+      if (!mounted) return;
 
-    final action = await _showCompletionDialog();
-    if (!mounted) return;
+      final action = await _showCompletionDialog();
+      if (!mounted) return;
 
-    if (action == _SessionCompletionAction.discard) {
-      await context.read<ProfessionalProvider>().deleteSession(widget.sessionId);
+      if (action == _SessionCompletionAction.discard) {
+        await context.read<ProfessionalProvider>().deleteSession(widget.sessionId);
+      }
+      if (mounted) Navigator.pop(context, action);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _startupError = 'Could not finish this session: $error');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not finish session: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isStoppingSession = false);
     }
-    if (mounted) Navigator.pop(context, action);
   }
 
   Future<_SessionCompletionAction?> _showCompletionDialog() {
@@ -427,14 +459,20 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                   child: SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: _toggleListening,
+                      onPressed: _sessionStarting || _isFinalizing || _isStoppingSession
+                          ? null
+                          : _toggleListening,
                       icon: Icon(_isListening ? Icons.stop : Icons.mic),
                       label: Text(
-                        _isListening
-                            ? 'Listening — tap to stop'
-                            : _isFinalizing
-                                ? 'Finalizing…'
-                                : 'Tap to listen',
+                        _sessionStarting
+                            ? 'Preparing…'
+                            : _isStoppingSession
+                                ? 'Finishing session…'
+                                : _isListening
+                                    ? 'Listening — tap to stop'
+                                    : _isFinalizing
+                                        ? 'Finalizing…'
+                                        : 'Tap to listen',
                       ),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
@@ -526,6 +564,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                       constraints: const BoxConstraints(maxHeight: 120),
                       child: TextField(
                         controller: _captionController,
+                        enabled: !_isAddingCaption && !_isStoppingSession,
                         minLines: 1,
                         maxLines: 4,
                         decoration: InputDecoration(
@@ -546,7 +585,9 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                   IconButton.filled(
                     tooltip: 'Speak reply',
                     icon: const Icon(Icons.volume_up),
-                    onPressed: _captionController.text.trim().isEmpty
+                    onPressed: _captionController.text.trim().isEmpty ||
+                            _isAddingCaption ||
+                            _isStoppingSession
                         ? null
                         : () => _speakReply(_captionController.text.trim(), session.captionLanguage),
                   ),
@@ -554,7 +595,11 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                   IconButton.filled(
                     tooltip: 'Add caption',
                     icon: const Icon(Icons.add),
-                    onPressed: () => _addManualCaption(_captionController.text),
+                    onPressed: _captionController.text.trim().isEmpty ||
+                            _isAddingCaption ||
+                            _isStoppingSession
+                        ? null
+                        : () => _addManualCaption(_captionController.text),
                   ),
                 ],
               ),
@@ -565,9 +610,9 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
               child: PrimaryActionButton(
-                label: s.stopSession,
+                label: _isStoppingSession ? 'Finishing session…' : s.stopSession,
                 icon: Icons.stop,
-                onPressed: _stopSession,
+                onPressed: _isStoppingSession || _sessionStarting ? null : _stopSession,
               ),
             ),
           ),
