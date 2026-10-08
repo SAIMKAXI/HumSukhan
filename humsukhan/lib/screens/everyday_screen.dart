@@ -20,6 +20,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
   final ScrollController _scrollController = ScrollController();
   late final ConversationEngine _engine;
   bool _typedUrdu = false;
+  bool _isSavingConversation = false;
 
   @override
   void initState() {
@@ -253,6 +254,33 @@ class _EverydayScreenState extends State<EverydayScreen> {
   }
 
   Widget _buildSaveDecision(BuildContext context, AppStrings s) {
-    return Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.save_alt, size: 64, color: Theme.of(context).colorScheme.primary), const SizedBox(height: 24), Text(s.saveConversation, style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center), const SizedBox(height: 12), Text(s.saveConversationDesc, style: Theme.of(context).textTheme.bodyLarge, textAlign: TextAlign.center), const SizedBox(height: 32), PrimaryActionButton(label: s.save, icon: Icons.save, onPressed: () => context.read<ConversationProvider>().saveConversation()), const SizedBox(height: 12), SecondaryActionButton(label: s.delete, icon: Icons.delete_outline, onPressed: () => context.read<ConversationProvider>().deleteConversation()), const SizedBox(height: 12), TextButton(onPressed: () => context.read<ConversationProvider>().cancelStop(), child: Text(s.continueListening))])));
+    return Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.save_alt, size: 64, color: Theme.of(context).colorScheme.primary), const SizedBox(height: 24), Text(s.saveConversation, style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center), const SizedBox(height: 12), Text(s.saveConversationDesc, style: Theme.of(context).textTheme.bodyLarge, textAlign: TextAlign.center), const SizedBox(height: 32), PrimaryActionButton(
+          label: _isSavingConversation ? 'Saving…' : s.save,
+          icon: _isSavingConversation ? Icons.hourglass_empty : Icons.save,
+          onPressed: _isSavingConversation
+              ? null
+              : () async {
+                  setState(() => _isSavingConversation = true);
+                  try {
+                    final saved = await context.read<ConversationProvider>().saveConversation();
+                    if (!mounted) return;
+                    if (!saved) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Could not save the conversation. Your captions are still here; try again.'),
+                        ),
+                      );
+                    }
+                  } catch (error) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Could not save conversation: $error')),
+                      );
+                    }
+                  } finally {
+                    if (mounted) setState(() => _isSavingConversation = false);
+                  }
+                },
+        ), const SizedBox(height: 12), SecondaryActionButton(label: s.delete, icon: Icons.delete_outline, onPressed: () => context.read<ConversationProvider>().deleteConversation()), const SizedBox(height: 12), TextButton(onPressed: () => context.read<ConversationProvider>().cancelStop(), child: Text(s.continueListening))])));
   }
 }
