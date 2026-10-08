@@ -142,7 +142,7 @@ class ConversationProvider extends ChangeNotifier {
 
       if (SupabaseService.instance.isAuthenticated) {
         final transcript =
-            sorted.map((c) => '${c.speaker}: ${c.text}').join('\\n');
+            sorted.map((c) => '${c.speaker}: ${c.text}').join('\n');
         final professionalSession = ProfessionalSession(
           id: sessionId,
           title: 'Everyday Conversation — ${_formatDate(_conversationStartedAt)}',
