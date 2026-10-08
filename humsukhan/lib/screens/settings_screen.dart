@@ -73,6 +73,7 @@ class SettingsScreen extends StatelessWidget {
     final nameController = TextEditingController(text: user.profile?.name ?? '');
     String? avatarData = user.profile?.avatarData;
     final picker = ImagePicker();
+    var isSaving = false;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -84,10 +85,25 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 20),
           GestureDetector(
             onTap: () async {
-              final file = await picker.pickImage(source: ImageSource.gallery, maxWidth: 512, maxHeight: 512, imageQuality: 82);
-              if (file == null) return;
-              final bytes = await file.readAsBytes();
-              setModalState(() => avatarData = base64Encode(bytes));
+              try {
+                final file = await picker.pickImage(
+                  source: ImageSource.gallery,
+                  maxWidth: 512,
+                  maxHeight: 512,
+                  imageQuality: 82,
+                );
+                if (file == null) return;
+                final bytes = await file.readAsBytes();
+                if (ctx.mounted) {
+                  setModalState(() => avatarData = base64Encode(bytes));
+                }
+              } catch (error) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(content: Text('Could not select profile photo: $error')),
+                  );
+                }
+              }
             },
             child: Stack(alignment: Alignment.bottomRight, children: [
               _Avatar(profile: user.profile?.copyWith(avatarData: avatarData), radius: 46),
@@ -95,15 +111,33 @@ class SettingsScreen extends StatelessWidget {
             ]),
           ),
           const SizedBox(height: 16),
-          TextField(controller: nameController, decoration: InputDecoration(labelText: s.nameLabel)),
+          TextField(controller: nameController, onChanged: (_) => setModalState(() {}), decoration: InputDecoration(labelText: s.nameLabel)),
           const SizedBox(height: 20),
-          PrimaryActionButton(label: s.save, icon: Icons.save, onPressed: () async {
-            final name = nameController.text.trim();
-            if (name.isEmpty) return;
-            final base = user.profile ?? UserProfile(name: name);
-            await user.saveProfile(base.copyWith(name: name, avatarData: avatarData));
-            if (ctx.mounted) Navigator.pop(ctx);
-          }),
+          PrimaryActionButton(
+            label: isSaving ? 'Saving…' : s.save,
+            icon: isSaving ? Icons.hourglass_empty : Icons.save,
+            onPressed: isSaving || nameController.text.trim().isEmpty
+                ? null
+                : () async {
+                    setModalState(() => isSaving = true);
+                    try {
+                      final name = nameController.text.trim();
+                      final base = user.profile ?? UserProfile(name: name);
+                      await user.saveProfile(
+                        base.copyWith(name: name, avatarData: avatarData),
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (error) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('Could not save profile: $error')),
+                        );
+                      }
+                    } finally {
+                      if (ctx.mounted) setModalState(() => isSaving = false);
+                    }
+                  },
+          ),
         ]),
       )),
     );
