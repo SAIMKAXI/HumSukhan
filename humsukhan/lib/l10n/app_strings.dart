@@ -223,11 +223,9 @@ class AppStrings {
   String get englishModelTitle => _isUrdu ? 'انگریزی تقریر کی پہچان' : 'English speech recognition';
   String get englishModelDesc => _isUrdu ? 'انٹرنیٹ کنکشن کے بغیر ریئل ٹائم انگریزی کیپشنز کے لیے اختیاری آف لائن ماڈل۔' : 'Optional offline model for real-time English captions without an internet connection.';
   String get urduModelTitle => _isUrdu ? 'اردو تقریر کی پہچان' : 'Urdu speech recognition';
-  String get urduModelDesc => _isUrdu ? 'اردو تقریر کی پہچان اور اردو-اسکرپٹ کیپشنز کے لیے اختیاری آف لائن ماڈل۔' : 'Optional offline model for Urdu speech recognition and Urdu-script captions.';
-  String get urduOfflineUnavailable => _isUrdu
-      ? 'تصدیق شدہ اردو آف لائن ماڈل ابھی دستیاب نہیں۔ اردو شناخت کے لیے معاون آن لائن یا ڈیوائس سروس استعمال کریں۔'
-      : 'No verified Urdu-only offline model is available yet. Urdu recognition still depends on supported online or device speech services.';
+  String get urduModelDesc => _isUrdu ? 'تصدیق شدہ اردو آف لائن ماڈل ابھی دستیاب نہیں؛ معاون آن لائن یا ڈیوائس سروس استعمال کریں۔' : 'No verified Urdu-only offline model is available yet; use supported online or device speech services.';
   String get modelDownloading => _isUrdu ? 'ڈاؤن لوڈ ہو رہا ہے…' : 'Downloading…';
+  String get modelWorking => _isUrdu ? 'کام جاری ہے…' : 'Working…';
   String modelDownloadComplete(String language) => _isUrdu
       ? '$language آف لائن ماڈل ڈاؤن لوڈ ہو گیا۔'
       : '$language offline model downloaded.';
