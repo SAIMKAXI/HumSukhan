@@ -323,7 +323,7 @@ class PrivacyNotice extends StatelessWidget {
 // ===== PRIMARY BUTTON =====
 class PrimaryActionButton extends StatelessWidget {
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final IconData? icon;
   final bool isExpanded;
   const PrimaryActionButton({super.key, required this.label, required this.onPressed, this.icon, this.isExpanded = true});
