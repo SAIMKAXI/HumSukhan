@@ -112,19 +112,21 @@ class ConversationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> saveConversation() async {
+  Future<bool> saveConversation() async {
     _commitCurrentPartial();
     if (_captions.isEmpty) {
       _resetState();
-      return;
+      return true;
     }
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final conversations = List<dynamic>.from(
         jsonDecode(prefs.getString(_savedConversationsKey) ?? '[]'),
       );
       final sorted = _sortedCaptions();
-      final sessionId = _currentSessionId ?? 'everyday_${DateTime.now().millisecondsSinceEpoch}';
+      final sessionId =
+          _currentSessionId ?? 'everyday_${DateTime.now().millisecondsSinceEpoch}';
       final session = {
         'id': sessionId,
         'captions': sorted.map((c) => c.toJson()).toList(),
@@ -132,12 +134,15 @@ class ConversationProvider extends ChangeNotifier {
         'savedAt': DateTime.now().toIso8601String(),
         'language': _currentLanguage,
       };
-      conversations.removeWhere((item) => item is Map && item['id']?.toString() == sessionId);
+      conversations.removeWhere(
+        (item) => item is Map && item['id']?.toString() == sessionId,
+      );
       conversations.add(session);
       await prefs.setString(_savedConversationsKey, jsonEncode(conversations));
 
       if (SupabaseService.instance.isAuthenticated) {
-        final transcript = sorted.map((c) => '${c.speaker}: ${c.text}').join('\n');
+        final transcript =
+            sorted.map((c) => '${c.speaker}: ${c.text}').join('\\n');
         final professionalSession = ProfessionalSession(
           id: sessionId,
           title: 'Everyday Conversation — ${_formatDate(_conversationStartedAt)}',
@@ -150,10 +155,13 @@ class ConversationProvider extends ChangeNotifier {
         );
         await DatabaseService.instance.upsertSession(professionalSession);
       }
-    } catch (e) {
-      debugPrint('Error saving everyday conversation: $e');
+    } catch (error) {
+      debugPrint('Error saving everyday conversation: $error');
+      return false;
     }
+
     _resetState();
+    return true;
   }
 
   void deleteConversation() => _resetState();
