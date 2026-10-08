@@ -85,13 +85,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             ),
           ],
         ),
-        body: TabBarView(
-          children: [
-            _overview(context, session, strings),
-            _transcript(context, session, strings),
-            _summary(context, insight, strings, provider),
-            _actions(context, insight, strings),
-          ],
+        body: Builder(
+          builder: (tabContext) => TabBarView(
+            children: [
+              _overview(context, session, strings),
+              _transcript(context, session, strings),
+              _summary(tabContext, insight, strings, provider),
+              _actions(context, insight, strings),
+            ],
+          ),
         ),
       ),
     );
@@ -252,6 +254,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             : 'AI summary unavailable',
         message: failure ?? strings.insightsUnavailableDesc,
         buttonText: strings.viewTranscript,
+        onRetry: () => DefaultTabController.of(context).animateTo(1),
       );
     }
 
@@ -389,13 +392,20 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               title: Text(strings.copyClipboard),
               onTap: () async {
                 Navigator.pop(dialogContext);
-                await Clipboard.setData(
-                  ClipboardData(text: _exportText(session, insight)),
-                );
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Copied to clipboard')),
-                );
+                try {
+                  await Clipboard.setData(
+                    ClipboardData(text: _exportText(session, insight)),
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Copied to clipboard')),
+                  );
+                } catch (error) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Copy failed: $error')),
+                  );
+                }
               },
             ),
           ],
@@ -474,29 +484,46 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     ProfessionalSession session,
     AppStrings strings,
   ) {
+    var isDeleting = false;
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(strings.deleteSessionConfirm),
-        content: Text(strings.deleteSessionDesc),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(strings.cancel),
-          ),
-          TextButton(
-            onPressed: () async {
-              await context.read<ProfessionalProvider>().deleteSession(session.id);
-              if (!context.mounted) return;
-              Navigator.pop(dialogContext);
-              Navigator.pop(context);
-            },
-            child: Text(
-              strings.delete,
-              style: TextStyle(color: Theme.of(dialogContext).colorScheme.error),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(strings.deleteSessionConfirm),
+          content: Text(strings.deleteSessionDesc),
+          actions: [
+            TextButton(
+              onPressed: isDeleting ? null : () => Navigator.pop(dialogContext),
+              child: Text(strings.cancel),
             ),
-          ),
-        ],
+            TextButton(
+              onPressed: isDeleting
+                  ? null
+                  : () async {
+                      setDialogState(() => isDeleting = true);
+                      try {
+                        await context
+                            .read<ProfessionalProvider>()
+                            .deleteSession(session.id);
+                        if (!context.mounted || !dialogContext.mounted) return;
+                        Navigator.pop(dialogContext);
+                        Navigator.pop(context);
+                      } catch (error) {
+                        if (dialogContext.mounted) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(content: Text('Could not delete session: $error')),
+                          );
+                        }
+                      } finally {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => isDeleting = false);
+                        }
+                      }
+                    },
+              child: Text(isDeleting ? 'Deleting…' : strings.delete),
+            ),
+          ],
+        ),
       ),
     );
   }
