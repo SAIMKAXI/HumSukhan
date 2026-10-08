@@ -20,6 +20,12 @@ import 'speech_provider.dart' show ResilientTtsProvider;
 /// modes use a single language stream. This avoids the legacy provider's
 /// hidden second TTS stack and prevents unused recognizers from being opened.
 class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
+  EverydaySpeechProvider() {
+    _modelProgressSubscription = _modelManager.onProgress.listen((_) {
+      if (!_disposed) notifyListeners();
+    });
+  }
+
   final EverydayBilingualSttService _bilingual = EverydayBilingualSttService.instance;
   final ResilientTtsProvider _ttsProvider = ResilientTtsProvider();
   final EnhancedSpeechProvider _fallbackStt = EnhancedSpeechProvider();
@@ -29,6 +35,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   final EnvironmentalMonitoringBridge _environmentalBridge = EnvironmentalMonitoringBridge.instance;
 
   StreamSubscription<EverydayBilingualResult>? _bilingualSubscription;
+  StreamSubscription<ModelDownloadProgress>? _modelProgressSubscription;
   StreamSubscription<SpeechResultEvent>? _fallbackSubscription;
   bool _initialized = false;
   bool _listening = false;
@@ -307,6 +314,13 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     notifyListeners();
   }
 
+  Future<bool> initializeOfflineModels() async {
+    await _modelManager.initialize();
+    if (_disposed) return false;
+    notifyListeners();
+    return _modelManager.statuses.isNotEmpty;
+  }
+
   List<String> get offlineLanguages => ModelManager.availableModels.keys.toList();
   List<String> get readyLanguages => _modelManager.readyLanguages;
   bool isModelReady(String language) => _modelManager.isModelReady(language);
@@ -494,6 +508,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   void _cancelSubscriptions() {
     unawaited(_bilingualSubscription?.cancel());
     unawaited(_fallbackSubscription?.cancel());
+    unawaited(_modelProgressSubscription?.cancel());
     _bilingualSubscription = null;
     _fallbackSubscription = null;
   }
