@@ -222,13 +222,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     AppStrings strings,
     ProfessionalProvider provider,
   ) {
-    final hasSummary =
-        insight != null && insight.isAvailable && insight.summaryBullets.isNotEmpty;
+    final hasInsight = insight != null &&
+        insight.isAvailable &&
+        (insight.summaryBullets.isNotEmpty ||
+            insight.actionItems.isNotEmpty ||
+            insight.deadlines.isNotEmpty);
 
-    // Distinguish "still working", "it failed and here is why" and "nothing to
-    // show". These all used to render the same generic empty state, so a failed
-    // AI summary looked identical to a session that simply had none.
-    if (!hasSummary && provider.isGeneratingInsight(widget.sessionId)) {
+    // Keep the loading, failure, and partial-result states distinct.
+    if (!hasInsight && provider.isGeneratingInsight(widget.sessionId)) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
@@ -244,16 +245,22 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       );
     }
 
-    if (!hasSummary) {
+    if (!hasInsight) {
       final failure = provider.insightError(widget.sessionId);
       return ErrorState(
         title: failure == null
             ? strings.insightsUnavailable
             : 'AI summary unavailable',
         message: failure ?? strings.insightsUnavailableDesc,
-        buttonText: strings.viewTranscript,
+        buttonText: strings.retryAiSummary,
+        onRetry: () {
+          provider.generateInsights(widget.sessionId);
+        },
       );
     }
+
+    final availableInsight = insight;
+    final hasSummary = availableInsight.summaryBullets.isNotEmpty;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -262,22 +269,30 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         children: [
           const AiDisclaimer(),
           const SizedBox(height: 12),
-          _summaryCard(context, insight, strings),
-          if (insight.deadlines.isNotEmpty) ...[
+          if (hasSummary)
+            _summaryCard(context, availableInsight, strings)
+          else
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(strings.summaryNotProvided),
+              ),
+            ),
+          if (availableInsight.deadlines.isNotEmpty) ...[
             const SizedBox(height: 16),
             InsightCard(
               title: strings.deadlines,
               icon: Icons.schedule,
-              items: insight.deadlines,
+              items: availableInsight.deadlines,
               iconColor: AppTheme.warningLight,
             ),
           ],
-          if (insight.mentionedPeople.isNotEmpty) ...[
+          if (availableInsight.mentionedPeople.isNotEmpty) ...[
             const SizedBox(height: 8),
             InsightCard(
               title: strings.peopleMentioned,
               icon: Icons.people_outline,
-              items: insight.mentionedPeople,
+              items: availableInsight.mentionedPeople,
             ),
           ],
         ],
