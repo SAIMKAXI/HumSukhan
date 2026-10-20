@@ -133,6 +133,8 @@ class AppStrings {
   String get insightsUnavailable => _isUrdu ? 'بصیرت دستیاب نہیں' : 'Insights unavailable';
   String get insightsUnavailableDesc => _isUrdu ? 'ہم اس اجلاس کے لیے AI بصیرت تیار نہیں کر سکے۔ آپ کا اصل ٹرانسکرپٹ ابھی بھی دستیاب ہے۔' : 'We couldn\'t generate AI insights for this session. Your original transcript is still available.';
   String get viewTranscript => _isUrdu ? 'ٹرانسکرپٹ دیکھیں' : 'View Transcript';
+  String get retryAiSummary => _isUrdu ? 'AI خلاصہ دوبارہ بنائیں' : 'Retry AI summary';
+  String get summaryNotProvided => _isUrdu ? 'AI نے کچھ بصیرتیں تیار کیں، لیکن خلاصے کے نکات نہیں دیے۔ دستیاب کاموں کے لیے اقدامات کا ٹیب دیکھیں۔' : 'The AI returned other insights but no summary bullets. Check Actions and any available deadlines below.';
   String get noActionItems => _isUrdu ? 'کوئی عمل کے اقدامات نہیں' : 'No action items';
   String get noActionItemsDesc => _isUrdu ? 'AI تجزیے کے بعد عمل کے اقدامات یہاں ظاہر ہوں گے۔' : 'Action items will appear here after AI analysis.';
   String get noItemsAvailable => _isUrdu ? 'کوئی اشیاء دستیاب نہیں' : 'No items available';
