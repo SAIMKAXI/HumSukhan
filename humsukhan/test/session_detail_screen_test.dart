@@ -9,12 +9,17 @@ import 'package:humsukhan/providers/settings_provider.dart';
 import 'package:humsukhan/screens/session_detail_screen.dart';
 
 class _FakeProfessionalProvider extends ProfessionalProvider {
-  _FakeProfessionalProvider(ProfessionalSession session, ProfessionalInsight insight)
-      : _session = session,
-        _insight = insight;
+  _FakeProfessionalProvider(
+    this._session, {
+    ProfessionalInsight? insight,
+    String? error,
+  })  : _insight = insight,
+        _error = error;
 
   final ProfessionalSession _session;
-  final ProfessionalInsight _insight;
+  final ProfessionalInsight? _insight;
+  final String? _error;
+  int generateCalls = 0;
 
   @override
   List<ProfessionalSession> get sessions => [_session];
@@ -27,7 +32,28 @@ class _FakeProfessionalProvider extends ProfessionalProvider {
   bool get isLoading => false;
 
   @override
-  Future<void> generateInsights(String sessionId) async {}
+  bool isGeneratingInsight(String sessionId) => false;
+
+  @override
+  String? insightError(String sessionId) => _error;
+
+  @override
+  Future<void> generateInsights(String sessionId) async {
+    generateCalls++;
+  }
+}
+
+Widget _app(_FakeProfessionalProvider provider) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<ProfessionalProvider>.value(value: provider),
+      ChangeNotifierProvider<SettingsProvider>.value(value: SettingsProvider()),
+    ],
+    child: const MaterialApp(
+      localizationsDelegates: [AppStrings.delegate],
+      home: SessionDetailScreen(sessionId: 'session-1'),
+    ),
+  );
 }
 
 void main() {
@@ -58,24 +84,9 @@ void main() {
       mentionedPeople: const ['Aisha'],
       isAvailable: true,
     );
+    final provider = _FakeProfessionalProvider(session, insight: insight);
 
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider<ProfessionalProvider>.value(
-            value: _FakeProfessionalProvider(session, insight),
-          ),
-          ChangeNotifierProvider<SettingsProvider>.value(
-            value: SettingsProvider(),
-          ),
-        ],
-        child: const MaterialApp(
-          localizationsDelegates: [AppStrings.delegate],
-          home: SessionDetailScreen(sessionId: 'session-1'),
-        ),
-      ),
-    );
-
+    await tester.pumpWidget(_app(provider));
     await tester.pumpAndSettle();
 
     expect(find.text('Project direction and launch date were agreed.'), findsNothing);
@@ -94,5 +105,74 @@ void main() {
     expect(find.text('The deadline is Friday.'), findsNothing);
     expect(find.text('Friday'), findsNothing);
     expect(find.text('Aisha'), findsNothing);
+  });
+
+  testWidgets('action-only AI insight remains available when summary bullets are empty',
+      (tester) async {
+    final session = ProfessionalSession(
+      id: 'session-1',
+      title: 'Planning meeting',
+      type: SessionType.meeting,
+      captions: const [],
+    );
+    final insight = ProfessionalInsight(
+      sessionId: session.id,
+      actionItems: const ['Prepare the launch checklist.'],
+      deadlines: const ['Friday'],
+      isAvailable: true,
+    );
+    final provider = _FakeProfessionalProvider(session, insight: insight);
+
+    await tester.pumpWidget(_app(provider));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Summary'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(AppStrings(const Locale('en')).summaryNotProvided),
+      findsOneWidget,
+    );
+    expect(find.text('Friday'), findsOneWidget);
+
+    await tester.tap(find.text('Actions'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Prepare the launch checklist.'), findsOneWidget);
+  });
+
+  testWidgets('AI summary error screen retries generation',
+      (tester) async {
+    final session = ProfessionalSession(
+      id: 'session-1',
+      title: 'Planning meeting',
+      type: SessionType.meeting,
+      captions: [
+        Caption(
+          id: 'caption-1',
+          text: 'Aisha will send the launch checklist by Friday.',
+          timestamp: DateTime(2026, 10, 20, 10),
+        ),
+      ],
+    );
+    final provider = _FakeProfessionalProvider(
+      session,
+      error: 'Simulated AI service failure.',
+    );
+
+    await tester.pumpWidget(_app(provider));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Summary'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Simulated AI service failure.'), findsOneWidget);
+    expect(find.text('Retry AI summary'), findsOneWidget);
+    final callsBeforeRetry = provider.generateCalls;
+
+    await tester.tap(find.text('Retry AI summary'));
+    await tester.pumpAndSettle();
+
+    expect(provider.generateCalls, callsBeforeRetry + 1);
   });
 }
