@@ -109,7 +109,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ? PrimaryActionButton(
                         label: isUrdu ? 'براہ کرم انتظار کریں…' : 'Please wait…',
                         icon: Icons.hourglass_top_rounded,
-                        onPressed: () {},
+                        onPressed: null,
                       )
                     : PrimaryActionButton(
                         label: _currentPage == _pageCount - 1 ? strings.getStarted : strings.next,
