@@ -34,8 +34,11 @@ void main() {
   test('native torch channel checks camera permission and reports actual operation status', () {
     final activity = File('android/app/src/main/kotlin/com/humsukhan/humsukhan/MainActivity.kt').readAsStringSync();
 
-    expect(activity, contains('Manifest.permission.CAMERA'));
-    expect(activity, contains('result.success(turnOnTorch())'));
+    expect(activity, contains('checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED'));
+    expect(activity, contains('result.error("CAMERA_PERMISSION"'));
+    expect(activity, contains('if (turnOnTorch())'));
+    expect(activity, contains('result.error("TORCH_UNAVAILABLE", "The flashlight could not be turned on", null)'));
+    expect(activity, contains('if (turnOffTorch()) result.success(true)'));
     expect(activity, contains('private fun turnOnTorch(): Boolean'));
     expect(activity, contains('private fun turnOffTorch(): Boolean'));
     expect(activity, isNot(contains('"turnOn" -> { turnOnTorch(); result.success(true) }')));
