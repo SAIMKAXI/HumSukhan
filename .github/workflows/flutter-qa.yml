@@ -39,5 +39,12 @@ jobs:
       - name: Tests
         run: flutter test
       - name: Android debug build
-        # Release gate: tests alone do not exercise the Android Gradle/plugin graph.
-        run: flutter build apk --debug
+        # Fail rather than produce an APK that silently disables its backend.
+        env:
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Configure SUPABASE_ANON_KEY as a GitHub Actions secret or repository variable."
+            exit 1
+          fi
+          flutter build apk --debug --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
