@@ -69,6 +69,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
     final s = AppStrings.of(context);
     final appIsUrdu = settings.appLanguage == 'ur';
     final inputIsUrdu = _typedUrdu || appIsUrdu;
+    final typedResponse = _textController.text.trim();
 
     return Scaffold(
       appBar: AppBar(
@@ -146,17 +147,21 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     ),
                     const SizedBox(width: 6),
                     IconButton.filled(
-                      tooltip: 'Speak response',
+                      tooltip: speech.isSpeaking ? 'Stop speaking' : 'Speak response',
                       icon: Icon(speech.isSpeaking ? Icons.stop : Icons.volume_up),
-                      onPressed: conv.isListening || _engine.isBusy || _textController.text.trim().isEmpty
-                          ? null
-                          : () => _speakOrStop(speech, _textController.text.trim()),
+                      // Stopping playback must remain possible even while the
+                      // conversation engine reports its speaking state as busy.
+                      onPressed: speech.isSpeaking
+                          ? () => _speakOrStop(speech, typedResponse)
+                          : conv.isListening || _engine.isBusy || typedResponse.isEmpty
+                              ? null
+                              : () => _speakOrStop(speech, typedResponse),
                     ),
                     const SizedBox(width: 2),
                     IconButton.filled(
                       tooltip: 'Send response',
                       icon: const Icon(Icons.send),
-                      onPressed: conv.isListening || _engine.isBusy || _textController.text.trim().isEmpty ? null : () => _sendTypedText(_textController.text),
+                      onPressed: conv.isListening || _engine.isBusy || typedResponse.isEmpty ? null : () => _sendTypedText(_textController.text),
                     ),
                   ],
                 ),

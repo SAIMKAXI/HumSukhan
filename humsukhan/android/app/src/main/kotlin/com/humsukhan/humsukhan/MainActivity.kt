@@ -112,9 +112,27 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FLASH_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "turnOn" -> { turnOnTorch(); result.success(true) }
-                    "turnOff" -> { turnOffTorch(); result.success(true) }
-                    "isAvailable" -> result.success(cameraId != null)
+                    "turnOn" -> {
+                        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                            result.error("CAMERA_PERMISSION", "Camera permission is required to control the flashlight", null)
+                        } else if (turnOnTorch()) {
+                            result.success(true)
+                        } else {
+                            result.error("TORCH_UNAVAILABLE", "The flashlight could not be turned on", null)
+                        }
+                    }
+                    "turnOff" -> {
+                        if (turnOffTorch()) result.success(true)
+                        else result.error("TORCH_UNAVAILABLE", "The flashlight could not be turned off", null)
+                    }
+                    "isAvailable" -> {
+                        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                            result.success(false)
+                        } else {
+                            if (cameraId == null) cameraId = findTorchCameraId(cameraManager)
+                            result.success(cameraId != null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -157,7 +175,13 @@ class MainActivity : FlutterActivity() {
 
     private fun findTorchCameraId(manager: CameraManager?): String? {
         if (manager == null) return null
-        for (id in manager.cameraIdList) {
+        val cameraIds = try {
+            manager.cameraIdList
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+        for (id in cameraIds) {
             try {
                 val characteristics = manager.getCameraCharacteristics(id)
                 val flashAvailable = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
@@ -172,7 +196,7 @@ class MainActivity : FlutterActivity() {
 
         // Some devices expose only a front-facing flash-capable camera. Prefer
         // it over reporting a false "available" state when no rear torch exists.
-        for (id in manager.cameraIdList) {
+        for (id in cameraIds) {
             try {
                 val characteristics = manager.getCameraCharacteristics(id)
                 if (characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true) {
@@ -185,22 +209,37 @@ class MainActivity : FlutterActivity() {
         return null
     }
 
-    private fun turnOnTorch() {
-        try {
-            if (cameraId != null && !isTorchOn) {
-                cameraManager?.setTorchMode(cameraId!!, true)
+    private fun turnOnTorch(): Boolean {
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return false
+        return try {
+            val manager = cameraManager ?: (getSystemService(Context.CAMERA_SERVICE) as? CameraManager) ?: return false
+            cameraManager = manager
+            if (cameraId == null) cameraId = findTorchCameraId(manager)
+            val id = cameraId ?: return false
+            if (!isTorchOn) {
+                manager.setTorchMode(id, true)
                 isTorchOn = true
             }
-        } catch (e: Exception) { e.printStackTrace() }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
     }
 
-    private fun turnOffTorch() {
-        try {
-            if (cameraId != null && isTorchOn) {
-                cameraManager?.setTorchMode(cameraId!!, false)
-                isTorchOn = false
-            }
-        } catch (e: Exception) { e.printStackTrace() }
+    private fun turnOffTorch(): Boolean {
+        if (!isTorchOn) return true
+        return try {
+            val manager = cameraManager ?: (getSystemService(Context.CAMERA_SERVICE) as? CameraManager) ?: return false
+            cameraManager = manager
+            val id = cameraId ?: findTorchCameraId(manager) ?: return false
+            manager.setTorchMode(id, false)
+            isTorchOn = false
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
     }
 
     override fun onDestroy() {

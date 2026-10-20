@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../models/models.dart';
@@ -52,7 +55,16 @@ class SettingsScreen extends StatelessWidget {
         SwitchListTile(title: Text(s.hapticAlerts), subtitle: Text(s.hapticAlertsDesc), value: settings.hapticAlerts, onChanged: (_) => settings.toggleHapticAlerts()),
         SwitchListTile(title: Text(s.visualAlerts), subtitle: Text(s.visualAlertsDesc), value: settings.visualAlerts, onChanged: (_) => settings.toggleVisualAlerts()),
         SwitchListTile(title: Text(s.screenFlashAlerts), subtitle: Text(s.screenFlashAlertsDesc), value: settings.screenFlashAlerts, onChanged: (_) => settings.toggleScreenFlashAlerts()),
-        SwitchListTile(title: Text(s.flashlightAlerts), subtitle: Text(s.flashlightAlertsDesc), value: settings.flashAlerts, onChanged: (_) => settings.toggleFlashAlerts()),
+        SwitchListTile(
+          title: Text(s.flashlightAlerts),
+          subtitle: Text(defaultTargetPlatform == TargetPlatform.android
+              ? '${s.flashlightAlertsDesc} Camera permission is used only to control the torch; no photos or video are captured.'
+              : 'Flashlight alerts are currently available on Android only.'),
+          value: defaultTargetPlatform == TargetPlatform.android && settings.flashAlerts,
+          onChanged: defaultTargetPlatform == TargetPlatform.android
+              ? (enabled) => _setFlashlightAlerts(context, settings, enabled)
+              : null,
+        ),
         _SectionHeader(title: s.speechRecognition),
         const _SpeechModelsSection(),
         _SectionHeader(title: s.environmentalAlerts),
@@ -66,6 +78,53 @@ class SettingsScreen extends StatelessWidget {
         const SizedBox(height: 32),
       ]),
     );
+  }
+
+  Future<void> _setFlashlightAlerts(
+    BuildContext context,
+    SettingsProvider settings,
+    bool enabled,
+  ) async {
+    if (!enabled) {
+      if (settings.flashAlerts) settings.toggleFlashAlerts();
+      return;
+    }
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+
+    try {
+      final permission = await Permission.camera.request();
+      if (!context.mounted) return;
+      if (!permission.isGranted) {
+        final message = permission.isPermanentlyDenied
+            ? 'Camera permission is blocked. Open Android Settings > Apps > HumSukhan > Permissions > Camera, then try again.'
+            : 'Camera permission is required for flashlight alerts. No photos or video are captured.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        return;
+      }
+
+      final available = await const MethodChannel('com.humsukhan.flashlight')
+              .invokeMethod<bool>('isAvailable') ??
+          false;
+      if (!context.mounted) return;
+      if (!available) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This device does not expose an available camera flashlight.')),
+        );
+        return;
+      }
+
+      if (!settings.flashAlerts) settings.toggleFlashAlerts();
+    } on PlatformException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not enable flashlight alerts: ${error.message ?? error.code}')),
+      );
+    } on MissingPluginException {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Flashlight controls are unavailable in this app build.')),
+      );
+    }
   }
 
   Future<void> _showEditProfileDialog(BuildContext context, AppStrings s) async {
