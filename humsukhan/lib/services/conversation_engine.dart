@@ -173,15 +173,29 @@ class ConversationEngine extends ChangeNotifier {
     notifyListeners();
   }
 
-  void stopListening() => _enqueue(_stopListening);
+  void stopListening() {
+    if (_disposed || _turnStopping) return;
 
-  Future<void> _stopListening() async {
-    if (_turnStopping) return;
+    final shouldStop = speech.isListening ||
+        _state == ConversationEngineState.startingMic ||
+        _state == ConversationEngineState.listening ||
+        _state == ConversationEngineState.speechActive ||
+        _state == ConversationEngineState.waitingForTurnEnd;
+    if (!shouldStop) return;
+
     _turnStopping = true;
     _cancelSilenceTimer();
-    final generation = ++_turnGeneration;
+    // Invalidate any in-flight startListening() operation immediately. The
+    // public stop request must win even while microphone startup is waiting
+    // on environmental-audio release or recognizer connection setup.
+    _turnGeneration++;
     _state = ConversationEngineState.processingFinal;
     notifyListeners();
+    _enqueue(_stopListening);
+  }
+
+  Future<void> _stopListening() async {
+    final generation = _turnGeneration;
 
     try {
       await speech.stopListening();
