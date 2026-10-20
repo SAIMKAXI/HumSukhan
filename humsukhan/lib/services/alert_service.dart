@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../providers/settings_provider.dart';
 import 'notification_service.dart';
 
@@ -66,14 +68,28 @@ class AlertService {
   }
 
   void _triggerFlashlight(String severity) async {
+    if (!Platform.isAndroid) return;
     try {
+      if (!(await Permission.camera.status).isGranted) {
+        debugPrint('Flashlight alert skipped: camera permission is not granted');
+        return;
+      }
+
       const channel = MethodChannel('com.humsukhan.flashlight');
+      final available = await channel.invokeMethod<bool>('isAvailable') ?? false;
+      if (!available) {
+        debugPrint('Flashlight alert skipped: no available camera torch');
+        return;
+      }
+
       final flashCount = severity == 'critical' ? 4 : 2;
       for (int i = 0; i < flashCount; i++) {
-        await channel.invokeMethod('turnOn');
-        await Future.delayed(const Duration(milliseconds: 200));
-        await channel.invokeMethod('turnOff');
-        if (i < flashCount - 1) await Future.delayed(const Duration(milliseconds: 150));
+        final turnedOn = await channel.invokeMethod<bool>('turnOn') ?? false;
+        if (!turnedOn) return;
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        final turnedOff = await channel.invokeMethod<bool>('turnOff') ?? false;
+        if (!turnedOff) return;
+        if (i < flashCount - 1) await Future<void>.delayed(const Duration(milliseconds: 150));
       }
     } catch (e) {
       debugPrint('Flashlight alert not available: $e');
