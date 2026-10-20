@@ -52,9 +52,10 @@ class AiService {
         InsightNormalizer.list(json['mentionedPeople']),
       );
 
-      // The summary is authoritative only when Gemini returned structured bullets.
+      // Some useful responses contain actions or deadlines but no summary bullets.
+      // Preserve those insights instead of discarding the entire AI result.
       // Never turn a legacy/free-form summary into a fake one-bullet "AI summary".
-      if (bullets.isEmpty) return null;
+      if (bullets.isEmpty && actionItems.isEmpty && deadlines.isEmpty) return null;
 
       return ProfessionalInsight(
         sessionId: sessionId,
