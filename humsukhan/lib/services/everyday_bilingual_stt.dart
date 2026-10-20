@@ -90,17 +90,14 @@ class EverydayBilingualSttService {
   String _mode = 'Auto';
   String? _lastStartError;
 
-  // Incremented by every start()/stop() call. start() checks this after each
-  // await against the value it captured at entry; if stop() (or a newer
-  // start()) ran while a permission request / token fetch / websocket
-  // connect / recorder start was in flight, the stale start() tears down
-  // whatever it opened instead of "reviving" a session the caller already
-  // asked to stop (see: stop-immediately-after-start race).
+  // Every start()/stop() advances the session generation. Each socket also has
+  // independent reconnect state so a failure on one recognizer never blocks or
+  // consumes the retry budget of the other recognizer.
   int _sessionGeneration = 0;
+  final Set<String> _reconnectingSources = <String>{};
+  final Map<String, int> _reconnectAttempts = <String, int>{};
 
   static const int _maxReconnectAttempts = 3;
-  int _reconnectAttempts = 0;
-  bool _reconnecting = false;
 
   List<_WordToken> _englishWords = const [];
   List<_WordToken> _urduWords = const [];
@@ -174,6 +171,8 @@ class EverydayBilingualSttService {
     final generation = ++_sessionGeneration;
     _mode = _normalizeMode(mode);
     _lastStartError = null;
+    _reconnectingSources.clear();
+    _reconnectAttempts.clear();
 
     final permission = await Permission.microphone.status;
     if (!permission.isGranted) {
@@ -243,7 +242,6 @@ class EverydayBilingualSttService {
     _lastEmitted = '';
     _ready = true;
 
-    _reconnectAttempts = 0;
     if (english != null) _listenToSocket('English', english, generation);
     if (urdu != null) _listenToSocket('Urdu', urdu, generation);
 
@@ -254,9 +252,6 @@ class EverydayBilingualSttService {
         numChannels: 1,
       ));
       if (generation != _sessionGeneration) {
-        // A stop() (or a newer start()) ran while the recorder was starting.
-        // Tear this session down instead of leaving a live mic stream the
-        // caller already asked to stop.
         try { await _recorder.stop(); } catch (_) {}
         try { await english?.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
         try { await urdu?.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
@@ -304,10 +299,6 @@ class EverydayBilingualSttService {
     final subscription = socket.listen(
       (message) => _handleSocketMessage(source, message),
       onError: (Object error) => debugPrint('Everyday $source STT error: $error'),
-      // A closed socket used to be ignored entirely. The microphone kept
-      // streaming into a dead connection, isListening stayed true and the UI
-      // still read "Listening…", but no further captions could ever arrive --
-      // recognition just stopped part-way through a session.
       onDone: () => _handleSocketClosed(source, generation),
     );
     if (source == 'English') {
@@ -323,21 +314,21 @@ class EverydayBilingualSttService {
     unawaited(_reconnectSocket(source, generation));
   }
 
-  /// Re-opens a recognizer socket that dropped while the session is still live.
-  ///
-  /// Bounded and generation-guarded: it gives up after [_maxReconnectAttempts]
-  /// and abandons the attempt as soon as stop() (or a newer start()) supersedes
-  /// this session, so it can never resurrect a session the caller ended.
+  /// Re-opens only the recognizer socket that dropped. English and Urdu keep
+  /// independent retry ownership and budgets, so a failure in one channel
+  /// cannot suppress recovery of the other.
   Future<void> _reconnectSocket(String source, int generation) async {
-    if (_reconnecting) return;
-    _reconnecting = true;
+    if (!_recording || generation != _sessionGeneration) return;
+    if (_reconnectingSources.contains(source)) return;
+    _reconnectingSources.add(source);
     try {
-      while (_recording &&
-          generation == _sessionGeneration &&
-          _reconnectAttempts < _maxReconnectAttempts) {
-        _reconnectAttempts++;
+      while (_recording && generation == _sessionGeneration) {
+        final attempts = _reconnectAttempts[source] ?? 0;
+        if (attempts >= _maxReconnectAttempts) break;
+        _reconnectAttempts[source] = attempts + 1;
+
         await Future<void>.delayed(
-          Duration(milliseconds: 400 * _reconnectAttempts),
+          Duration(milliseconds: 400 * (attempts + 1)),
         );
         if (!_recording || generation != _sessionGeneration) return;
 
@@ -362,18 +353,20 @@ class EverydayBilingualSttService {
           _urduSocket = socket;
         }
         _listenToSocket(source, socket, generation);
-        _lastStartError = null;
-        _reconnectAttempts = 0;
+        _reconnectAttempts[source] = 0;
+        if (_recording && generation == _sessionGeneration) {
+          _lastStartError = null;
+        }
         return;
       }
 
       if (_recording && generation == _sessionGeneration) {
         _lastStartError =
-            'Speech recognition lost its connection and could not reconnect. '
+            'Speech recognition lost its $source connection and could not reconnect. '
             'Check your internet connection, then start listening again.';
       }
     } finally {
-      _reconnecting = false;
+      _reconnectingSources.remove(source);
     }
   }
 
@@ -497,7 +490,6 @@ class EverydayBilingualSttService {
     } else if (segment.hasUrdu && segment.hasLatin) {
       score += 0.08;
     }
-
     final roman = !segment.hasUrdu && segment.hasLatin && RomanUrduDetector.isRomanUrdu(segment.text);
     if (roman) score += 0.04;
     if (segment.text.length < 2) score -= 0.04;
@@ -606,13 +598,13 @@ class EverydayBilingualSttService {
   }
 
   Future<void> stop() async {
-    // Supersede any start() still in flight so it tears itself down instead
-    // of finishing after this stop() and reviving the session.
     ++_sessionGeneration;
     _emitTimer?.cancel();
     _finalTimer?.cancel();
     _emitTimer = null;
     _finalTimer = null;
+    _reconnectingSources.clear();
+    _reconnectAttempts.clear();
 
     if (_recording) {
       _recording = false;
