@@ -92,7 +92,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
             child: conv.state == ConversationState.idle
                 ? _buildIdleState(context, s)
                 : conv.state == ConversationState.saveDecision
-                    ? _buildSaveDecision(context, s)
+                    ? _buildEndDecision(context)
                     : _buildCaptionArea(context, conv, settings, s),
           ),
           if (conv.state == ConversationState.active)
@@ -263,7 +263,40 @@ class _EverydayScreenState extends State<EverydayScreen> {
     ]);
   }
 
-  Widget _buildSaveDecision(BuildContext context, AppStrings s) {
-    return Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.save_alt, size: 64, color: Theme.of(context).colorScheme.primary), const SizedBox(height: 24), Text(s.saveConversation, style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center), const SizedBox(height: 12), Text(s.saveConversationDesc, style: Theme.of(context).textTheme.bodyLarge, textAlign: TextAlign.center), const SizedBox(height: 32), PrimaryActionButton(label: s.save, icon: Icons.save, onPressed: () => context.read<ConversationProvider>().saveConversation()), const SizedBox(height: 12), SecondaryActionButton(label: s.delete, icon: Icons.delete_outline, onPressed: () => context.read<ConversationProvider>().deleteConversation()), const SizedBox(height: 12), TextButton(onPressed: () => context.read<ConversationProvider>().cancelStop(), child: Text(s.continueListening))])));
+  Widget _buildEndDecision(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.chat_bubble_outline, size: 64, color: theme.colorScheme.primary),
+            const SizedBox(height: 24),
+            Text(
+              'Conversation ended',
+              style: theme.textTheme.headlineMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'This conversation is temporary and is not saved. It will be cleared when you close it.',
+              style: theme.textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            PrimaryActionButton(
+              label: 'Done',
+              icon: Icons.check,
+              onPressed: () => context.read<ConversationProvider>().deleteConversation(),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => context.read<ConversationProvider>().cancelStop(),
+              child: Text(AppStrings.of(context).continueListening),
+            ),
+          ],
+        ),
+      ),
+    );
   }
-}
