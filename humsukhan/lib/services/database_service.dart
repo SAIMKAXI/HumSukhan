@@ -26,7 +26,7 @@ class DatabaseService {
     }
   }
 
-  Future<void> upsertInsight(ProfessionalInsight insight) async {
+  Future<void> upsertInsight(ProfessionalInsight insight, {required DateTime expiresAt}) async {
     if (!_isAvailable) return;
     final userId = _supabase.userId;
     if (userId.isEmpty) return;
@@ -51,7 +51,8 @@ class DatabaseService {
         'action_items': normalized.actionItems,
         'deadlines': normalized.deadlines,
         'mentioned_people': normalized.mentionedPeople,
-        'generated_at': normalized.generatedAt.toIso8601String(),
+        'generated_at': normalized.generatedAt.toUtc().toIso8601String(),
+        'expires_at': expiresAt.toUtc().toIso8601String(),
         'is_available': normalized.isAvailable,
       }, onConflict: 'session_id');
     } catch(e){debugPrint('Insight upsert error: $e');}
@@ -59,7 +60,10 @@ class DatabaseService {
   Future<ProfessionalInsight?> fetchInsight(String sessionId) async {
     if (!_isAvailable) return null;
     try {
-      final data=await _supabase.client!.from('insights').select().eq('session_id',sessionId).maybeSingle();
+      final data=await _supabase.client!.from('insights').select().eq('session_id', sessionId)
+          .eq('user_id', _supabase.userId)
+          .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+          .maybeSingle();
       if(data==null)return null;
       final rawBullets=data['summary_bullets'];
       final bullets=InsightNormalizer.dedupeSummary(
