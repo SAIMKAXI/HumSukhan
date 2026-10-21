@@ -139,7 +139,20 @@ class ProfessionalProvider extends ChangeNotifier {
   Future<void> _saveSessions() async { final prefs=await SharedPreferences.getInstance(); await prefs.setString(_sessionsKey,jsonEncode(_sessions.map((s)=>s.toJson()).toList())); }
   Future<void> _saveFolders() async { final prefs=await SharedPreferences.getInstance(); await prefs.setString(_foldersKey,jsonEncode(_folders.map((f)=>f.toJson()).toList())); }
   Future<void> _saveInsights() async { final prefs=await SharedPreferences.getInstance(); await prefs.setString(_insightsKey,jsonEncode(_canonicalizeInsights(_insights).map((i)=>i.toJson()).toList())); }
-  Future<void> _cleanExpiredSessions() async { final before=_sessions.length; _sessions.removeWhere((s)=>s.isExpired); if(_sessions.length!=before) await _saveSessions(); }
+  Future<void> _cleanExpiredSessions() async {
+    final expired = _sessions.where((s) => s.isExpired).toList();
+    if (expired.isEmpty) return;
+    final expiredIds = expired.map((s) => s.id).toSet();
+    _sessions.removeWhere((s) => expiredIds.contains(s.id));
+    _insights.removeWhere((i) => expiredIds.contains(i.sessionId));
+    await _saveSessions();
+    await _saveInsights();
+    if (SupabaseService.instance.isAuthenticated) {
+      for (final session in expired) {
+        await DatabaseService.instance.deleteInsight(session.id);
+      }
+    }
+  }
 
   Future<ProfessionalSession> createSession({required String title, required SessionType type, String? folderId, String captionLanguage='English', int retentionDays=7}) async {
     final session=ProfessionalSession(title:title,type:type,folderId:folderId,captionLanguage:captionLanguage,retentionDays:retentionDays.clamp(1,15));
@@ -233,7 +246,7 @@ class ProfessionalProvider extends ChangeNotifier {
       _insights.add(normalized);
       await _saveInsights();
       if (SupabaseService.instance.isAuthenticated) {
-        await DatabaseService.instance.upsertInsight(normalized);
+        await DatabaseService.instance.upsertInsight(normalized, expiresAt: session.expiresAt);
       }
     } catch (e) {
       debugPrint('Professional insight generation failed: $e');
