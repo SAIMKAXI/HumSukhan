@@ -26,6 +26,26 @@ alter table public.insights
   alter column expires_at set default (now() + interval '15 days'),
   alter column expires_at set not null;
 
+-- Remove legacy duplicate insight rows before enforcing one result per session.
+with ranked as (
+  select ctid,
+         row_number() over (
+           partition by session_id
+           order by generated_at desc nulls last, id desc
+         ) as rn
+  from public.insights
+)
+delete from public.insights i
+using ranked r
+where i.ctid = r.ctid and r.rn > 1;
+
+-- The app upserts by session_id, so make that conflict target explicit.
+create unique index if not exists insights_session_id_unique_idx
+  on public.insights (session_id);
+
+-- The old non-unique index duplicates the new unique index.
+drop index if exists public.idx_insights_session_id;
+
 -- Insights must survive removal of their local-only parent session row.
 alter table public.insights
   drop constraint if exists insights_session_id_fkey;
