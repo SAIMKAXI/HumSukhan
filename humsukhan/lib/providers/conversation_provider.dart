@@ -212,13 +212,9 @@ class ConversationProvider extends ChangeNotifier {
   void commitSpeakerTurn({bool notify = true}) {
     // The draft text is already kept current by updateSpeakerTurn(), which the
     // caller feeds from the recognizer that is actually running. This used to
-    // additionally overwrite the draft with
-    // DeepgramTranscriptionService.instance.lastFinalTranscript -- a singleton
-    // belonging to a *different* STT implementation (the EnhancedSpeechProvider
-    // fallback) that Everyday Mode never starts, and which is only ever cleared
-    // inside that service's own start(). So it held a stale utterance and every
-    // committed caption was replaced by it, which is why the transcript kept
-    // repeating the first recognised phrase instead of the new speech.
+    // additionally overwrite the draft with the last final transcript of a
+    // different recognizer, which held a stale utterance, so the transcript
+    // kept repeating the first recognised phrase instead of the new speech.
     final draft = _activeSpeakerDraft;
     _partialCommitTimer?.cancel();
     _partialCommitTimer = null;

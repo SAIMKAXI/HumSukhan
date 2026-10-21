@@ -160,4 +160,12 @@ void main() {
     expect(await monitor.releaseMicrophone(), isTrue);
     expect(monitor.status, MonitoringStatus.off);
   });
+
+  test('foreground speech stops monitoring this side has not heard about yet', () async {
+    // Started from the Quick Settings tile; no event reached the app.
+    native.state = 'ACTIVE';
+    native.onStop = () => native.state = 'OFF';
+    expect(await monitor.releaseMicrophone(), isTrue);
+    expect(native.calls, contains('stop'));
+  });
 }

@@ -5,13 +5,16 @@ import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
+import 'cloud_chunk_stt.dart' show UtteranceSegmenter;
 import 'model_manager.dart';
+import 'offline_batch_worker.dart';
 
 /// Sherpa-ONNX based offline STT provider.
 ///
-/// English uses streaming Zipformer. Urdu/Hindi uses the Dolphin CTC
-/// offline recognizer. The provider never reports listening until the
-/// recorder and recognizer have both started successfully.
+/// English uses streaming Zipformer. Urdu uses Whisper held to Urdu, which
+/// recognizes one sentence at a time after the speaker pauses. The provider
+/// never reports listening until the recorder and recognizer have both
+/// started successfully.
 class SherpaSTTProvider {
   final StreamController<SherpaSTTResult> _controller =
       StreamController<SherpaSTTResult>.broadcast();
@@ -25,11 +28,11 @@ class SherpaSTTProvider {
   STTMode _currentMode = STTMode.none;
   sherpa_onnx.OnlineRecognizer? _onlineRecognizer;
   sherpa_onnx.OnlineStream? _onlineStream;
-  sherpa_onnx.OfflineRecognizer? _offlineRecognizer;
+  OfflineBatchWorker? _batchWorker;
+  UtteranceSegmenter? _segmenter;
   StreamSubscription<List<int>>? _audioSubscription;
   final int _sampleRate = 16000;
   String _lastFinalText = '';
-  final List<int> _batchAudioBuffer = <int>[];
 
   // Lightweight voice-activity gate used by the streaming path. It learns a
   // quiet ambient-noise floor and prevents very low-energy background noise
@@ -75,6 +78,27 @@ class SherpaSTTProvider {
     }
   }
 
+  static sherpa_onnx.OnlineRecognizerConfig streamingConfig(LanguageModel model, String modelPath) =>
+      sherpa_onnx.OnlineRecognizerConfig(
+        model: sherpa_onnx.OnlineModelConfig(
+          transducer: sherpa_onnx.OnlineTransducerModelConfig(
+            encoder: '$modelPath/${model.encoder}',
+            decoder: '$modelPath/${model.decoder}',
+            joiner: '$modelPath/${model.joiner}',
+          ),
+          tokens: '$modelPath/${model.tokens}',
+        ),
+        enableEndpoint: true,
+        ruleFsts: '',
+      );
+
+  static WhisperModelFiles whisperFiles(LanguageModel model, String modelPath) => WhisperModelFiles(
+        encoder: '$modelPath/${model.encoder}',
+        decoder: '$modelPath/${model.decoder}',
+        tokens: '$modelPath/${model.tokens}',
+        language: model.whisperLanguage,
+      );
+
   Future<void> _configureForLanguage(String language) async {
     _releaseRecognizers();
     final model = _modelManager.getBestModel(language);
@@ -93,34 +117,11 @@ class SherpaSTTProvider {
     _currentLanguage = language;
     if (model.isStreaming) {
       _currentMode = STTMode.sherpaStreaming;
-      _onlineRecognizer = sherpa_onnx.OnlineRecognizer(
-        sherpa_onnx.OnlineRecognizerConfig(
-          model: sherpa_onnx.OnlineModelConfig(
-            transducer: sherpa_onnx.OnlineTransducerModelConfig(
-              encoder: '$modelPath/${model.encoder}',
-              decoder: '$modelPath/${model.decoder}',
-              joiner: '$modelPath/${model.joiner}',
-            ),
-            tokens: '$modelPath/${model.tokens}',
-          ),
-          enableEndpoint: true,
-          ruleFsts: '',
-        ),
-      );
+      _onlineRecognizer = sherpa_onnx.OnlineRecognizer(streamingConfig(model, modelPath));
       _onlineStream = _onlineRecognizer!.createStream();
     } else {
-      // Dolphin is a CTC model. Do not configure it as Paraformer.
       _currentMode = STTMode.sherpaBatch;
-      _offlineRecognizer = sherpa_onnx.OfflineRecognizer(
-        sherpa_onnx.OfflineRecognizerConfig(
-          model: sherpa_onnx.OfflineModelConfig(
-            dolphin: sherpa_onnx.OfflineDolphinModelConfig(
-              model: '$modelPath/${model.modelFile ?? 'model.int8.onnx'}',
-            ),
-            tokens: '$modelPath/${model.tokens}',
-          ),
-        ),
-      );
+      _batchWorker = await OfflineBatchWorker.start(whisperFiles(model, modelPath));
     }
     _available = true;
   }
@@ -163,8 +164,7 @@ class SherpaSTTProvider {
 
       _listening = true;
       _lastFinalText = '';
-      _batchAudioBuffer.clear();
-      _noiseFloorRms = 0.0;
+        _noiseFloorRms = 0.0;
       _speechActive = false;
       _lastVoiceAt = null;
 
@@ -179,20 +179,17 @@ class SherpaSTTProvider {
           onError: (e) => debugPrint('STT audio error: $e'),
         );
       } else if (_currentMode == STTMode.sherpaBatch) {
-        if (_offlineRecognizer == null) {
+        final worker = _batchWorker;
+        if (worker == null) {
           _listening = false;
           return;
         }
+        final segmenter = UtteranceSegmenter(onUtterance: (pcm) => unawaited(_transcribeUtterance(worker, pcm)));
+        _segmenter = segmenter;
         final stream = await _audioRecorder.startStream(config);
         _audioSubscription = stream.listen(
           (data) {
-            if (!_listening) return;
-            _batchAudioBuffer.addAll(data);
-            if (_batchAudioBuffer.length >= _sampleRate * 3 * 2) {
-              final chunk = Uint8List.fromList(_batchAudioBuffer);
-              _batchAudioBuffer.clear();
-              _processBatchChunk(chunk);
-            }
+            if (_listening) segmenter.add(Uint8List.fromList(data));
           },
           onError: (e) => debugPrint('STT batch audio error: $e'),
         );
@@ -204,7 +201,6 @@ class SherpaSTTProvider {
       debugPrint('Failed to start listening: $e');
       _listening = false;
       await _safeStopRecorder();
-      _batchAudioBuffer.clear();
     }
   }
 
@@ -285,35 +281,16 @@ class SherpaSTTProvider {
     }
   }
 
-  void _processBatchChunk(Uint8List audioData) {
-    if (!_listening || _offlineRecognizer == null || audioData.isEmpty) return;
-    try {
-      final stream = _offlineRecognizer!.createStream();
-      stream.acceptWaveform(
-        samples: _convertBytesToFloat32(audioData),
-        sampleRate: _sampleRate,
-      );
-      _offlineRecognizer!.decode(stream);
-      final result = _offlineRecognizer!.getResult(stream);
-      stream.free();
-      if (result.text.isNotEmpty) {
-        _controller.add(SherpaSTTResult(
-          text: result.text,
-          isFinal: true,
-          confidence: 0.85,
-        ));
-      }
-    } catch (e) {
-      debugPrint('Batch processing error: $e');
-    }
+  Future<void> _transcribeUtterance(OfflineBatchWorker worker, Uint8List pcm) async {
+    final text = await worker.transcribe(pcm);
+    if (text.isEmpty || _controller.isClosed) return;
+    _controller.add(SherpaSTTResult(text: text, isFinal: true, confidence: 0.85));
   }
 
   Future<void> stopListening() async {
-    if (_currentMode == STTMode.sherpaBatch && _batchAudioBuffer.isNotEmpty) {
-      final finalChunk = Uint8List.fromList(_batchAudioBuffer);
-      _batchAudioBuffer.clear();
-      _processBatchChunk(finalChunk);
-    }
+    // Transcribe what was still being said when listening stopped.
+    _segmenter?.flush();
+    _segmenter = null;
 
     _listening = false;
     await _audioSubscription?.cancel();
@@ -362,17 +339,26 @@ class SherpaSTTProvider {
   void _releaseRecognizers() {
     _onlineStream?.free();
     _onlineRecognizer?.free();
-    _offlineRecognizer?.free();
+    _batchWorker?.dispose();
     _onlineStream = null;
     _onlineRecognizer = null;
-    _offlineRecognizer = null;
+    _batchWorker = null;
+  }
+
+  /// A model was downloaded or deleted: load it, or let go of it, on the
+  /// next start instead of keeping the state found at startup.
+  Future<void> reloadModels() async {
+    if (_listening) await stopListening();
+    _releaseRecognizers();
+    _available = _modelManager.isModelReady(_currentLanguage);
+    _currentMode = STTMode.none;
   }
 
   void dispose() {
     _audioSubscription?.cancel();
     _audioSubscription = null;
     _safeStopRecorder();
-    _batchAudioBuffer.clear();
+    _segmenter = null;
     _releaseRecognizers();
     _controller.close();
   }

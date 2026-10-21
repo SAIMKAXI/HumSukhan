@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -61,6 +61,76 @@ class _TranscriptSegment {
   bool get hasLatin => EverydayLanguagePolicy.containsLatin(text);
 }
 
+/// Notices a recognizer that is open but captioning nothing.
+///
+/// A socket can stay open while nothing useful comes back: the microphone
+/// delivers only zeros because something else holds it, or the service
+/// accepts audio and returns no words. Either way the screen would show
+/// "listening" and never caption anything. [onStall] fires once per [reset].
+class CaptionWatchdog {
+  CaptionWatchdog({
+    required this.onStall,
+    this.silentMicrophoneLimit = const Duration(seconds: 3),
+    this.speechWithoutCaptionLimit = const Duration(seconds: 10),
+    this.speechRms = 0.03,
+  });
+
+  final void Function(String reason) onStall;
+  final Duration silentMicrophoneLimit;
+  final Duration speechWithoutCaptionLimit;
+  final double speechRms;
+
+  int _silentMs = 0;
+  int _speechWithoutCaptionMs = 0;
+  bool _heardAnything = false;
+  bool _stalled = false;
+
+  void reset() {
+    _silentMs = 0;
+    _speechWithoutCaptionMs = 0;
+    _heardAnything = false;
+    _stalled = false;
+  }
+
+  /// Words came back.
+  void captioned() => _speechWithoutCaptionMs = 0;
+
+  /// One chunk of the 16 kHz PCM16 sent to the recognizer.
+  void audio(Uint8List pcm) {
+    final samples = pcm.length ~/ 2;
+    if (_stalled || samples == 0) return;
+    final ms = samples ~/ 16;
+    final view = ByteData.sublistView(pcm);
+    var loud = false;
+    var sum = 0.0;
+    for (var i = 0; i < samples; i++) {
+      final v = view.getInt16(i * 2, Endian.little);
+      if (v != 0) loud = true;
+      sum += (v / 32768) * (v / 32768);
+    }
+    if (loud) _heardAnything = true;
+    if (!_heardAnything) {
+      _silentMs += ms;
+      if (_silentMs >= silentMicrophoneLimit.inMilliseconds) {
+        _stall('The microphone is sending silence, so nothing can be captioned. '
+            'Another app or feature may be using it.');
+      }
+      return;
+    }
+    if (math.sqrt(sum / samples) >= speechRms) {
+      _speechWithoutCaptionMs += ms;
+      if (_speechWithoutCaptionMs >= speechWithoutCaptionLimit.inMilliseconds) {
+        _stall('The cloud recognizer is not returning captions.');
+      }
+    }
+  }
+
+  void _stall(String reason) {
+    _stalled = true;
+    onStall(reason);
+  }
+}
+
 /// Everyday Mode bilingual live recognizer.
 ///
 /// Auto mode keeps English + Urdu recognizers warm over the same PCM stream,
@@ -99,6 +169,12 @@ class EverydayBilingualSttService {
   final Map<String, int> _reconnectAttempts = <String, int>{};
 
   static const int _maxReconnectAttempts = 3;
+
+  late final CaptionWatchdog _watchdog = CaptionWatchdog(onStall: (reason) {
+    _lastStartError = reason;
+    debugPrint('Everyday STT stalled: $reason');
+    _connectionLost.add(reason);
+  });
 
   List<_WordToken> _englishWords = const [];
   List<_WordToken> _urduWords = const [];
@@ -271,11 +347,13 @@ class EverydayBilingualSttService {
         return false;
       }
       _recording = true;
+      _watchdog.reset();
       _audioSubscription = stream.listen(
         (data) {
           if (!_recording) return;
           if (_englishSocket?.readyState == WebSocket.open) _englishSocket!.add(data);
           if (_urduSocket?.readyState == WebSocket.open) _urduSocket!.add(data);
+          _watchdog.audio(data);
         },
         onError: (Object error) {
           _lastStartError = 'Android microphone stream failed: $error';
@@ -300,6 +378,22 @@ class EverydayBilingualSttService {
         return 'Auto';
     }
   }
+
+  /// Starts arbitrating [mode] without a microphone or sockets, so tests can
+  /// feed recognizer messages to [debugReceive].
+  @visibleForTesting
+  void debugBegin(String mode) {
+    _mode = _normalizeMode(mode);
+    _recording = true;
+    _englishWords = const [];
+    _urduWords = const [];
+    _englishInterim = '';
+    _urduInterim = '';
+    _lastEmitted = '';
+  }
+
+  @visibleForTesting
+  void debugReceive(String source, String message) => _handleSocketMessage(source, message);
 
   void _listenToSocket(String source, WebSocket socket, int generation) {
     final subscription = socket.listen(
@@ -391,6 +485,7 @@ class EverydayBilingualSttService {
       final alternative = Map<String, dynamic>.from(alternatives.first as Map);
       final rawTranscript = alternative['transcript']?.toString().trim() ?? '';
       if (rawTranscript.isEmpty) return;
+      _watchdog.captioned();
       final confidence = (alternative['confidence'] as num?)?.toDouble() ?? 0.0;
       final words = _parseWords(alternative['words'], source);
       final isFinal = data['is_final'] == true;
@@ -490,25 +585,37 @@ class EverydayBilingualSttService {
     return a.start < b.end - _overlapToleranceSeconds && b.start < a.end - _overlapToleranceSeconds;
   }
 
+  /// In Auto, the English recognizer writes Urdu speech out phonetically.
+  /// Roman Urdu from it is the clearest sign that Urdu was spoken, so the
+  /// Urdu recognizer's transcript of the same words is the one to show.
+  bool _englishHeardUrdu = false;
+
   double _score(_TranscriptSegment segment) {
     var score = segment.confidence.clamp(0.0, 1.0).toDouble();
     if (_mode == 'English') {
       score += segment.hasLatin ? 0.18 : -0.12;
     } else if (_mode == 'Urdu') {
       score += segment.hasUrdu ? 0.18 : -0.12;
+    } else if (_englishHeardUrdu) {
+      score += segment.source == 'Urdu' ? 0.15 : -0.15;
     } else if (segment.hasUrdu && segment.hasLatin) {
       score += 0.08;
     }
     final roman = !segment.hasUrdu && segment.hasLatin && RomanUrduDetector.isRomanUrdu(segment.text);
-    if (roman) score += 0.04;
+    if (roman && _mode != 'Auto') score += 0.04;
     if (segment.text.length < 2) score -= 0.04;
     return score;
   }
 
   List<_TranscriptSegment> _arbitrateSegments() {
+    final english = _segment(_englishWords);
+    final urdu = _segment(_urduWords);
+    _englishHeardUrdu = _mode == 'Auto' &&
+        urdu.isNotEmpty &&
+        RomanUrduDetector.isRomanUrdu(english.map((segment) => segment.text).join(' '));
     final candidates = <_TranscriptSegment>[
-      ..._segment(_englishWords),
-      ..._segment(_urduWords),
+      ...english,
+      ...urdu,
     ]..sort((a, b) {
       final start = a.start.compareTo(b.start);
       return start != 0 ? start : _score(b).compareTo(_score(a));
