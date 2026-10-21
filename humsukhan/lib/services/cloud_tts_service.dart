@@ -28,35 +28,58 @@ class CloudTtsException implements Exception {
   String toString() => 'CloudTtsException($message, $provider, $statusCode)';
 }
 
+/// Calls a speech-synthesis Edge Function and returns its JSON body.
+typedef TtsFunctionInvoker = Future<Object?> Function(String function, Map<String, dynamic> body);
+
+/// Cloud voices, used when the device has no voice for the language.
+///
+/// `speech-synthesis` is the primary. `speech-synthesis-v2` is a second,
+/// independently deployed function with the same contract, tried when the
+/// first fails for a reason a second attempt could get past — a timeout, a
+/// network error, or a provider outage. A request the server rejected as
+/// such (no text, not signed in) is not retried: the backup would refuse it
+/// the same way.
 class CloudTtsService {
   static CloudTtsService? _instance;
-  static CloudTtsService get instance => _instance ??= CloudTtsService._();
-  CloudTtsService._();
+  static CloudTtsService get instance => _instance ??= CloudTtsService._(_invokeSupabase);
+  CloudTtsService._(this._invoke);
+
+  @visibleForTesting
+  CloudTtsService.withInvoker(TtsFunctionInvoker invoke) : _invoke = invoke;
+
+  static const functions = ['speech-synthesis', 'speech-synthesis-v2'];
+
+  final TtsFunctionInvoker _invoke;
 
   Future<CloudTtsResult> synthesize({
     required String text,
     required String language,
   }) async {
-    final client = SupabaseService.instance.client;
-    if (client == null || client.auth.currentSession == null) {
-      throw const CloudTtsException('Authenticated Supabase session unavailable');
+    CloudTtsException? failure;
+    for (final function in functions) {
+      try {
+        return await _synthesizeWith(function, text: text, language: language);
+      } on CloudTtsException catch (e) {
+        failure = e;
+        if (!_worthRetrying(e)) rethrow;
+        if (function != functions.last) debugPrint('Cloud TTS $function failed ($e); trying the backup.');
+      }
     }
+    throw failure!;
+  }
 
+  static bool _worthRetrying(CloudTtsException e) {
+    final status = e.statusCode;
+    return status != 400 && status != 401 && status != 403 && e.message != _noSession;
+  }
+
+  static const _noSession = 'Authenticated Supabase session unavailable';
+
+  Future<CloudTtsResult> _synthesizeWith(String function, {required String text, required String language}) async {
     try {
-      // This must match the deployed Edge Function. Provider selection and
-      // credentials stay server-side; the device must not probe Deepgram.
-      final response = await client.functions
-          .invoke(
-            'speech-synthesis',
-            body: {'text': text, 'language': language},
-          )
-          .timeout(const Duration(seconds: 8));
-
-      final data = response.data;
+      final data = await _invoke(function, {'text': text, 'language': language});
       if (data is! Map) {
-        throw const CloudTtsException(
-          'Speech service returned an invalid response',
-        );
+        throw const CloudTtsException('Speech service returned an invalid response');
       }
 
       final map = Map<String, dynamic>.from(data);
@@ -85,15 +108,26 @@ class CloudTtsService {
         provider: map['provider']?.toString() ?? 'cloud',
       );
     } on FunctionException catch (e) {
-      debugPrint('Cloud TTS function failed: ${e.details}');
+      debugPrint('Cloud TTS function $function failed: ${e.details}');
       throw CloudTtsException(
         e.details?.toString() ?? e.reasonPhrase ?? 'Cloud speech synthesis failed',
         statusCode: e.status,
       );
     } catch (e) {
       if (e is CloudTtsException) rethrow;
-      debugPrint('Cloud TTS request failed: $e');
+      debugPrint('Cloud TTS request to $function failed: $e');
       throw CloudTtsException(e.toString());
     }
+  }
+
+  static Future<Object?> _invokeSupabase(String function, Map<String, dynamic> body) async {
+    final client = SupabaseService.instance.client;
+    if (client == null || client.auth.currentSession == null) {
+      throw const CloudTtsException(_noSession);
+    }
+    // Provider selection and credentials stay server-side; the device must
+    // not probe Deepgram or Soniox directly.
+    final response = await client.functions.invoke(function, body: body).timeout(const Duration(seconds: 8));
+    return response.data;
   }
 }

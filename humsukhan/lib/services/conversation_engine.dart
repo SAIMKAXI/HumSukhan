@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../providers/conversation_provider.dart';
 import '../providers/everyday_speech_provider.dart';
+import 'speech_engine.dart';
 import 'stt/enhanced_stt.dart';
 
 enum ConversationEngineState {
@@ -34,7 +35,7 @@ class ConversationEngine extends ChangeNotifier {
   final ConversationProvider conversation;
 
   ConversationEngine({required this.speech, required this.conversation}) {
-    _subscription = speech.onResult.listen(_handleSpeechResult);
+    _subscription = speech.onResult.listen(_handleSpeechResult, onError: _handleSpeechInterrupted);
     unawaited(_loadPausePreference());
   }
 
@@ -194,6 +195,29 @@ class ConversationEngine extends ChangeNotifier {
     _enqueue(_stopListening);
   }
 
+  /// Recognition stopped by itself mid-turn and nothing could take over.
+  /// Keep what was already captioned, and say why the microphone stopped
+  /// rather than go on showing it as listening.
+  void _handleSpeechInterrupted(Object error) {
+    if (_disposed) return;
+    final live = _state == ConversationEngineState.listening ||
+        _state == ConversationEngineState.speechActive ||
+        _state == ConversationEngineState.waitingForTurnEnd;
+    if (!live) return;
+    _cancelSilenceTimer();
+    _turnGeneration++;
+    final transcript = _latestTranscript.trim();
+    if (transcript.isNotEmpty) {
+      conversation.updateSpeakerTurn(transcript, language: _latestLanguage);
+    }
+    conversation.commitSpeakerTurn();
+    _latestTranscript = '';
+    _settledTurnText = '';
+    _state = ConversationEngineState.error;
+    _errorMessage = error is SpeechInterruption ? error.message : 'Live speech recognition stopped.';
+    notifyListeners();
+  }
+
   Future<void> _stopListening() async {
     final generation = _turnGeneration;
 
@@ -242,43 +266,6 @@ class ConversationEngine extends ChangeNotifier {
     }
     _errorMessage = null;
     notifyListeners();
-  }
-
-  void speakLastUtterance() => _enqueue(_speakLastUtterance);
-
-  Future<void> _speakLastUtterance() async {
-    if (conversation.state != ConversationState.active) return;
-    if (speech.isListening) await _stopListening();
-
-    Caption? lastSpeakerCaption;
-    for (final caption in conversation.captions.reversed) {
-      if (!caption.isOwn && caption.text.trim().isNotEmpty) {
-        lastSpeakerCaption = caption;
-        break;
-      }
-    }
-    if (lastSpeakerCaption == null) return;
-
-    _state = ConversationEngineState.speaking;
-    notifyListeners();
-    try {
-      await speech.speak(lastSpeakerCaption.text, language: lastSpeakerCaption.language);
-      await speech.startListening(language: 'Auto');
-      if (speech.isListening && conversation.state == ConversationState.active) {
-        conversation.beginSpeakerTurn(language: 'Auto');
-        _state = ConversationEngineState.listening;
-        _errorMessage = null;
-      } else {
-        _state = ConversationEngineState.error;
-        _errorMessage = speech.lastStartError ?? 'Listening could not be resumed after speaking.';
-      }
-    } catch (e) {
-      _state = ConversationEngineState.error;
-      _errorMessage = 'Listening could not be resumed after speaking.';
-      debugPrint('ConversationEngine replay/resume error: $e');
-    } finally {
-      notifyListeners();
-    }
   }
 
   static String _joinTurn(String settled, String addition) =>

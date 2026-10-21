@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
+import '../widgets/quick_reply_manager.dart';
+import '../modules/environmental_alerts/models/environmental_sound.dart';
 import '../widgets/modern_ui.dart';
 import '../l10n/app_strings.dart';
 
@@ -68,16 +70,52 @@ class SettingsScreen extends StatelessWidget {
         _SectionHeader(title: s.speechRecognition),
         const _SpeechModelsSection(),
         _SectionHeader(title: s.environmentalAlerts),
-        ...settings.allowedAlerts.entries.map((entry) => SwitchListTile(title: Text(entry.key), value: entry.value, onChanged: (_) => settings.toggleAllowedAlert(entry.key))),
+        ...settings.allowedAlerts.entries.map((entry) => SwitchListTile(title: Text(EnvironmentalSound.nameFor(entry.key, urdu: s.isUrdu)), value: entry.value, onChanged: (_) => settings.toggleAllowedAlert(entry.key))),
+        _SectionHeader(title: s.quickRepliesSection),
+        ListTile(
+          leading: const Icon(Icons.bolt_outlined),
+          title: Text(s.manageQuickReplies),
+          subtitle: Text(s.manageQuickRepliesDesc),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => showQuickReplyManager(context),
+        ),
         _SectionHeader(title: '${s.privacySection} & ${s.defaultRetention}'),
         ListTile(title: Text(s.defaultRetentionPeriod), subtitle: Text('${settings.defaultRetentionDays} ${s.days}'), trailing: const Icon(Icons.chevron_right), onTap: () => _showRetentionDialog(context, settings, s)),
         _SectionHeader(title: s.privacySection),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: PrivacyNotice(text: s.privacyNoticeText)),
+        ListTile(
+          leading: Icon(Icons.restart_alt, color: theme.colorScheme.error),
+          title: Text(s.resetSettings),
+          subtitle: Text(s.resetSettingsDesc),
+          onTap: () => _confirmReset(context, settings, s),
+        ),
         _SectionHeader(title: s.aboutSection),
         const _AboutSection(),
         const SizedBox(height: 32),
       ]),
     );
+  }
+
+  Future<void> _confirmReset(BuildContext context, SettingsProvider settings, AppStrings s) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(s.resetSettings),
+        content: Text(s.resetSettingsConfirm),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(s.cancel)),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(s.resetAction, style: TextStyle(color: Theme.of(dialogContext).colorScheme.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await settings.resetToDefaults();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.settingsWereReset)));
+    }
   }
 
   Future<void> _setFlashlightAlerts(

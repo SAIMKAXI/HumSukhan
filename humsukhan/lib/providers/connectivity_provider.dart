@@ -74,12 +74,6 @@ class ConnectivityProvider extends ChangeNotifier {
     }
   }
 
-  /// Force an immediate connectivity check.
-  Future<void> checkNow() async {
-    _updateStatus(ConnectivityStatus.checking);
-    await _checkConnectivity();
-  }
-
   @override
   void dispose() {
     _periodicTimer?.cancel();

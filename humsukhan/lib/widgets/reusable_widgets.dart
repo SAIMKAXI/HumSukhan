@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../l10n/app_strings.dart';
+import '../modules/environmental_alerts/models/environmental_sound.dart';
 
 // ===== STATUS INDICATOR =====
 class StatusIndicator extends StatelessWidget {
@@ -68,17 +69,21 @@ class OfflineBadge extends StatelessWidget {
 class QuickReplyChip extends StatelessWidget {
   final QuickReply reply;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool isHighContrast;
-  const QuickReplyChip({super.key, required this.reply, required this.onTap, this.isHighContrast = false});
+  const QuickReplyChip({super.key, required this.reply, required this.onTap, this.onLongPress, this.isHighContrast = false});
 
   @override
   Widget build(BuildContext context) {
-    return ActionChip(
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: ActionChip(
       label: Text(reply.text, style: TextStyle(color: isHighContrast ? AppTokens.warmIvory : AppTokens.textDeepForest, fontWeight: FontWeight.w500)),
       avatar: reply.isFavorite ? const Icon(Icons.star, size: 16, color: AppTokens.warning) : null,
       backgroundColor: isHighContrast ? AppTokens.darkForest : AppTokens.softCream,
       side: BorderSide(color: isHighContrast ? AppTokens.softSage : AppTokens.borderSage),
       onPressed: onTap,
+      ),
     );
   }
 }
@@ -204,6 +209,7 @@ class AlertCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     final severityColor = AppTheme.alertColor(event.severity);
     return Card(
       child: ListTile(
@@ -213,8 +219,8 @@ class AlertCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(AppTokens.radiusSm)),
           child: Icon(_alertIcon(event.type), color: severityColor, size: 24),
         ),
-        title: Text(event.type, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTokens.textDeepForest)),
-        subtitle: Text('${(event.confidence * 100).toInt()}% confidence • ${_formatTime(event.timestamp)}',
+        title: Text(EnvironmentalSound.nameFor(event.type, urdu: s.isUrdu), style: const TextStyle(fontWeight: FontWeight.w600, color: AppTokens.textDeepForest)),
+        subtitle: Text('${(event.confidence * 100).toInt()}% ${s.confidence} • ${_formatTime(event.timestamp)}',
             style: const TextStyle(fontSize: 12, color: AppTokens.textMuted)),
         trailing: event.dismissed
             ? const Icon(Icons.check_circle, color: AppTokens.deepSage, size: 20)
@@ -224,13 +230,9 @@ class AlertCard extends StatelessWidget {
   }
 
   IconData _alertIcon(String type) => switch (type) {
-    'Fire Alarm' || 'Smoke Alarm' => Icons.local_fire_department,
     'Siren' => Icons.emergency,
     'Doorbell' => Icons.doorbell,
     'Knock' => Icons.back_hand,
-    'Phone' => Icons.phone,
-    'Alarm Clock' => Icons.alarm,
-    'Baby Cry' => Icons.child_care,
     _ => Icons.volume_up,
   };
 
@@ -359,61 +361,6 @@ class SecondaryActionButton extends StatelessWidget {
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(double.infinity, 52),
         side: const BorderSide(color: AppTokens.deepSage),
-      ),
-    );
-  }
-}
-
-// ===== CAPTION BUBBLE =====
-class CaptionBubble extends StatelessWidget {
-  final Caption caption;
-  final double textSize;
-  final bool isHighContrast;
-  const CaptionBubble({super.key, required this.caption, this.textSize = 16.0, this.isHighContrast = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bubbleColor = AppTheme.captionBubbleColor(isOwn: caption.isOwn, isDarkMode: isDark);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-      child: Column(
-        crossAxisAlignment: caption.isOwn ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(caption.speaker, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTokens.deepSage)),
-              const SizedBox(width: 8),
-              Text('${caption.timestamp.hour.toString().padLeft(2, '0')}:${caption.timestamp.minute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(fontSize: 11, color: AppTokens.textMuted)),
-            ]),
-          ),
-          Container(
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: bubbleColor,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(16), topRight: const Radius.circular(16),
-                bottomLeft: Radius.circular(caption.isOwn ? 16 : 4),
-                bottomRight: Radius.circular(caption.isOwn ? 4 : 16),
-              ),
-              border: isHighContrast ? Border.all(color: AppTokens.pureWhite, width: 1) : null,
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(caption.text, style: TextStyle(
-                fontSize: textSize,
-                color: isHighContrast ? AppTokens.pureWhite : AppTokens.textDeepForest,
-                fontWeight: caption.isPartial ? FontWeight.normal : FontWeight.w500,
-                fontStyle: caption.isPartial ? FontStyle.italic : FontStyle.normal,
-              )),
-              if (caption.language.isNotEmpty && caption.language != 'English')
-                Padding(padding: const EdgeInsets.only(top: 4), child: LanguageBadge(language: caption.language)),
-            ]),
-          ),
-        ],
       ),
     );
   }

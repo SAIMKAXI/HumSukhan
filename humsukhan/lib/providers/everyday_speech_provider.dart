@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../services/everyday_bilingual_stt.dart';
 import '../services/everyday_language_policy.dart';
-import '../services/environmental_monitoring_bridge.dart';
+import '../modules/environmental_alerts/services/environmental_monitor.dart';
 import '../services/roman_urdu_detector.dart';
 import '../services/speech_capability.dart';
 import '../services/speech_engine.dart';
@@ -26,15 +26,14 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   final StreamController<SpeechResultEvent> _results = StreamController<SpeechResultEvent>.broadcast();
   final ModelManager _modelManager = ModelManager.instance;
   final SpeechCapability _capability = SpeechCapability.instance;
-  final EnvironmentalMonitoringBridge _environmentalBridge = EnvironmentalMonitoringBridge.instance;
 
   StreamSubscription<EverydayBilingualResult>? _bilingualSubscription;
   StreamSubscription<SpeechResultEvent>? _fallbackSubscription;
+  StreamSubscription<String>? _connectionLostSubscription;
   bool _initialized = false;
   bool _listening = false;
   bool _startingListening = false;
   bool _usingFallback = false;
-  bool _forceFallbackMode = false;
   bool _speaking = false;
   String _language = 'Auto';
   String _lastSpoken = '';
@@ -60,7 +59,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   bool get isStreamingMode => _currentMode == STTMode.sherpaStreaming;
   bool get isBatchMode => _currentMode == STTMode.sherpaBatch;
   bool get isOnlineMode => _currentMode == STTMode.platform;
-  bool get isDemoMode => false;
   bool get isLiveStt => _listening;
   EnhancedSpeechProvider get sttProvider => _fallbackStt;
   Stream<SpeechResultEvent> get onResult => _results.stream;
@@ -72,8 +70,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         return 'Offline (Batch)';
       case STTMode.platform:
         return _usingFallback ? 'Platform fallback' : 'Online';
-      case STTMode.demo:
-        return 'Demo Mode';
+      case STTMode.cloudBatch:
+        return 'Cloud (backup)';
       case STTMode.none:
         return 'Unavailable';
     }
@@ -92,8 +90,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         return _usingFallback
             ? 'Using the device speech recognizer after the primary Everyday recognizer became unavailable.'
             : 'Online bilingual speech recognition.';
-      case STTMode.demo:
-        return 'Demo mode with simulated captions.';
+      case STTMode.cloudBatch:
+        return 'This device has no speech recognizer for the language, so speech is recognized in the cloud after each pause.';
       case STTMode.none:
         return 'Speech recognition unavailable.';
     }
@@ -131,7 +129,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       // Environmental monitoring uses a dedicated native microphone capture
       // path, including when it was started from Quick Settings. Release that
       // capture completely before opening foreground speech recognition.
-      final released = await _environmentalBridge.releaseForForegroundSpeech();
+      final released = await EnvironmentalMonitoring.releaseForForegroundSpeech();
       if (!released) {
         throw StateError('Environmental monitoring could not release the microphone for speech recognition.');
       }
@@ -143,13 +141,9 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       _currentMode = STTMode.platform;
       _usingFallback = false;
 
-      if (_forceFallbackMode) {
-        await _startFallback(_language == 'Auto' ? 'English' : _language);
-        return;
-      }
-
       await _bilingualSubscription?.cancel();
       _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
+      _connectionLostSubscription ??= _bilingual.onConnectionLost.listen(_onBilingualConnectionLost);
       final started = await _bilingual.start(mode: _language);
       if (started) {
         _listening = true;
@@ -162,6 +156,22 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       await _startFallback(_language == 'Auto' ? 'English' : _language);
     } finally {
       _startingListening = false;
+    }
+  }
+
+  /// The cloud recognizer dropped mid-conversation and could not reconnect.
+  /// Carry on captioning with the device recognizer rather than leave the
+  /// microphone open with nothing turning it into text; only if that cannot
+  /// start either is the conversation told that listening has stopped.
+  Future<void> _onBilingualConnectionLost(String message) async {
+    if (_disposed || !_listening || _usingFallback || _startingListening) return;
+    await _bilingualSubscription?.cancel();
+    _bilingualSubscription = null;
+    await _bilingual.stop();
+    _listening = false;
+    await _startFallback(_language == 'Auto' ? 'English' : _language);
+    if (!_listening && !_results.isClosed) {
+      _results.addError(SpeechInterruption(_lastStartError ?? message));
     }
   }
 
@@ -192,7 +202,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     });
 
     try {
-      await _fallbackStt.startListening(language: language);
+      await _fallbackStt.startListening(language: language, bilingual: _language == 'Auto');
       if (_fallbackStt.isListening) {
         _listening = true;
         _usingFallback = true;
@@ -265,44 +275,11 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     notifyListeners();
   }
 
-  Future<void> switchToOfflineStreamingMode({String language = 'English'}) async {
-    await stopListening();
-    _forceFallbackMode = true;
-    await _fallbackStt.switchMode(STTMode.sherpaStreaming, language: language);
-    _currentMode = STTMode.sherpaStreaming;
-    _language = _normalizeLanguage(language);
-    notifyListeners();
-  }
-
-  Future<void> switchToOfflineBatchMode({String language = 'Urdu'}) async {
-    await stopListening();
-    _forceFallbackMode = true;
-    await _fallbackStt.switchMode(STTMode.sherpaBatch, language: language);
-    _currentMode = STTMode.sherpaBatch;
-    _language = _normalizeLanguage(language);
-    notifyListeners();
-  }
-
-  Future<void> switchToOnlineMode({String language = 'English'}) async {
-    final wasListening = _listening;
-    await stopListening();
-    _forceFallbackMode = false;
-    _language = _normalizeLanguage(language);
-    _currentMode = STTMode.platform;
-    if (wasListening) await startListening(language: _language);
-    notifyListeners();
-  }
-
   Future<void> switchLanguage(String language) async {
     final wasListening = _listening;
     await stopListening();
     _language = _normalizeLanguage(language);
-    if (_forceFallbackMode) {
-      await _fallbackStt.switchLanguage(_language == 'Auto' ? 'English' : _language);
-      _currentMode = _fallbackStt.currentMode;
-    } else {
-      _currentMode = STTMode.platform;
-    }
+    _currentMode = STTMode.platform;
     if (wasListening) await startListening(language: _language);
     notifyListeners();
   }
@@ -314,17 +291,12 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   Future<bool> downloadOfflineModel(String language) async {
     final success = await _modelManager.downloadModel(language);
-    if (success && _forceFallbackMode) {
-      await _fallbackStt.switchLanguage(language);
-      _currentMode = _fallbackStt.currentMode;
-    }
     notifyListeners();
     return success;
   }
 
   Future<bool> deleteModel(String language) async {
     final success = await _modelManager.deleteModel(language);
-    if (success && _forceFallbackMode) _currentMode = _fallbackStt.currentMode;
     notifyListeners();
     return success;
   }
@@ -493,6 +465,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   void _cancelSubscriptions() {
     unawaited(_bilingualSubscription?.cancel());
+    unawaited(_connectionLostSubscription?.cancel());
+    _connectionLostSubscription = null;
     unawaited(_fallbackSubscription?.cancel());
     _bilingualSubscription = null;
     _fallbackSubscription = null;

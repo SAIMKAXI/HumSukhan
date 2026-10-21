@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
+import 'cloud_chunk_stt.dart';
 import 'vosk_stt.dart';
 import 'model_manager.dart';
 import '../deepgram_transcription_service.dart';
@@ -15,6 +16,8 @@ class EnhancedSpeechProvider {
   final SpeechToText _platformSTT = SpeechToText();
   final SherpaSTTProvider _sherpaSTT = SherpaSTTProvider();
   final DeepgramTranscriptionService _deepgram = DeepgramTranscriptionService.instance;
+  final CloudChunkStt _cloudChunk = CloudChunkStt();
+  StreamSubscription<CloudChunkResult>? _cloudChunkSubscription;
   final StreamController<SpeechResultEvent> _controller = StreamController<SpeechResultEvent>.broadcast();
   final ModelManager _modelManager = ModelManager.instance;
   final SpeechCapability _capability = SpeechCapability.instance;
@@ -51,8 +54,7 @@ class EnhancedSpeechProvider {
   bool get isStreamingMode => _currentMode == STTMode.sherpaStreaming;
   bool get isBatchMode => _currentMode == STTMode.sherpaBatch;
   bool get isOnlineMode => _currentMode == STTMode.platform;
-  bool get isDemoMode => _currentMode == STTMode.demo;
-  String? get lastStartError => _lastStartError ?? _deepgram.lastStartError;
+  String? get lastStartError => _lastStartError ?? _deepgram.lastStartError ?? _cloudChunk.lastStartError;
 
   Future<bool> initialize({String preferredLanguage = 'English'}) async {
     if (_initialized) return isAvailable;
@@ -222,7 +224,9 @@ class EnhancedSpeechProvider {
     });
   }
 
-  Future<void> startListening({String language = 'English'}) async {
+  /// [bilingual] asks the cloud backup to recognize English and Urdu
+  /// together; the device recognizer still listens in [language].
+  Future<void> startListening({String language = 'English', bool bilingual = false}) async {
     if (!_initialized) await initialize(preferredLanguage: language);
     if (_listening) {
       if (language == _currentLanguage) return;
@@ -291,6 +295,24 @@ class EnhancedSpeechProvider {
         _lastStartError = language.toLowerCase().contains('urdu')
             ? 'Urdu is not installed for the device speech recognizer; using the configured fallback.'
             : 'English is not installed for the device speech recognizer; using the configured fallback.';
+      }
+
+      // The device has no recognizer for this language and live streaming is
+      // unavailable: recognize recorded utterances in the cloud instead.
+      if (!_forceOfflineMode && SupabaseService.instance.isAuthenticated) {
+        await _cloudChunkSubscription?.cancel();
+        _cloudChunkSubscription = _cloudChunk.onResult.listen((result) {
+          if (!_listening) return;
+          final text = _sanitizeOutput(result.text);
+          if (text.isEmpty) return;
+          _emitResult(text, isFinal: true, language: result.language, mode: STTMode.cloudBatch);
+        });
+        if (await _cloudChunk.start(language: bilingual ? 'Auto' : language)) {
+          _currentMode = STTMode.cloudBatch;
+          return;
+        }
+        await _cloudChunkSubscription?.cancel();
+        _cloudChunkSubscription = null;
       }
 
       if (!_forceOfflineMode && _sherpaAvailable && _modelManager.isModelReady(language)) {
@@ -405,7 +427,14 @@ class EnhancedSpeechProvider {
     _listening = false;
     _platformLastText = '';
     _lastEmittedPlatformText = '';
-    if (_currentMode == STTMode.platform) {
+    if (_currentMode == STTMode.cloudBatch) {
+      // Transcribe what was still being said before going quiet.
+      _listening = true;
+      await _cloudChunk.stop();
+      _listening = false;
+      await _cloudChunkSubscription?.cancel();
+      _cloudChunkSubscription = null;
+    } else if (_currentMode == STTMode.platform) {
       try { await _platformSTT.stop(); } catch (_) {}
     } else if (_currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch) {
       await _sherpaSTT.stopListening();
@@ -467,17 +496,8 @@ class EnhancedSpeechProvider {
       case STTMode.sherpaStreaming: return 'Offline (Streaming)';
       case STTMode.sherpaBatch: return 'Offline (Batch)';
       case STTMode.platform: return 'Online';
-      case STTMode.demo: return 'Demo Mode';
+      case STTMode.cloudBatch: return 'Cloud (backup)';
       case STTMode.none: return 'Unavailable';
-    }
-  }
-
-  String _getLocaleId(String language) {
-    switch (language.toLowerCase()) {
-      case 'urdu':
-      case 'roman urdu': return 'ur-PK';
-      case 'auto': return 'en-US';
-      default: return 'en-US';
     }
   }
 

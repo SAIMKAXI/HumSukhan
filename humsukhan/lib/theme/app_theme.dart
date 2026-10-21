@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-enum ThemeModeType { light, dark, highContrast }
 
 class AppTokens {
   static const Color deepSage = Color(0xFF506858);

@@ -34,6 +34,7 @@ class MainActivity : FlutterActivity() {
             if (intent?.action != EnvironmentalMonitoringState.ACTION_STATE) return
             val payload = mutableMapOf<String, Any?>()
             payload["state"] = intent.getStringExtra(EnvironmentalMonitoringState.EXTRA_STATE)
+            payload["error"] = intent.getStringExtra(EnvironmentalMonitoringState.EXTRA_ERROR)
             payload["event"] = intent.getStringExtra(EnvironmentalMonitoringState.EXTRA_EVENT)
             runOnUiThread { eventSink?.success(payload) }
         }
@@ -95,7 +96,7 @@ class MainActivity : FlutterActivity() {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 EnvironmentalMonitoringState.requestStart(this)
             } else {
-                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
+                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR, EnvironmentalMonitoringState.ERROR_MIC_PERMISSION)
             }
         }
     }
@@ -140,20 +141,18 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ENV_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "getState" -> result.success(EnvironmentalMonitoringState.get(this))
+                    "getStatus" -> result.success(environmentalStatus())
                     "start" -> {
                         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                            result.error("MIC_PERMISSION", "Microphone permission is required", null)
+                            result.error(EnvironmentalMonitoringState.ERROR_MIC_PERMISSION, "Microphone permission is required", null)
                         } else {
-                            EnvironmentalMonitoringState.requestStart(this)
-                            result.success(true)
+                            result.success(EnvironmentalMonitoringState.requestStart(this))
                         }
                     }
                     "stop" -> {
                         EnvironmentalMonitoringState.requestStop(this)
                         result.success(true)
                     }
-                    "isSupported" -> result.success(true)
                     else -> result.notImplemented()
                 }
             }
@@ -163,7 +162,7 @@ class MainActivity : FlutterActivity() {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     eventSink = events
                     registerEnvironmentalReceiver()
-                    eventSink?.success(mapOf("state" to EnvironmentalMonitoringState.get(this@MainActivity)))
+                    eventSink?.success(environmentalStatus())
                 }
 
                 override fun onCancel(arguments: Any?) {
@@ -172,6 +171,11 @@ class MainActivity : FlutterActivity() {
                 }
             })
     }
+
+    private fun environmentalStatus(): Map<String, String?> = mapOf(
+        "state" to EnvironmentalMonitoringState.get(this),
+        "error" to EnvironmentalMonitoringState.error(),
+    )
 
     private fun findTorchCameraId(manager: CameraManager?): String? {
         if (manager == null) return null

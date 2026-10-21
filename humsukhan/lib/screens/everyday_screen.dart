@@ -5,6 +5,7 @@ import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
+import '../widgets/quick_reply_manager.dart';
 import '../widgets/speakable_caption_bubble.dart';
 import '../l10n/app_strings.dart';
 import '../utils/urdu_text.dart';
@@ -100,9 +101,14 @@ class _EverydayScreenState extends State<EverydayScreen> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                children: quickReplies.replies.take(6).map((reply) => Padding(
+                children: quickReplies.orderedReplies.take(6).map((reply) => Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: QuickReplyChip(reply: reply, isHighContrast: settings.isHighContrast, onTap: conv.isListening || _engine.isBusy ? null : () { conv.addOwnCaption(reply.text); _scrollToBottom(); }),
+                  child: QuickReplyChip(
+                    reply: reply,
+                    isHighContrast: settings.isHighContrast,
+                    onTap: conv.isListening || _engine.isBusy ? null : () { conv.addOwnCaption(reply.text); _scrollToBottom(); },
+                    onLongPress: () => showQuickReplyActions(context, reply),
+                  ),
                 )).toList(),
               ),
             ),

@@ -53,11 +53,12 @@ flutter:
   assets:
     - assets/logo.png
     - assets/icon_mark.png
-    - assets/logo_rectangle.png
-    - assets/logo_rectangle_transparent.png
     - assets/environmental/model.int8.onnx
     - assets/environmental/class_labels_indices.csv
   fonts:
     - family: NotoNastaliqUrdu
       fonts:
         - asset: fonts/noto_sans/NotoNastaliqUrdu-Regular.ttf
+    - family: NotoSans
+      fonts:
+        - asset: fonts/noto_sans/NotoSans-Regular.ttf

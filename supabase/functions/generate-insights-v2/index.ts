@@ -211,6 +211,10 @@ Deno.serve(async (req) => {
           generationConfig: {
             temperature: 0.15,
             maxOutputTokens: 2048,
+            // 2.5 Flash thinks by default, and thinking tokens are charged to
+            // maxOutputTokens. A summary needs none, and left on, the thinking
+            // can spend the whole budget and return no JSON at all.
+            thinkingConfig: { thinkingBudget: 0 },
             responseMimeType: "application/json",
             responseSchema: {
               type: "OBJECT",
@@ -243,11 +247,15 @@ Deno.serve(async (req) => {
       return json({ error: "AI provider returned invalid JSON" }, 502);
     }
 
-    const text = payload?.candidates?.[0]?.content?.parts
+    const candidate = payload?.candidates?.[0];
+    const text = candidate?.content?.parts
       ?.map((part: any) => part?.text ?? "")
       .join("")
       .trim();
-    if (!text) return json({ error: "AI provider returned no content" }, 502);
+    if (!text) {
+      console.error("Gemini returned no text", candidate?.finishReason, payload?.promptFeedback?.blockReason);
+      return json({ error: "AI provider returned no content", finishReason: candidate?.finishReason ?? null }, 502);
+    }
 
     let result: any;
     try {

@@ -68,6 +68,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               onSelected: (value) {
                 if (value == 'export') {
                   _showExport(context, session, insight, strings);
+                } else if (value == 'move') {
+                  _moveToFolder(context, session, strings);
                 } else {
                   _confirmDelete(context, session, strings);
                 }
@@ -76,6 +78,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 PopupMenuItem(
                   value: 'export',
                   child: Text(strings.exportAction),
+                ),
+                PopupMenuItem(
+                  value: 'move',
+                  child: Text(strings.moveToFolderAction),
                 ),
                 PopupMenuItem(
                   value: 'delete',
@@ -259,7 +265,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       );
     }
 
-    final availableInsight = insight!;
+    final availableInsight = insight;
     final hasSummary = availableInsight.summaryBullets.isNotEmpty;
 
     return SingleChildScrollView(
@@ -481,6 +487,47 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Export failed: $error')),
       );
+    }
+  }
+
+  Future<void> _moveToFolder(
+    BuildContext context,
+    ProfessionalSession session,
+    AppStrings strings,
+  ) async {
+    final provider = context.read<ProfessionalProvider>();
+    final destinations = <(String?, String)>[
+      (null, strings.generalFolder),
+      for (final folder in provider.folders) (folder.id, folder.name),
+    ];
+    // A record cannot be null, so "no choice" (the sheet was dismissed) is
+    // told apart from choosing General (folder id null).
+    final choice = await showModalBottomSheet<(String?, String)>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(strings.moveToFolderAction, style: Theme.of(sheetContext).textTheme.titleLarge),
+            ),
+            for (final destination in destinations)
+              ListTile(
+                leading: Icon(destination.$1 == null ? Icons.folder : Icons.folder_outlined),
+                title: Text(destination.$2, maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: destination.$1 == session.folderId ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(sheetContext, destination),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || choice.$1 == session.folderId) return;
+    await provider.moveSessionToFolder(session.id, choice.$1);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(strings.movedToFolder(choice.$2))));
     }
   }
 

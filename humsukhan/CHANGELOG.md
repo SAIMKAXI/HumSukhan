@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Environmental Alerts
+- Rebuilt the detection and monitoring logic; the Alerts screen looks and works the same.
+- The sound model can now load. It was created without initialising sherpa-onnx, which refuses to run until that is done, so detection failed to start.
+- Sounds are matched to their exact model labels. A running tap, guitar tapping and an engine knocking no longer raise a Knock alert, and a wind chime no longer raises a Doorbell alert; a "ding-dong" doorbell is now recognised.
+- Alerts are announced with a notification and vibration even while the app is closed. Previously a background alert only changed the text of the silent monitoring notification.
+- An alert is announced once. With the app open, it used to vibrate twice.
+- Monitoring can be started again after it is stopped (on iOS every start after the first failed).
+- A monitor stopped by the system, or stalled mid-start, can no longer leave the Quick Settings tile stuck. Audio that stops arriving is detected at any point, not only at start-up.
+- Each failure shows its own cause and remedy, and "Open microphone settings" appears exactly when settings can fix it.
+- Alert history lists the newest alert first, and dismissing a history entry dismisses that entry.
+- Removed the Baby Cry switch from Settings: that sound is not detected.
+
 ## 2.4.4+34
 
 ### Environmental Alerts

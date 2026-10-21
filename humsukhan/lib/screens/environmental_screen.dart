@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
 import '../l10n/app_strings.dart';
+import '../modules/environmental_alerts/models/environmental_sound.dart';
 
 class EnvironmentalScreen extends StatelessWidget {
   const EnvironmentalScreen({super.key});
@@ -16,7 +17,7 @@ class EnvironmentalScreen extends StatelessWidget {
     final colors = theme.colorScheme;
     final s = AppStrings.of(context);
     final isActive = env.monitoringEnabled;
-    final errorText = env.errorMessage ?? 'Unable to start environmental monitoring.';
+    final errorText = env.failure?.displayMessage(urdu: s.isUrdu) ?? s.monitoringUnavailable;
 
     return Scaffold(
       appBar: AppBar(title: Text(s.environmentalTitle)),
@@ -46,8 +47,8 @@ class EnvironmentalScreen extends StatelessWidget {
                             env.hasError
                                 ? errorText
                                 : (env.isStarting
-                                    ? 'Starting monitoring…'
-                                    : (isActive ? 'Monitoring active' : s.monitoringOffTitle)),
+                                    ? s.startingMonitoring
+                                    : (isActive ? s.monitoringActive : s.monitoringOffTitle)),
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w700,
                               color: env.hasError ? colors.error : (isActive ? colors.primary : colors.onSurfaceVariant),
@@ -56,10 +57,8 @@ class EnvironmentalScreen extends StatelessWidget {
                           const SizedBox(height: 6),
                           Text(
                             env.hasError
-                                ? 'Fix the permission or service issue, then try again.'
-                                : (env.isProcessing
-                                    ? 'HumSukhan is listening locally for supported environmental sounds.'
-                                    : 'Environmental monitoring is off.'),
+                                ? s.monitoringFixAndRetry
+                                : (env.isProcessing ? s.monitoringListeningLocally : s.monitoringIsOff),
                             style: theme.textTheme.bodySmall,
                           ),
                         ],
@@ -76,14 +75,14 @@ class EnvironmentalScreen extends StatelessWidget {
                     label: Text(isActive ? s.stopMonitoring : s.startMonitoring),
                   ),
                 ),
-                if (env.hasError && errorText.toLowerCase().contains('settings')) ...[
+                if (env.hasError && env.needsSystemSettings) ...[
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: env.openMicrophoneSettings,
                       icon: const Icon(Icons.settings_outlined),
-                      label: const Text('Open microphone settings'),
+                      label: Text(s.openMicrophoneSettings),
                     ),
                   ),
                 ],
@@ -121,8 +120,8 @@ class EnvironmentalScreen extends StatelessWidget {
               ),
             )
           else
-            ...env.alertHistory.reversed.map(
-              (event) => AlertCard(event: event, onDismiss: env.dismissAlert),
+            ...env.alertHistory.map(
+              (event) => AlertCard(event: event, onDismiss: () => env.dismissAlert(event.id)),
             ),
         ],
       ),
@@ -139,7 +138,7 @@ class _ActiveAlertBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final severityColor = AppTheme.alertColor(event.severity);
-    final description = EnvironmentalProvider.alertDescriptions[event.type] ?? 'A sound was detected.';
+    final description = EnvironmentalSound.byType(event.type)?.displayDescription(urdu: s.isUrdu) ?? s.soundDetected;
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -159,7 +158,7 @@ class _ActiveAlertBanner extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${event.type} ${s.detected}', style: TextStyle(fontWeight: FontWeight.w700, color: severityColor)),
+                    Text('${EnvironmentalSound.nameFor(event.type, urdu: s.isUrdu)} ${s.detected}', style: TextStyle(fontWeight: FontWeight.w700, color: severityColor)),
                     const SizedBox(height: 4),
                     Text(description),
                     const SizedBox(height: 4),

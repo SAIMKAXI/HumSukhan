@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
 import '../services/supabase_service.dart';
+import '../modules/environmental_alerts/models/environmental_sound.dart';
 
 class SettingsProvider extends ChangeNotifier {
   bool _isDarkMode = false, _isHighContrast = false, _isLargeText = false;
@@ -16,11 +17,9 @@ class SettingsProvider extends ChangeNotifier {
   bool _isLoaded = false;
   bool _disposed = false;
   final Set<String> _onboardedUsers = <String>{};
+  // One switch per sound Environmental Alerts can actually detect.
   final Map<String, bool> _allowedAlerts = {
-    'Siren': true,
-    'Doorbell': true,
-    'Knock': true,
-    'Baby Cry': true,
+    for (final type in EnvironmentalSound.types) type: true,
   };
 
   bool get isDarkMode => _isDarkMode;
@@ -193,12 +192,6 @@ class SettingsProvider extends ChangeNotifier {
   void toggleVisualAlerts() { _visualAlerts = !_visualAlerts; notifyListeners(); _persistChange('visualAlerts', _visualAlerts); }
   void toggleFlashAlerts() { _flashAlerts = !_flashAlerts; notifyListeners(); _persistChange('flashAlerts', _flashAlerts); }
   void toggleScreenFlashAlerts() { _screenFlashAlerts = !_screenFlashAlerts; notifyListeners(); _persistChange('screenFlashAlerts', _screenFlashAlerts); }
-  void setCaptionLanguage(String lang) {
-    if (!const ['English', 'Roman Urdu', 'Urdu'].contains(lang)) return;
-    _captionLanguage = lang;
-    notifyListeners();
-    _persistChange('captionLanguage', lang);
-  }
   void setAppLanguage(String langCode) {
     if (!const ['en', 'ur'].contains(langCode)) return;
     _appLanguage = langCode;
@@ -214,15 +207,6 @@ class SettingsProvider extends ChangeNotifier {
     _persistChange('allowedAlerts', jsonEncode(_allowedAlerts));
   }
 
-  Future<bool> hasCompletedOnboardingForUser(String userId) async {
-    if (userId.isEmpty) return false;
-    if (_onboardedUsers.contains(userId)) return true;
-    final prefs = await SharedPreferences.getInstance();
-    final done = prefs.getBool('onboardingComplete:$userId') ?? false;
-    if (done) _onboardedUsers.add(userId);
-    return done;
-  }
-
   Future<void> completeOnboardingForUser(String userId) async {
     if (userId.isEmpty) return;
     _onboardedUsers.add(userId);
@@ -230,23 +214,13 @@ class SettingsProvider extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> completeOnboarding() async {
-    final userId = AuthService.instance.currentUser?.id;
-    if (userId != null) await completeOnboardingForUser(userId);
-  }
-
-  Future<void> clearLocalSettings() async {
-    final prefs = await SharedPreferences.getInstance();
+  /// Restores display, alert, privacy and per-sound settings to their
+  /// defaults, here and in the cloud copy, so the next sync cannot bring the
+  /// old values back. The app language is kept — resetting someone who reads
+  /// Urdu into an English interface would leave them unable to undo it — and
+  /// so is onboarding, which is not a setting.
+  Future<void> resetToDefaults() async {
     if (_disposed) return;
-    const keys = [
-      'darkMode', 'highContrast', 'largeText', 'captionTextSize', 'hapticAlerts',
-      'visualAlerts', 'flashAlerts', 'screenFlashAlerts', 'simplifiedLanguage',
-      'captionLanguage', 'appLanguage', 'defaultRetentionDays', 'monitoringEnabled',
-      'allowedAlerts', 'onboardingComplete',
-    ];
-    for (final key in keys) await prefs.remove(key);
-    final userKeys = prefs.getKeys().where((key) => key.startsWith('onboardingComplete:')).toList();
-    for (final key in userKeys) await prefs.remove(key);
     _isDarkMode = false;
     _isHighContrast = false;
     _isLargeText = false;
@@ -256,12 +230,18 @@ class SettingsProvider extends ChangeNotifier {
     _flashAlerts = false;
     _screenFlashAlerts = true;
     _captionLanguage = 'English';
-    _appLanguage = 'en';
     _defaultRetentionDays = 7;
     _monitoringEnabled = false;
-    _onboardedUsers.clear();
-    for (final key in _allowedAlerts.keys) _allowedAlerts[key] = true;
-    if (!_disposed) notifyListeners();
+    for (final key in _allowedAlerts.keys) {
+      _allowedAlerts[key] = true;
+    }
+    notifyListeners();
+    try {
+      await _persistAllLocal();
+      await _saveToCloud();
+    } catch (e) {
+      debugPrint('Settings reset could not be saved: $e');
+    }
   }
 
   @override

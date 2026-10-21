@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -15,9 +16,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import io.flutter.FlutterInjector
@@ -25,280 +23,313 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.GeneratedPluginRegistrant
-import org.json.JSONObject
 
+/**
+ * Owns the microphone for environmental monitoring, as a foreground service
+ * so it keeps listening while the app is closed.
+ *
+ * Start-up order, each step gated on the one before:
+ *  1. foreground notification, state STARTING;
+ *  2. a headless Flutter engine runs `environmentalMonitoringBackgroundMain`,
+ *     which loads the sound model and answers READY;
+ *  3. only then is the microphone opened, and PCM streamed to Dart;
+ *  4. Dart confirms it is receiving audio (PCM_FLOWING), and only then is the
+ *     state ACTIVE.
+ *
+ * Detection, history, notifications and vibration all happen in Dart; this
+ * class captures audio and keeps the lifecycle honest. Every failure tears the
+ * whole service down and reports ERROR with a code, so a half-running monitor
+ * can never sit behind a notification claiming it is listening.
+ */
 class EnvironmentalMonitoringService : Service() {
     companion object {
         const val CHANNEL_ID = "environmental_monitoring"
         const val NOTIFICATION_ID = 4107
         private const val METHOD_CHANNEL = "com.humsukhan/environmental_monitor"
+        private const val DART_ENTRYPOINT = "environmentalMonitoringBackgroundMain"
         private const val SAMPLE_RATE = 16000
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT
-        private const val PCM_FLOW_TIMEOUT_MS = 5000L
+
+        /** From the start request to Dart confirming audio. */
+        private const val START_TIMEOUT_MS = 15000L
+
+        /** Longest gap in microphone audio before monitoring is declared lost. */
+        private const val STALL_TIMEOUT_MS = 5000L
+        private const val STALL_CHECK_INTERVAL_MS = 2000L
+
+        /** How long Dart gets to free the sound model before its engine is destroyed. */
+        private const val ENGINE_RELEASE_TIMEOUT_MS = 1000L
     }
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var engine: FlutterEngine? = null
     private var channel: MethodChannel? = null
-    private var stopping = false
-    private val mainHandler = Handler(Looper.getMainLooper())
-    @Volatile private var captureRunning = false
-    @Volatile private var bytesCaptured = 0L
-    @Volatile private var lastPcmReadAtMs = 0L
-    @Volatile private var dartPcmFlowing = false
+
+    /** Between start() and teardown(). Main thread only. */
+    private var running = false
+
+    @Volatile private var capturing = false
+    @Volatile private var lastPcmAtMs = 0L
     private var audioRecord: AudioRecord? = null
     private var captureThread: Thread? = null
-    private val pcmWatchdogToken = Any()
 
-    override fun onCreate() { super.onCreate(); createNotificationChannel() }
+    private val startTimeout = Runnable {
+        if (running && EnvironmentalMonitoringState.get(this) != EnvironmentalMonitoringState.ACTIVE) {
+            log("Environmental monitoring did not confirm audio in time")
+            fail(EnvironmentalMonitoringState.ERROR_SERVICE)
+        }
+    }
+
+    private val stallCheck = object : Runnable {
+        override fun run() {
+            if (!running) return
+            if (!capturing || System.currentTimeMillis() - lastPcmAtMs > STALL_TIMEOUT_MS) {
+                log("Environmental microphone audio stopped arriving")
+                fail(EnvironmentalMonitoringState.ERROR_CAPTURE)
+                return
+            }
+            mainHandler.postDelayed(this, STALL_CHECK_INTERVAL_MS)
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            EnvironmentalMonitoringState.ACTION_STOP -> stopMonitoring()
-            EnvironmentalMonitoringState.ACTION_START -> startMonitoring()
-            null -> if (EnvironmentalMonitoringState.get(this) == EnvironmentalMonitoringState.ACTIVE) startMonitoring() else stopSelf()
+            EnvironmentalMonitoringState.ACTION_START -> start()
+            EnvironmentalMonitoringState.ACTION_STOP -> {
+                stop()
+                return START_NOT_STICKY
+            }
+            // A sticky restart after the system killed the process: resume
+            // only if the user had monitoring on.
+            else -> if (EnvironmentalMonitoringState.isWanted(this)) start() else {
+                stopSelf()
+                return START_NOT_STICKY
+            }
         }
         return START_STICKY
     }
 
-    private fun startMonitoring() {
-        if (EnvironmentalMonitoringState.get(this) == EnvironmentalMonitoringState.ACTIVE && engine != null && captureRunning) return
+    private fun start() {
+        if (running) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
-            stopSelf()
+            fail(EnvironmentalMonitoringState.ERROR_MIC_PERMISSION)
             return
         }
+        running = true
         EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.STARTING)
         try {
-            val notification = buildMonitoringNotification("Environmental monitoring: starting")
+            val notification = buildNotification(EnvironmentalMonitoringState.STARTING)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
-            cleanupAndStop()
+            log("Environmental foreground service refused: $e")
+            fail(EnvironmentalMonitoringState.ERROR_SERVICE)
             return
         }
-        startFlutterBackgroundEngine()
+        mainHandler.postDelayed(startTimeout, START_TIMEOUT_MS)
+        if (!startEngine()) fail(EnvironmentalMonitoringState.ERROR_SERVICE)
     }
 
-    private fun startFlutterBackgroundEngine() {
-        if (engine != null) return
+    private fun stop() {
+        EnvironmentalMonitoringState.setWanted(this, false)
+        if (running) {
+            EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.STOPPING)
+            teardown()
+        }
+        if (EnvironmentalMonitoringState.get(this) != EnvironmentalMonitoringState.ERROR) {
+            EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.OFF)
+        }
+        stopSelf()
+    }
+
+    private fun fail(code: String) {
+        EnvironmentalMonitoringState.setWanted(this, false)
+        teardown()
+        EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR, code)
+        stopSelf()
+    }
+
+    /** Releases everything this service holds. Safe to call more than once. */
+    private fun teardown() {
+        running = false
+        mainHandler.removeCallbacks(startTimeout)
+        mainHandler.removeCallbacks(stallCheck)
+        stopCapture()
+        releaseEngine()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+    }
+
+    /**
+     * The model lives in native memory the Dart isolate does not free when the
+     * engine is destroyed, so Dart is asked to release it first. The
+     * microphone is already closed; only the engine waits.
+     */
+    private fun releaseEngine() {
+        val oldEngine = engine ?: return
+        val oldChannel = channel
+        engine = null
+        channel = null
+        var destroyed = false
+        val destroy = {
+            if (!destroyed) {
+                destroyed = true
+                oldChannel?.setMethodCallHandler(null)
+                oldEngine.destroy()
+            }
+        }
+        if (oldChannel == null) {
+            destroy()
+            return
+        }
         try {
-            val loader = FlutterInjector.instance().flutterLoader()
-            loader.startInitialization(applicationContext)
-            loader.ensureInitializationComplete(applicationContext, emptyArray())
-            val flutterEngine = FlutterEngine(applicationContext)
-            GeneratedPluginRegistrant.registerWith(flutterEngine)
-            engine = flutterEngine
-            channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
-            channel?.setMethodCallHandler { call, result ->
+            oldChannel.invokeMethod("stop", null, object : MethodChannel.Result {
+                override fun success(result: Any?) = destroy()
+                override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) = destroy()
+                override fun notImplemented() = destroy()
+            })
+        } catch (_: Exception) {
+            destroy()
+            return
+        }
+        mainHandler.postDelayed({ destroy() }, ENGINE_RELEASE_TIMEOUT_MS)
+    }
+
+    private fun startEngine(): Boolean = try {
+        val loader = FlutterInjector.instance().flutterLoader()
+        loader.startInitialization(applicationContext)
+        loader.ensureInitializationComplete(applicationContext, emptyArray())
+        val flutterEngine = FlutterEngine(applicationContext)
+        GeneratedPluginRegistrant.registerWith(flutterEngine)
+        engine = flutterEngine
+        channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL).also {
+            it.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "pipelineState" -> {
-                        val state = call.argument<String>("state") ?: EnvironmentalMonitoringState.ERROR
-                        when (state) {
-                            "READY" -> {
-                                if (startNativeAudioCapture()) {
-                                    dartPcmFlowing = false
-                                    bytesCaptured = 0L
-                                    lastPcmReadAtMs = 0L
-                                    EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.STARTING)
-                                    updateMonitoringNotification(EnvironmentalMonitoringState.STARTING)
-                                    schedulePcmFlowWatchdog()
-                                    result.success(true)
-                                } else {
-                                    EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
-                                    updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
-                                    result.success(false)
-                                }
-                            }
-                            "PCM_FLOWING" -> {
-                                dartPcmFlowing = true
-                                mainHandler.removeCallbacksAndMessages(pcmWatchdogToken)
-                                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ACTIVE)
-                                updateMonitoringNotification(EnvironmentalMonitoringState.ACTIVE)
-                                result.success(true)
-                            }
-                            else -> if (state == EnvironmentalMonitoringState.ACTIVE && !hasLiveEngine()) {
-                                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
-                                result.success(false)
-                            } else {
-                                EnvironmentalMonitoringState.set(this, state)
-                                updateMonitoringNotification(state)
-                                result.success(true)
-                            }
-                        }
+                        onPipelineState(call.argument<String>("state"), call.argument<String>("error"))
+                        result.success(true)
                     }
                     "event" -> {
-                        val type = call.argument<String>("type") ?: "Environmental sound"
-                        val confidence = call.argument<Double>("confidence") ?: 0.0
-                        val severity = call.argument<String>("severity") ?: "warning"
-                        handleSoundEvent(type, confidence, severity)
+                        val event = call.argument<String>("event")
+                        if (running && event != null) EnvironmentalMonitoringState.broadcastAlert(this, event)
                         result.success(true)
                     }
                     else -> result.notImplemented()
                 }
             }
-            val entrypoint = DartExecutor.DartEntrypoint(loader.findAppBundlePath(), "environmentalMonitoringBackgroundMain")
-            flutterEngine.dartExecutor.executeDartEntrypoint(entrypoint)
-        } catch (e: Exception) {
-            EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
-            cleanupAndStop()
+        }
+        flutterEngine.dartExecutor.executeDartEntrypoint(
+            DartExecutor.DartEntrypoint(loader.findAppBundlePath(), DART_ENTRYPOINT),
+        )
+        true
+    } catch (e: Exception) {
+        log("Environmental Flutter engine could not start: $e")
+        false
+    }
+
+    /**
+     * Failures are posted rather than handled inline: they destroy the engine,
+     * which must not happen inside one of its own method calls.
+     */
+    private fun onPipelineState(state: String?, error: String?) {
+        if (!running) return
+        when (state) {
+            "READY" -> if (!startCapture()) {
+                mainHandler.post { if (running) fail(EnvironmentalMonitoringState.ERROR_CAPTURE) }
+            }
+            "PCM_FLOWING" -> if (capturing) {
+                mainHandler.removeCallbacks(startTimeout)
+                EnvironmentalMonitoringState.setWanted(this, true)
+                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ACTIVE)
+                updateNotification(EnvironmentalMonitoringState.ACTIVE)
+                mainHandler.removeCallbacks(stallCheck)
+                mainHandler.postDelayed(stallCheck, STALL_CHECK_INTERVAL_MS)
+            }
+            "ERROR" -> mainHandler.post {
+                if (running) fail(error ?: EnvironmentalMonitoringState.ERROR_SERVICE)
+            }
         }
     }
 
-    private fun hasLiveEngine(): Boolean = engine != null && channel != null && !stopping
-
-    private fun schedulePcmFlowWatchdog() {
-        mainHandler.removeCallbacksAndMessages(pcmWatchdogToken)
-        mainHandler.postAtTime({
-            if (!captureRunning || stopping || dartPcmFlowing) return@postAtTime
-            val now = System.currentTimeMillis()
-            val lastRead = lastPcmReadAtMs
-            if (!dartPcmFlowing) {
-                debugPrint("Environmental PCM watchdog failed: Dart received no PCM (bytesCaptured=$bytesCaptured lastPcmReadAtMs=$lastRead)")
-                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
-                updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
-                stopNativeAudioCapture()
-            } else if (lastRead <= 0L || now - lastRead > PCM_FLOW_TIMEOUT_MS) {
-                debugPrint("Environmental PCM watchdog failed: native capture stalled (bytesCaptured=$bytesCaptured lastPcmReadAtMs=$lastRead)")
-                EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.ERROR)
-                updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
-                stopNativeAudioCapture()
-            }
-        }, pcmWatchdogToken, System.currentTimeMillis() + PCM_FLOW_TIMEOUT_MS)
-    }
-
-    private fun startNativeAudioCapture(): Boolean {
-        if (captureRunning) return true
+    private fun startCapture(): Boolean {
+        if (capturing) return true
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return false
-        return try {
-            val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_ENCODING)
-            if (minBuffer <= 0) return false
-            val bufferSize = maxOf(minBuffer * 2, 8192)
-            val recorder = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                SAMPLE_RATE,
-                CHANNEL_CONFIG,
-                AUDIO_ENCODING,
-                bufferSize,
-            )
-            if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-                recorder.release()
-                return false
-            }
-            recorder.startRecording()
-            if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-                recorder.release()
-                return false
-            }
-            bytesCaptured = 0L
-            lastPcmReadAtMs = 0L
-            dartPcmFlowing = false
-            audioRecord = recorder
-            captureRunning = true
-            captureThread = Thread {
-                val pcm = ByteArray(bufferSize)
-                try {
-                    while (captureRunning && !Thread.currentThread().isInterrupted) {
-                        val count = recorder.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
-                        if (count > 0 && captureRunning) {
-                            bytesCaptured += count
-                            lastPcmReadAtMs = System.currentTimeMillis()
-                            val payload = pcm.copyOf(count)
-                            // AudioRecord runs on a dedicated capture thread. Flutter's
-                            // MethodChannel invocation must be marshalled to the main thread.
-                            mainHandler.post {
-                                if (captureRunning && !stopping) {
-                                    channel?.invokeMethod("audioData", payload)
-                                }
-                            }
-                        } else if (count < 0) {
-                            debugPrint("Environmental native AudioRecord read error: $count")
-                            break
-                        }
-                    }
-                } catch (e: Exception) {
-                    if (captureRunning) debugPrint("Environmental native audio capture error: $e")
-                } finally {
-                    captureRunning = false
-                    mainHandler.removeCallbacksAndMessages(pcmWatchdogToken)
-                    try { recorder.stop() } catch (_: Exception) {}
-                    try { recorder.release() } catch (_: Exception) {}
-                    if (audioRecord === recorder) audioRecord = null
-                    if (!stopping && EnvironmentalMonitoringState.get(this@EnvironmentalMonitoringService) == EnvironmentalMonitoringState.STARTING) {
-                        mainHandler.post {
-                            if (!stopping && !dartPcmFlowing) {
-                                debugPrint("Environmental native audio capture stopped before PCM reached Dart")
-                                EnvironmentalMonitoringState.set(this@EnvironmentalMonitoringService, EnvironmentalMonitoringState.ERROR)
-                                updateMonitoringNotification(EnvironmentalMonitoringState.ERROR)
-                            }
-                        }
-                    }
-                }
-            }.also {
-                it.name = "HumSukhan-EnvironmentalAudio"
-                it.start()
-            }
-            true
+        val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_ENCODING)
+        if (minBuffer <= 0) return false
+        val bufferSize = maxOf(minBuffer * 2, 8192)
+        val recorder = try {
+            AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_ENCODING, bufferSize)
         } catch (e: Exception) {
-            debugPrint("Environmental native AudioRecord start error: $e")
-            captureRunning = false
-            mainHandler.removeCallbacksAndMessages(pcmWatchdogToken)
-            try { audioRecord?.release() } catch (_: Exception) {}
-            audioRecord = null
-            false
+            log("Environmental AudioRecord could not be created: $e")
+            return false
         }
+        try {
+            if (recorder.state != AudioRecord.STATE_INITIALIZED) throw IllegalStateException("AudioRecord not initialized")
+            recorder.startRecording()
+            if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) throw IllegalStateException("AudioRecord not recording")
+        } catch (e: Exception) {
+            log("Environmental AudioRecord could not start: $e")
+            try { recorder.release() } catch (_: Exception) {}
+            return false
+        }
+
+        audioRecord = recorder
+        lastPcmAtMs = System.currentTimeMillis()
+        capturing = true
+        captureThread = Thread {
+            val pcm = ByteArray(bufferSize)
+            try {
+                while (capturing) {
+                    val count = recorder.read(pcm, 0, pcm.size)
+                    if (count < 0) {
+                        log("Environmental AudioRecord read error: $count")
+                        break
+                    }
+                    if (count == 0 || !capturing) continue
+                    lastPcmAtMs = System.currentTimeMillis()
+                    val payload = pcm.copyOf(count)
+                    // Flutter channels must be called on the main thread.
+                    mainHandler.post { if (capturing) channel?.invokeMethod("audioData", payload) }
+                }
+            } catch (e: Exception) {
+                log("Environmental audio capture failed: $e")
+            } finally {
+                try { recorder.release() } catch (_: Exception) {}
+                if (capturing) {
+                    // The loop ended without being asked to.
+                    mainHandler.post { if (running) fail(EnvironmentalMonitoringState.ERROR_CAPTURE) }
+                }
+            }
+        }.also {
+            it.name = "HumSukhan-EnvironmentalAudio"
+            it.start()
+        }
+        return true
     }
 
-    private fun stopNativeAudioCapture() {
-        captureRunning = false
-        mainHandler.removeCallbacksAndMessages(pcmWatchdogToken)
-        try { audioRecord?.stop() } catch (_: Exception) {}
-        try { audioRecord?.release() } catch (_: Exception) {}
+    /** Stopping the recorder unblocks the capture thread, which then releases it. */
+    private fun stopCapture() {
+        capturing = false
+        val recorder = audioRecord
         audioRecord = null
+        try { recorder?.stop() } catch (_: Exception) {}
         captureThread?.interrupt()
         captureThread = null
     }
 
-    private fun debugPrint(message: String) { android.util.Log.d("HumSukhanEnv", message) }
-
-    private fun stopMonitoring() {
-        if (stopping) return
-        stopping = true
-        EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.STOPPING)
-        stopNativeAudioCapture()
-        try { channel?.invokeMethod("stop", null) } catch (_: Exception) {}
-        mainHandler.postDelayed({ cleanupAndStop() }, 500L)
-    }
-
-    private fun cleanupAndStop() {
-        mainHandler.removeCallbacksAndMessages(null)
-        stopNativeAudioCapture()
-        channel = null
-        engine?.destroy()
-        engine = null
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE) else { @Suppress("DEPRECATION") stopForeground(true) }
-        EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.OFF)
-        stopping = false
-        stopSelf()
-    }
-
-    private fun handleSoundEvent(type: String, confidence: Double, severity: String) {
-        if (EnvironmentalMonitoringState.get(this) != EnvironmentalMonitoringState.ACTIVE) return
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildMonitoringNotification("$type detected • local/offline"))
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) getSystemService(VibratorManager::class.java).defaultVibrator else { @Suppress("DEPRECATION") getSystemService(VIBRATOR_SERVICE) as Vibrator }
-        val duration = if (severity == "critical") 700L else 250L
-        vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE))
-        sendBroadcast(Intent(EnvironmentalMonitoringState.ACTION_STATE).setPackage(packageName)
-            .putExtra(EnvironmentalMonitoringState.EXTRA_STATE, EnvironmentalMonitoringState.ACTIVE)
-            .putExtra(EnvironmentalMonitoringState.EXTRA_EVENT, JSONObject().put("type", type).put("confidence", confidence).put("severity", severity).toString()))
-    }
-
-    private fun buildMonitoringNotification(text: String): Notification {
+    private fun buildNotification(state: String): Notification {
+        val text = when (state) {
+            EnvironmentalMonitoringState.ACTIVE -> "Environmental monitoring: Offline / Local"
+            else -> "Environmental monitoring: starting"
+        }
         val stopIntent = Intent(this, EnvironmentalMonitoringService::class.java).setAction(EnvironmentalMonitoringState.ACTION_STOP)
         val stopPendingIntent = PendingIntent.getService(this, 4108, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val openIntent = Intent(this, MainActivity::class.java)
@@ -315,14 +346,8 @@ class EnvironmentalMonitoringService : Service() {
             .build()
     }
 
-    private fun updateMonitoringNotification(state: String) {
-        val text = when (state) {
-            EnvironmentalMonitoringState.ACTIVE -> "Environmental monitoring: Offline / Local"
-            EnvironmentalMonitoringState.ERROR -> "Environmental monitoring: unavailable"
-            EnvironmentalMonitoringState.STARTING -> "Environmental monitoring: starting"
-            else -> "Environmental monitoring: $state"
-        }
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildMonitoringNotification(text))
+    private fun updateNotification(state: String) {
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(state))
     }
 
     private fun createNotificationChannel() {
@@ -333,15 +358,15 @@ class EnvironmentalMonitoringService : Service() {
         }
     }
 
-    override fun onTaskRemoved(rootIntent: Intent?) { super.onTaskRemoved(rootIntent) }
+    private fun log(message: String) {
+        android.util.Log.d("HumSukhanEnv", message)
+    }
 
     override fun onDestroy() {
-        mainHandler.removeCallbacksAndMessages(null)
-        stopNativeAudioCapture()
-        channel = null
-        engine?.destroy()
-        engine = null
-        if (EnvironmentalMonitoringState.get(this) != EnvironmentalMonitoringState.OFF) EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.OFF)
+        if (running) {
+            teardown()
+            EnvironmentalMonitoringState.set(this, EnvironmentalMonitoringState.OFF)
+        }
         super.onDestroy()
     }
 

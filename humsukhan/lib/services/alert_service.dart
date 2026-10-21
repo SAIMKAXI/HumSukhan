@@ -4,10 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../providers/settings_provider.dart';
 import 'notification_service.dart';
 
 /// Central accessibility alert feedback: system notification, haptic, screen flash and flashlight.
+///
+/// Split by where it can run. [notify] needs no screen, so the environmental
+/// monitoring isolate calls it for every alert, including while the app is
+/// closed. [flash] draws over the app and drives the torch through the
+/// activity, so it only runs while the app is on screen.
 class AlertService {
   static final AlertService _instance = AlertService._();
   static AlertService get instance => _instance;
@@ -23,14 +27,19 @@ class AlertService {
     unawaited(NotificationService.instance.initialize());
   }
 
-  void triggerAlert(SettingsProvider settings, {String type = 'Environmental sound', double confidence = 0.0, String severity = 'warning'}) {
-    unawaited(NotificationService.instance.showEnvironmentalAlert(type: type, severity: severity, confidence: confidence));
-    if (settings.hapticAlerts) _triggerHaptic(severity);
-    if (settings.screenFlashAlerts) _triggerScreenFlash(severity);
-    if (settings.flashAlerts) _triggerFlashlight(severity);
+  /// System notification plus, if enabled, vibration.
+  Future<void> notify({required String type, required String severity, required double confidence, required bool haptic}) async {
+    await NotificationService.instance.showEnvironmentalAlert(type: type, severity: severity, confidence: confidence);
+    if (haptic) await _triggerHaptic(severity);
   }
 
-  void _triggerHaptic(String severity) async {
+  /// In-app visual feedback: screen flash and camera flashlight.
+  void flash(String severity, {required bool screen, required bool flashlight}) {
+    if (screen) _triggerScreenFlash(severity);
+    if (flashlight) unawaited(_triggerFlashlight(severity));
+  }
+
+  Future<void> _triggerHaptic(String severity) async {
     try {
       final hasVibrator = await Vibration.hasVibrator();
       if (!hasVibrator) return;
@@ -50,7 +59,8 @@ class AlertService {
   }
 
   void _triggerScreenFlash(String severity) {
-    if (_overlayContext == null || _isFlashing) return;
+    final context = _overlayContext;
+    if (context == null || !context.mounted || _isFlashing) return;
     final flashColor = switch (severity) {
       'critical' => Colors.red.withValues(alpha: 0.6),
       'warning' => Colors.orange.withValues(alpha: 0.4),
@@ -58,7 +68,7 @@ class AlertService {
     };
     _isFlashing = true;
     _flashOverlay = OverlayEntry(builder: (_) => AnimatedOpacity(opacity: 1.0, duration: const Duration(milliseconds: 100), child: Container(color: flashColor)));
-    Overlay.of(_overlayContext!).insert(_flashOverlay!);
+    Overlay.of(context).insert(_flashOverlay!);
     _flashTimer?.cancel();
     _flashTimer = Timer(const Duration(milliseconds: 300), () {
       _flashOverlay?.remove();
@@ -67,7 +77,7 @@ class AlertService {
     });
   }
 
-  void _triggerFlashlight(String severity) async {
+  Future<void> _triggerFlashlight(String severity) async {
     if (!Platform.isAndroid) return;
     try {
       if (!(await Permission.camera.status).isGranted) {
@@ -101,7 +111,8 @@ class AlertService {
     _flashOverlay?.remove();
     _flashOverlay = null;
     _isFlashing = false;
-    try { Vibration.cancel(); } catch (_) {}
+    // cancel() is async: a failure arrives later, past any try/catch here.
+    unawaited(Vibration.cancel().then<void>((_) {}, onError: (Object e) => debugPrint('Vibration cancel failed: $e')));
   }
 
   void dispose() => stopAll();

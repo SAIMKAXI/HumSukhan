@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -13,53 +12,15 @@ import 'screens/onboarding_screen.dart';
 import 'widgets/main_scaffold.dart';
 import 'l10n/app_strings.dart';
 import 'services/supabase_service.dart';
-import 'services/sound_detection_service.dart';
+import 'modules/environmental_alerts/background/environmental_background_pipeline.dart';
 
+/// Entry point of the Flutter engine Android's environmental monitoring
+/// service starts; it runs with the app closed. Looked up by name from
+/// `EnvironmentalMonitoringService`, so it must stay in this library.
 @pragma('vm:entry-point')
 Future<void> environmentalMonitoringBackgroundMain() async {
   WidgetsFlutterBinding.ensureInitialized();
-  const channel = MethodChannel('com.humsukhan/environmental_monitor');
-  final detector = SoundDetectionService.instance;
-  var pcmFlowSignaled = false;
-
-  channel.setMethodCallHandler((call) async {
-    if (call.method == 'stop') {
-      pcmFlowSignaled = false;
-      detector.stopMonitoring();
-      // The Android service is the authoritative owner of microphone teardown.
-      // It releases AudioRecord/FlutterEngine first and only then persists OFF.
-      // Do not publish OFF from the Dart isolate while native resources are
-      // still being destroyed; foreground speech waits for the native OFF state.
-      return true;
-    }
-    if (call.method == 'audioData') {
-      final raw = call.arguments;
-      if (raw is Uint8List && raw.lengthInBytes >= 2) {
-        detector.processExternalAudio(raw);
-        if (!pcmFlowSignaled) {
-          pcmFlowSignaled = true;
-          await channel.invokeMethod('pipelineState', {
-            'state': 'PCM_FLOWING',
-            'bytes': raw.lengthInBytes,
-          });
-        }
-      }
-      return true;
-    }
-    return null;
-  });
-
-  detector.onSoundDetected = (event) {
-    channel.invokeMethod('event', <String, dynamic>{
-      'type': event.type,
-      'confidence': event.confidence,
-      'severity': event.severity,
-      'timestamp': event.timestamp.toIso8601String(),
-    });
-  };
-
-  final started = await detector.startExternalMonitoring(permissionAlreadyGranted: true);
-  await channel.invokeMethod('pipelineState', {'state': started ? 'READY' : 'ERROR'});
+  await runEnvironmentalBackgroundPipeline();
 }
 
 void main() {
