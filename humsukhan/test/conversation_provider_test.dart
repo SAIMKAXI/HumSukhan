@@ -1,7 +1,37 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:humsukhan/providers/conversation_provider.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('legacy saved conversations are removed and new ones are never persisted', () async {
+    SharedPreferences.setMockInitialValues({
+      'everydayConversations:guest': '[{"id":"old","captions":[]}]',
+      'everydayConversations:user-1': '[]',
+    });
+
+    final conversation = ConversationProvider();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getKeys().where((key) => key.startsWith('everydayConversations:')),
+      isEmpty,
+    );
+
+    conversation.startConversation();
+    conversation.addOwnCaption('Temporary reply');
+    conversation.stopConversation();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(
+      prefs.getKeys().where((key) => key.startsWith('everydayConversations:')),
+      isEmpty,
+    );
+    conversation.deleteConversation();
+    conversation.dispose();
+  });
+
   group('ConversationProvider chat log', () {
     test('interim speech stays in the hidden draft and does not create a caption', () {
       final conversation = ConversationProvider();
