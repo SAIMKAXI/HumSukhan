@@ -136,15 +136,6 @@ class SpeechCapability {
         () async => false,
       );
 
-  Future<bool> sttSupportsLanguage(String language) async {
-    switch (_normalizeLocale(language)) {
-      case 'ur':
-        return sttSupportsUrdu();
-      default:
-        return sttSupportsEnglish();
-    }
-  }
-
   Future<String?> sttLocaleFor(SpeechToText platformStt, String language) async {
     final locales = _localeIds(await platformStt.locales());
     final wanted = _normalizeLocale(

@@ -51,7 +51,6 @@ class EnhancedSpeechProvider {
   bool get isStreamingMode => _currentMode == STTMode.sherpaStreaming;
   bool get isBatchMode => _currentMode == STTMode.sherpaBatch;
   bool get isOnlineMode => _currentMode == STTMode.platform;
-  bool get isDemoMode => _currentMode == STTMode.demo;
   String? get lastStartError => _lastStartError ?? _deepgram.lastStartError;
 
   Future<bool> initialize({String preferredLanguage = 'English'}) async {
@@ -467,17 +466,7 @@ class EnhancedSpeechProvider {
       case STTMode.sherpaStreaming: return 'Offline (Streaming)';
       case STTMode.sherpaBatch: return 'Offline (Batch)';
       case STTMode.platform: return 'Online';
-      case STTMode.demo: return 'Demo Mode';
       case STTMode.none: return 'Unavailable';
-    }
-  }
-
-  String _getLocaleId(String language) {
-    switch (language.toLowerCase()) {
-      case 'urdu':
-      case 'roman urdu': return 'ur-PK';
-      case 'auto': return 'en-US';
-      default: return 'en-US';
     }
   }
 

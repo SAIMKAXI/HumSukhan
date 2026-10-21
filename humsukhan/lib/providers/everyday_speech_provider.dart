@@ -34,7 +34,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   bool _listening = false;
   bool _startingListening = false;
   bool _usingFallback = false;
-  bool _forceFallbackMode = false;
   bool _speaking = false;
   String _language = 'Auto';
   String _lastSpoken = '';
@@ -60,7 +59,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   bool get isStreamingMode => _currentMode == STTMode.sherpaStreaming;
   bool get isBatchMode => _currentMode == STTMode.sherpaBatch;
   bool get isOnlineMode => _currentMode == STTMode.platform;
-  bool get isDemoMode => false;
   bool get isLiveStt => _listening;
   EnhancedSpeechProvider get sttProvider => _fallbackStt;
   Stream<SpeechResultEvent> get onResult => _results.stream;
@@ -72,8 +70,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         return 'Offline (Batch)';
       case STTMode.platform:
         return _usingFallback ? 'Platform fallback' : 'Online';
-      case STTMode.demo:
-        return 'Demo Mode';
       case STTMode.none:
         return 'Unavailable';
     }
@@ -92,8 +88,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         return _usingFallback
             ? 'Using the device speech recognizer after the primary Everyday recognizer became unavailable.'
             : 'Online bilingual speech recognition.';
-      case STTMode.demo:
-        return 'Demo mode with simulated captions.';
       case STTMode.none:
         return 'Speech recognition unavailable.';
     }
@@ -142,11 +136,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       _detected = null;
       _currentMode = STTMode.platform;
       _usingFallback = false;
-
-      if (_forceFallbackMode) {
-        await _startFallback(_language == 'Auto' ? 'English' : _language);
-        return;
-      }
 
       await _bilingualSubscription?.cancel();
       _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
@@ -282,44 +271,11 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     notifyListeners();
   }
 
-  Future<void> switchToOfflineStreamingMode({String language = 'English'}) async {
-    await stopListening();
-    _forceFallbackMode = true;
-    await _fallbackStt.switchMode(STTMode.sherpaStreaming, language: language);
-    _currentMode = STTMode.sherpaStreaming;
-    _language = _normalizeLanguage(language);
-    notifyListeners();
-  }
-
-  Future<void> switchToOfflineBatchMode({String language = 'Urdu'}) async {
-    await stopListening();
-    _forceFallbackMode = true;
-    await _fallbackStt.switchMode(STTMode.sherpaBatch, language: language);
-    _currentMode = STTMode.sherpaBatch;
-    _language = _normalizeLanguage(language);
-    notifyListeners();
-  }
-
-  Future<void> switchToOnlineMode({String language = 'English'}) async {
-    final wasListening = _listening;
-    await stopListening();
-    _forceFallbackMode = false;
-    _language = _normalizeLanguage(language);
-    _currentMode = STTMode.platform;
-    if (wasListening) await startListening(language: _language);
-    notifyListeners();
-  }
-
   Future<void> switchLanguage(String language) async {
     final wasListening = _listening;
     await stopListening();
     _language = _normalizeLanguage(language);
-    if (_forceFallbackMode) {
-      await _fallbackStt.switchLanguage(_language == 'Auto' ? 'English' : _language);
-      _currentMode = _fallbackStt.currentMode;
-    } else {
-      _currentMode = STTMode.platform;
-    }
+    _currentMode = STTMode.platform;
     if (wasListening) await startListening(language: _language);
     notifyListeners();
   }
@@ -331,17 +287,12 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   Future<bool> downloadOfflineModel(String language) async {
     final success = await _modelManager.downloadModel(language);
-    if (success && _forceFallbackMode) {
-      await _fallbackStt.switchLanguage(language);
-      _currentMode = _fallbackStt.currentMode;
-    }
     notifyListeners();
     return success;
   }
 
   Future<bool> deleteModel(String language) async {
     final success = await _modelManager.deleteModel(language);
-    if (success && _forceFallbackMode) _currentMode = _fallbackStt.currentMode;
     notifyListeners();
     return success;
   }

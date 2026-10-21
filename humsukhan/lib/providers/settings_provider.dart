@@ -192,12 +192,6 @@ class SettingsProvider extends ChangeNotifier {
   void toggleVisualAlerts() { _visualAlerts = !_visualAlerts; notifyListeners(); _persistChange('visualAlerts', _visualAlerts); }
   void toggleFlashAlerts() { _flashAlerts = !_flashAlerts; notifyListeners(); _persistChange('flashAlerts', _flashAlerts); }
   void toggleScreenFlashAlerts() { _screenFlashAlerts = !_screenFlashAlerts; notifyListeners(); _persistChange('screenFlashAlerts', _screenFlashAlerts); }
-  void setCaptionLanguage(String lang) {
-    if (!const ['English', 'Roman Urdu', 'Urdu'].contains(lang)) return;
-    _captionLanguage = lang;
-    notifyListeners();
-    _persistChange('captionLanguage', lang);
-  }
   void setAppLanguage(String langCode) {
     if (!const ['en', 'ur'].contains(langCode)) return;
     _appLanguage = langCode;
@@ -213,25 +207,11 @@ class SettingsProvider extends ChangeNotifier {
     _persistChange('allowedAlerts', jsonEncode(_allowedAlerts));
   }
 
-  Future<bool> hasCompletedOnboardingForUser(String userId) async {
-    if (userId.isEmpty) return false;
-    if (_onboardedUsers.contains(userId)) return true;
-    final prefs = await SharedPreferences.getInstance();
-    final done = prefs.getBool('onboardingComplete:$userId') ?? false;
-    if (done) _onboardedUsers.add(userId);
-    return done;
-  }
-
   Future<void> completeOnboardingForUser(String userId) async {
     if (userId.isEmpty) return;
     _onboardedUsers.add(userId);
     await _save('onboardingComplete:$userId', true);
     if (!_disposed) notifyListeners();
-  }
-
-  Future<void> completeOnboarding() async {
-    final userId = AuthService.instance.currentUser?.id;
-    if (userId != null) await completeOnboardingForUser(userId);
   }
 
   Future<void> clearLocalSettings() async {

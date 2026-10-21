@@ -364,61 +364,6 @@ class SecondaryActionButton extends StatelessWidget {
   }
 }
 
-// ===== CAPTION BUBBLE =====
-class CaptionBubble extends StatelessWidget {
-  final Caption caption;
-  final double textSize;
-  final bool isHighContrast;
-  const CaptionBubble({super.key, required this.caption, this.textSize = 16.0, this.isHighContrast = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bubbleColor = AppTheme.captionBubbleColor(isOwn: caption.isOwn, isDarkMode: isDark);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-      child: Column(
-        crossAxisAlignment: caption.isOwn ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(caption.speaker, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTokens.deepSage)),
-              const SizedBox(width: 8),
-              Text('${caption.timestamp.hour.toString().padLeft(2, '0')}:${caption.timestamp.minute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(fontSize: 11, color: AppTokens.textMuted)),
-            ]),
-          ),
-          Container(
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: bubbleColor,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(16), topRight: const Radius.circular(16),
-                bottomLeft: Radius.circular(caption.isOwn ? 16 : 4),
-                bottomRight: Radius.circular(caption.isOwn ? 4 : 16),
-              ),
-              border: isHighContrast ? Border.all(color: AppTokens.pureWhite, width: 1) : null,
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(caption.text, style: TextStyle(
-                fontSize: textSize,
-                color: isHighContrast ? AppTokens.pureWhite : AppTokens.textDeepForest,
-                fontWeight: caption.isPartial ? FontWeight.normal : FontWeight.w500,
-                fontStyle: caption.isPartial ? FontStyle.italic : FontStyle.normal,
-              )),
-              if (caption.language.isNotEmpty && caption.language != 'English')
-                Padding(padding: const EdgeInsets.only(top: 4), child: LanguageBadge(language: caption.language)),
-            ]),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ===== ERROR STATE =====
 class ErrorState extends StatelessWidget {
   final String title;

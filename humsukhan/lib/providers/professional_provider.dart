@@ -270,6 +270,4 @@ class ProfessionalProvider extends ChangeNotifier {
     }
   }
 
-  void checkRetention(){_cleanExpiredSessions();notifyListeners();}
-  void addDemoSession(){}
 }

@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import '../config/env_config.dart';
 import '../models/models.dart';
 import '../utils/action_item_normalizer.dart';
 import '../utils/insight_normalizer.dart';
@@ -28,7 +27,6 @@ class AiService {
           'transcript': transcript,
           'sessionTitle': sessionTitle,
           'sessionType': sessionType.name,
-          'model': EnvConfig.geminiModel,
         },
       );
       final data = response.data;

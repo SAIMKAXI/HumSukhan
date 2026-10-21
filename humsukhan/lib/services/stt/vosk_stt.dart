@@ -354,7 +354,6 @@ class SherpaSTTProvider {
     return result;
   }
 
-  LanguageModel? getModelForLanguage(String language) => _modelManager.getBestModel(language);
   ModelStatus? getModelStatus(String language) => _modelManager.statuses[language];
   Future<bool> downloadModel(String language) => _modelManager.downloadModel(language);
   List<String> get readyLanguages => _modelManager.readyLanguages;
@@ -393,4 +392,4 @@ class SherpaSTTResult {
   });
 }
 
-enum STTMode { none, sherpaStreaming, sherpaBatch, platform, demo }
+enum STTMode { none, sherpaStreaming, sherpaBatch, platform }

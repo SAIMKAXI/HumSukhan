@@ -259,7 +259,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       );
     }
 
-    final availableInsight = insight!;
+    final availableInsight = insight;
     final hasSummary = availableInsight.summaryBullets.isNotEmpty;
 
     return SingleChildScrollView(
