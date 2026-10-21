@@ -25,6 +25,9 @@ class _LegacyProfessionalProvider extends ProfessionalProvider {
   bool get isLoading => false;
 
   @override
+  Future<void> loadInsight(String sessionId) async {}
+
+  @override
   Future<void> generateInsights(String sessionId) async {}
 }
 
