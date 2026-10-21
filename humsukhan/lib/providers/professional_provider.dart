@@ -86,7 +86,8 @@ class ProfessionalProvider extends ChangeNotifier {
       deadlines: deadlines,
       mentionedPeople: mentionedPeople,
       generatedAt: insight.generatedAt,
-      isAvailable: insight.isAvailable && summaryBullets.isNotEmpty,
+      isAvailable: insight.isAvailable &&
+          (summaryBullets.isNotEmpty || actionItems.isNotEmpty || deadlines.isNotEmpty),
     );
   }
 
