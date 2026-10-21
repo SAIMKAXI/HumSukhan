@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/speech_engine.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../theme/app_theme.dart';
 import '../widgets/reusable_widgets.dart';
@@ -64,7 +65,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     try {
       await speech.initialize(preferredLanguage: session.captionLanguage);
       await _speechSubscription?.cancel();
-      _speechSubscription = speech.onResult.listen(_handleSpeechResult);
+      _speechSubscription = speech.onResult.listen(_handleSpeechResult, onError: _handleSpeechInterrupted);
       _startTime = DateTime.now();
 
       if (!mounted) return;
@@ -178,6 +179,21 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
         });
       }
     }
+  }
+
+  /// Recognition stopped mid-session and the on-device fallback could not
+  /// take over. Keep the words already heard and say why the microphone went
+  /// off, instead of showing it as still listening.
+  Future<void> _handleSpeechInterrupted(Object error) async {
+    if (!mounted || !_acceptSpeechResults) return;
+    await _flushHiddenDraft();
+    _acceptSpeechResults = false;
+    if (!mounted) return;
+    setState(() {
+      _isListening = false;
+      _speechStatus = 'Microphone off — session still active';
+      _startupError = error is SpeechInterruption ? error.message : 'Speech recognition stopped: $error';
+    });
   }
 
   void _handleSpeechResult(SpeechResultEvent result) {

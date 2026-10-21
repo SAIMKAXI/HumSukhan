@@ -76,6 +76,7 @@ class EverydayBilingualSttService {
 
   final AudioRecorder _recorder = AudioRecorder();
   final StreamController<EverydayBilingualResult> _controller = StreamController<EverydayBilingualResult>.broadcast();
+  final StreamController<String> _connectionLost = StreamController<String>.broadcast();
 
   WebSocket? _englishSocket;
   WebSocket? _urduSocket;
@@ -108,6 +109,11 @@ class EverydayBilingualSttService {
   String _lastEmitted = '';
 
   Stream<EverydayBilingualResult> get onResult => _controller.stream;
+
+  /// Fires, with the reason, when reconnecting has failed and no recognizer
+  /// socket is left open: the microphone is still recording but nothing can
+  /// turn it into captions any more.
+  Stream<String> get onConnectionLost => _connectionLost.stream;
   bool get isListening => _recording;
   bool get isReady => _ready;
   String? get lastStartError => _lastStartError;
@@ -364,6 +370,9 @@ class EverydayBilingualSttService {
         _lastStartError =
             'Speech recognition lost its $source connection and could not reconnect. '
             'Check your internet connection, then start listening again.';
+        final anyOpen = [_englishSocket, _urduSocket]
+            .any((socket) => socket != null && socket.readyState == WebSocket.open);
+        if (!anyOpen) _connectionLost.add(_lastStartError!);
       }
     } finally {
       _reconnectingSources.remove(source);

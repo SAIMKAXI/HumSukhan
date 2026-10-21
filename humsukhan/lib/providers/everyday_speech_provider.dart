@@ -29,6 +29,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   StreamSubscription<EverydayBilingualResult>? _bilingualSubscription;
   StreamSubscription<SpeechResultEvent>? _fallbackSubscription;
+  StreamSubscription<String>? _connectionLostSubscription;
   bool _initialized = false;
   bool _listening = false;
   bool _startingListening = false;
@@ -149,6 +150,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
       await _bilingualSubscription?.cancel();
       _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
+      _connectionLostSubscription ??= _bilingual.onConnectionLost.listen(_onBilingualConnectionLost);
       final started = await _bilingual.start(mode: _language);
       if (started) {
         _listening = true;
@@ -161,6 +163,22 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       await _startFallback(_language == 'Auto' ? 'English' : _language);
     } finally {
       _startingListening = false;
+    }
+  }
+
+  /// The cloud recognizer dropped mid-conversation and could not reconnect.
+  /// Carry on captioning with the device recognizer rather than leave the
+  /// microphone open with nothing turning it into text; only if that cannot
+  /// start either is the conversation told that listening has stopped.
+  Future<void> _onBilingualConnectionLost(String message) async {
+    if (_disposed || !_listening || _usingFallback || _startingListening) return;
+    await _bilingualSubscription?.cancel();
+    _bilingualSubscription = null;
+    await _bilingual.stop();
+    _listening = false;
+    await _startFallback(_language == 'Auto' ? 'English' : _language);
+    if (!_listening && !_results.isClosed) {
+      _results.addError(SpeechInterruption(_lastStartError ?? message));
     }
   }
 
@@ -492,6 +510,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   void _cancelSubscriptions() {
     unawaited(_bilingualSubscription?.cancel());
+    unawaited(_connectionLostSubscription?.cancel());
+    _connectionLostSubscription = null;
     unawaited(_fallbackSubscription?.cancel());
     _bilingualSubscription = null;
     _fallbackSubscription = null;

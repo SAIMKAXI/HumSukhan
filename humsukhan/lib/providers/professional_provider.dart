@@ -123,8 +123,23 @@ class ProfessionalProvider extends ChangeNotifier {
   Future<void> _syncFromCloud() async {
     try {
       final cloudSessions = await DatabaseService.instance.fetchSessions();
-      for (final cs in cloudSessions) { final idx=_sessions.indexWhere((s)=>s.id==cs.id); if(idx==-1) _sessions.add(cs); else _sessions[idx]=cs; }
+      final healed = <ProfessionalSession>[];
+      for (final cs in cloudSessions) {
+        final idx = _sessions.indexWhere((s) => s.id == cs.id);
+        if (idx == -1) {
+          _sessions.add(cs);
+          continue;
+        }
+        final merged = mergeSessions(local: _sessions[idx], cloud: cs);
+        _sessions[idx] = merged;
+        if (merged.captions.length > cs.captions.length) healed.add(merged);
+      }
       await _saveSessions();
+      // Captions recorded while the upload was failing exist only here; send
+      // them now so the cloud copy stops being the shorter one.
+      for (final session in healed) {
+        await DatabaseService.instance.upsertSession(session);
+      }
       final cloudFolders = await DatabaseService.instance.fetchFolders();
       final localFolderIds=_folders.map((f)=>f.id).toSet();
       for(final cf in cloudFolders) { if(!localFolderIds.contains(cf.id)) _folders.add(cf); }
@@ -134,6 +149,25 @@ class ProfessionalProvider extends ChangeNotifier {
       _insights = _canonicalizeInsights([..._insights, ...cloudInsights]);
       await _saveInsights();
     } catch(e){ debugPrint('Cloud sync error: $e'); }
+  }
+
+  /// Combines the phone's copy of a session with the cloud's.
+  ///
+  /// Captions are saved on the phone first and uploaded after, so a session
+  /// recorded through a dropped connection has captions the cloud never got.
+  /// Replacing the local copy with the cloud one deleted them; instead the
+  /// captions are combined, and the copy holding more of them supplies the
+  /// session's details.
+  @visibleForTesting
+  static ProfessionalSession mergeSessions({required ProfessionalSession local, required ProfessionalSession cloud}) {
+    final byId = <String, Caption>{for (final c in cloud.captions) c.id: c, for (final c in local.captions) c.id: c};
+    if (byId.length == cloud.captions.length) return cloud;
+    final captions = byId.values.toList()..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final base = local.captions.length >= cloud.captions.length ? local : cloud;
+    return base.copyWith(
+      captions: captions,
+      transcriptText: captions.map((c) => '${c.speaker}: ${c.text}').join('\n'),
+    );
   }
 
   Future<void> _saveSessions() async { final prefs=await SharedPreferences.getInstance(); await prefs.setString(_sessionsKey,jsonEncode(_sessions.map((s)=>s.toJson()).toList())); }

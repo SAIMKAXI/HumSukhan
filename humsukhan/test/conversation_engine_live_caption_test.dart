@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:humsukhan/providers/conversation_provider.dart';
 import 'package:humsukhan/providers/everyday_speech_provider.dart';
 import 'package:humsukhan/services/conversation_engine.dart';
+import 'package:humsukhan/services/speech_engine.dart';
 import 'package:humsukhan/services/stt/enhanced_stt.dart';
 
 class _FakeSpeech extends EverydaySpeechProvider {
@@ -127,6 +128,30 @@ void main() {
         conversation.captions.map((caption) => caption.text).toList(),
         <String>['hello world', 'how are you'],
       );
+    });
+
+    test('recognition lost mid-turn is reported, keeping what was already captioned', () async {
+      final speech = _FakeSpeech();
+      final conversation = ConversationProvider();
+      conversation.startConversation();
+      final engine = ConversationEngine(speech: speech, conversation: conversation);
+      addTearDown(() {
+        engine.dispose();
+        conversation.dispose();
+        speech.dispose();
+      });
+
+      engine.startListening();
+      await _settleCommands();
+      speech.emit('the train leaves', isFinal: false);
+      await _settleCommands();
+
+      speech.controller.addError(const SpeechInterruption('Speech recognition lost its connection.'));
+      await _settleCommands();
+
+      expect(engine.state, ConversationEngineState.error);
+      expect(engine.statusLabel, 'Speech recognition lost its connection.');
+      expect(conversation.captions.map((c) => c.text), ['the train leaves']);
     });
 
     test('queued recognizer result during stop cannot mutate the caption being finalized', () async {

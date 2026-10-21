@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../providers/conversation_provider.dart';
 import '../providers/everyday_speech_provider.dart';
+import 'speech_engine.dart';
 import 'stt/enhanced_stt.dart';
 
 enum ConversationEngineState {
@@ -34,7 +35,7 @@ class ConversationEngine extends ChangeNotifier {
   final ConversationProvider conversation;
 
   ConversationEngine({required this.speech, required this.conversation}) {
-    _subscription = speech.onResult.listen(_handleSpeechResult);
+    _subscription = speech.onResult.listen(_handleSpeechResult, onError: _handleSpeechInterrupted);
     unawaited(_loadPausePreference());
   }
 
@@ -192,6 +193,29 @@ class ConversationEngine extends ChangeNotifier {
     _state = ConversationEngineState.processingFinal;
     notifyListeners();
     _enqueue(_stopListening);
+  }
+
+  /// Recognition stopped by itself mid-turn and nothing could take over.
+  /// Keep what was already captioned, and say why the microphone stopped
+  /// rather than go on showing it as listening.
+  void _handleSpeechInterrupted(Object error) {
+    if (_disposed) return;
+    final live = _state == ConversationEngineState.listening ||
+        _state == ConversationEngineState.speechActive ||
+        _state == ConversationEngineState.waitingForTurnEnd;
+    if (!live) return;
+    _cancelSilenceTimer();
+    _turnGeneration++;
+    final transcript = _latestTranscript.trim();
+    if (transcript.isNotEmpty) {
+      conversation.updateSpeakerTurn(transcript, language: _latestLanguage);
+    }
+    conversation.commitSpeakerTurn();
+    _latestTranscript = '';
+    _settledTurnText = '';
+    _state = ConversationEngineState.error;
+    _errorMessage = error is SpeechInterruption ? error.message : 'Live speech recognition stopped.';
+    notifyListeners();
   }
 
   Future<void> _stopListening() async {
