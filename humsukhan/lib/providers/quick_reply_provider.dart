@@ -23,6 +23,13 @@ class QuickReplyProvider extends ChangeNotifier {
   List<QuickReply> get responseReplies => _replies.where((r) => r.category == 'Response').toList();
   List<QuickReply> get favoriteReplies => _replies.where((r) => r.isFavorite).toList();
 
+  /// Favourites first, otherwise in the order the user has them, so starring
+  /// a reply keeps it among the few shown during a conversation.
+  List<QuickReply> get orderedReplies => [
+        ..._replies.where((r) => r.isFavorite),
+        ..._replies.where((r) => !r.isFavorite),
+      ];
+
   QuickReplyProvider() {
     _loadReplies();
   }

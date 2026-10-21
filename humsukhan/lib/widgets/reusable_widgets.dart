@@ -69,17 +69,21 @@ class OfflineBadge extends StatelessWidget {
 class QuickReplyChip extends StatelessWidget {
   final QuickReply reply;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool isHighContrast;
-  const QuickReplyChip({super.key, required this.reply, required this.onTap, this.isHighContrast = false});
+  const QuickReplyChip({super.key, required this.reply, required this.onTap, this.onLongPress, this.isHighContrast = false});
 
   @override
   Widget build(BuildContext context) {
-    return ActionChip(
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: ActionChip(
       label: Text(reply.text, style: TextStyle(color: isHighContrast ? AppTokens.warmIvory : AppTokens.textDeepForest, fontWeight: FontWeight.w500)),
       avatar: reply.isFavorite ? const Icon(Icons.star, size: 16, color: AppTokens.warning) : null,
       backgroundColor: isHighContrast ? AppTokens.darkForest : AppTokens.softCream,
       side: BorderSide(color: isHighContrast ? AppTokens.softSage : AppTokens.borderSage),
       onPressed: onTap,
+      ),
     );
   }
 }

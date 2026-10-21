@@ -214,18 +214,13 @@ class SettingsProvider extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> clearLocalSettings() async {
-    final prefs = await SharedPreferences.getInstance();
+  /// Restores display, alert, privacy and per-sound settings to their
+  /// defaults, here and in the cloud copy, so the next sync cannot bring the
+  /// old values back. The app language is kept — resetting someone who reads
+  /// Urdu into an English interface would leave them unable to undo it — and
+  /// so is onboarding, which is not a setting.
+  Future<void> resetToDefaults() async {
     if (_disposed) return;
-    const keys = [
-      'darkMode', 'highContrast', 'largeText', 'captionTextSize', 'hapticAlerts',
-      'visualAlerts', 'flashAlerts', 'screenFlashAlerts', 'simplifiedLanguage',
-      'captionLanguage', 'appLanguage', 'defaultRetentionDays', 'monitoringEnabled',
-      'allowedAlerts', 'onboardingComplete',
-    ];
-    for (final key in keys) await prefs.remove(key);
-    final userKeys = prefs.getKeys().where((key) => key.startsWith('onboardingComplete:')).toList();
-    for (final key in userKeys) await prefs.remove(key);
     _isDarkMode = false;
     _isHighContrast = false;
     _isLargeText = false;
@@ -235,12 +230,18 @@ class SettingsProvider extends ChangeNotifier {
     _flashAlerts = false;
     _screenFlashAlerts = true;
     _captionLanguage = 'English';
-    _appLanguage = 'en';
     _defaultRetentionDays = 7;
     _monitoringEnabled = false;
-    _onboardedUsers.clear();
-    for (final key in _allowedAlerts.keys) _allowedAlerts[key] = true;
-    if (!_disposed) notifyListeners();
+    for (final key in _allowedAlerts.keys) {
+      _allowedAlerts[key] = true;
+    }
+    notifyListeners();
+    try {
+      await _persistAllLocal();
+      await _saveToCloud();
+    } catch (e) {
+      debugPrint('Settings reset could not be saved: $e');
+    }
   }
 
   @override

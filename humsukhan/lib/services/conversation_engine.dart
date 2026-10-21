@@ -268,43 +268,6 @@ class ConversationEngine extends ChangeNotifier {
     notifyListeners();
   }
 
-  void speakLastUtterance() => _enqueue(_speakLastUtterance);
-
-  Future<void> _speakLastUtterance() async {
-    if (conversation.state != ConversationState.active) return;
-    if (speech.isListening) await _stopListening();
-
-    Caption? lastSpeakerCaption;
-    for (final caption in conversation.captions.reversed) {
-      if (!caption.isOwn && caption.text.trim().isNotEmpty) {
-        lastSpeakerCaption = caption;
-        break;
-      }
-    }
-    if (lastSpeakerCaption == null) return;
-
-    _state = ConversationEngineState.speaking;
-    notifyListeners();
-    try {
-      await speech.speak(lastSpeakerCaption.text, language: lastSpeakerCaption.language);
-      await speech.startListening(language: 'Auto');
-      if (speech.isListening && conversation.state == ConversationState.active) {
-        conversation.beginSpeakerTurn(language: 'Auto');
-        _state = ConversationEngineState.listening;
-        _errorMessage = null;
-      } else {
-        _state = ConversationEngineState.error;
-        _errorMessage = speech.lastStartError ?? 'Listening could not be resumed after speaking.';
-      }
-    } catch (e) {
-      _state = ConversationEngineState.error;
-      _errorMessage = 'Listening could not be resumed after speaking.';
-      debugPrint('ConversationEngine replay/resume error: $e');
-    } finally {
-      notifyListeners();
-    }
-  }
-
   static String _joinTurn(String settled, String addition) =>
       settled.isEmpty ? addition : '$settled $addition';
 

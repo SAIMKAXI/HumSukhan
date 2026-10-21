@@ -41,6 +41,16 @@ class _FakeProfessionalProvider extends ProfessionalProvider {
   Future<void> generateInsights(String sessionId) async {
     generateCalls++;
   }
+
+  final List<(String, String?)> moves = [];
+
+  @override
+  List<Folder> get folders => [Folder(id: 'f1', name: 'Physics')];
+
+  @override
+  Future<void> moveSessionToFolder(String sessionId, String? folderId) async {
+    moves.add((sessionId, folderId));
+  }
 }
 
 Widget _app(_FakeProfessionalProvider provider) {
@@ -174,5 +184,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(provider.generateCalls, callsBeforeRetry + 1);
+  });
+
+  testWidgets('a session can be moved to a folder from its menu', (tester) async {
+    final provider = _FakeProfessionalProvider(ProfessionalSession(
+      id: 'session-1',
+      title: 'Thermodynamics',
+      type: SessionType.lecture,
+      captionLanguage: 'English',
+      captions: const [],
+    ));
+    await tester.pumpWidget(_app(provider));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move to folder'));
+    await tester.pumpAndSettle();
+    expect(find.text('General'), findsOneWidget);
+    await tester.tap(find.text('Physics'));
+    await tester.pumpAndSettle();
+
+    expect(provider.moves, [('session-1', 'f1')]);
+    expect(find.text('Moved to Physics'), findsOneWidget);
   });
 }

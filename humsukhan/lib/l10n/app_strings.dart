@@ -99,6 +99,8 @@ class AppStrings {
   String get actionsTab => _isUrdu ? 'اقدامات' : 'Actions';
   String get exportAction => _isUrdu ? 'برآمد' : 'Export';
   String get deleteAction => _isUrdu ? 'حذف' : 'Delete';
+  String get moveToFolderAction => _isUrdu ? 'فولڈر میں منتقل کریں' : 'Move to folder';
+  String movedToFolder(String folder) => _isUrdu ? '$folder میں منتقل کر دیا گیا' : 'Moved to $folder';
   String get aiInsights => _isUrdu ? 'AI بصیرت' : 'AI INSIGHTS';
   String get aiSummary => _isUrdu ? 'AI خلاصہ' : 'AI Summary';
   String get actionItems => _isUrdu ? 'عمل کے اقدامات' : 'Action Items';
@@ -177,6 +179,25 @@ class AppStrings {
   String get privacyNoticeText => _isUrdu ? 'HumSukhan آڈیو کو عارضی طور پر پروسیس کرتا ہے اور ریلیز کرتا ہے۔ خام آڈیو کبھی محفوظ نہیں کیا جاتا۔ محفوظ شدہ ریکارڈز صرف کیپشنز اور میٹا ڈیٹا رکھتے ہیں۔ برآمد شدہ فائلیں HumSukhan کے باہر رکھی جاتی ہیں۔' : 'HumSukhan processes audio temporarily and releases it. No raw audio is ever stored. Saved records contain captions and metadata only. Exported files are stored outside HumSukhan.';
   String get aboutSection => _isUrdu ? 'ہمارے بارے میں' : 'About';
   String get cancel => _isUrdu ? 'منسوخ' : 'Cancel';
+  String get resetSettings => _isUrdu ? 'ترتیبات ابتدائی حالت پر لائیں' : 'Reset settings';
+  String get resetSettingsDesc => _isUrdu
+      ? 'ڈسپلے، الرٹ اور رازداری کی ترتیبات کو ابتدائی حالت پر واپس لائیں۔'
+      : 'Restore display, alert and privacy settings to their defaults.';
+  String get resetSettingsConfirm => _isUrdu
+      ? 'تمام ترتیبات ابتدائی حالت پر واپس کریں؟ آپ کی ایپ کی زبان، اکاؤنٹ اور محفوظ اجلاس برقرار رہیں گے۔'
+      : 'Reset all settings to their defaults? Your app language, account and saved sessions are kept.';
+  String get resetAction => _isUrdu ? 'واپس لائیں' : 'Reset';
+  String get settingsWereReset => _isUrdu ? 'ترتیبات ابتدائی حالت پر واپس آ گئیں' : 'Settings restored to defaults';
+  String get quickRepliesSection => _isUrdu ? 'فوری جوابات' : 'Quick replies';
+  String get manageQuickReplies => _isUrdu ? 'فوری جوابات کا انتظام' : 'Manage quick replies';
+  String get manageQuickRepliesDesc => _isUrdu
+      ? 'جوابات شامل کریں، پسندیدہ بنائیں یا حذف کریں۔ پسندیدہ جوابات پہلے دکھائے جاتے ہیں۔'
+      : 'Add, favourite or delete replies. Favourites are shown first.';
+  String get addQuickReplyHint => _isUrdu ? 'نیا فوری جواب لکھیں' : 'Type a new quick reply';
+  String get addAction => _isUrdu ? 'شامل کریں' : 'Add';
+  String get addToFavourites => _isUrdu ? 'پسندیدہ میں شامل کریں' : 'Add to favourites';
+  String get removeFromFavourites => _isUrdu ? 'پسندیدہ سے ہٹائیں' : 'Remove from favourites';
+  String get noQuickReplies => _isUrdu ? 'ابھی کوئی فوری جواب نہیں' : 'No quick replies yet';
   String get appLanguage => _isUrdu ? 'ایپ کی زبان' : 'App Language';
   String get syncedWithSupabase => _isUrdu ? 'Supabase کے ساتھ ہم آہنگ' : 'Synced with Supabase';
   String get notSignedIn => _isUrdu ? 'سائن اِن نہیں کیا گیا' : 'Not signed in';
