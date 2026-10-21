@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../services/everyday_bilingual_stt.dart';
 import '../services/everyday_language_policy.dart';
-import '../services/environmental_monitoring_bridge.dart';
+import '../modules/environmental_alerts/services/environmental_monitor.dart';
 import '../services/roman_urdu_detector.dart';
 import '../services/speech_capability.dart';
 import '../services/speech_engine.dart';
@@ -26,7 +26,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   final StreamController<SpeechResultEvent> _results = StreamController<SpeechResultEvent>.broadcast();
   final ModelManager _modelManager = ModelManager.instance;
   final SpeechCapability _capability = SpeechCapability.instance;
-  final EnvironmentalMonitoringBridge _environmentalBridge = EnvironmentalMonitoringBridge.instance;
 
   StreamSubscription<EverydayBilingualResult>? _bilingualSubscription;
   StreamSubscription<SpeechResultEvent>? _fallbackSubscription;
@@ -131,7 +130,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       // Environmental monitoring uses a dedicated native microphone capture
       // path, including when it was started from Quick Settings. Release that
       // capture completely before opening foreground speech recognition.
-      final released = await _environmentalBridge.releaseForForegroundSpeech();
+      final released = await EnvironmentalMonitoring.releaseForForegroundSpeech();
       if (!released) {
         throw StateError('Environmental monitoring could not release the microphone for speech recognition.');
       }

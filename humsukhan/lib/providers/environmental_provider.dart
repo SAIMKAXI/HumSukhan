@@ -1,346 +1,167 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
+import '../modules/environmental_alerts/models/environmental_sound.dart';
+import '../modules/environmental_alerts/models/monitoring_status.dart';
+import '../modules/environmental_alerts/services/alert_history_store.dart';
+import '../modules/environmental_alerts/services/environmental_monitor.dart';
 import '../services/alert_service.dart';
-import '../services/audio_model_manager.dart';
-import '../services/environmental_monitoring_bridge.dart';
-import '../services/sound_detection_service.dart';
 import 'settings_provider.dart';
 
+/// What the Alerts screen shows: whether monitoring is running, why it is
+/// not, the alert in front of the user and the history behind it.
+///
+/// It does not detect or announce anything itself. The platform monitor does
+/// that wherever the audio is, and this provider follows it, adding the
+/// effects that need the app on screen: the banner, screen flash and torch.
 class EnvironmentalProvider extends ChangeNotifier {
-  EnvironmentalProvider() {
-    unawaited(_initializeNativeBridge());
-    unawaited(_loadAlertHistory());
+  EnvironmentalProvider({
+    EnvironmentalMonitor? monitor,
+    AlertHistoryStore? history,
+    Future<PermissionStatus> Function()? requestMicrophone,
+    void Function(SoundEvent event, SettingsProvider? settings)? showInAppAlert,
+  })  : _monitor = monitor ?? EnvironmentalMonitoring.instance,
+        _history = history ?? AlertHistoryStore(),
+        _requestMicrophone = requestMicrophone ?? Permission.microphone.request,
+        _showInAppAlert = showInAppAlert ?? _flash {
+    _subscription = _monitor.updates.listen(_onUpdate);
+    unawaited(_monitor.attach().then((_) => _sync()));
+    unawaited(_reloadHistory());
   }
 
-  static const _historyKey = 'environmentalAlertHistory';
-  static const _maxHistoryEntries = 100;
-  static const _minConfidence = 0.6;
+  final EnvironmentalMonitor _monitor;
+  final AlertHistoryStore _history;
+  final Future<PermissionStatus> Function() _requestMicrophone;
+  final void Function(SoundEvent, SettingsProvider?) _showInAppAlert;
+  late final StreamSubscription<MonitorUpdate> _subscription;
 
-  final EnvironmentalMonitoringBridge _bridge = EnvironmentalMonitoringBridge.instance;
-  final SoundDetectionService _soundService = SoundDetectionService.instance;
-  final AudioModelManager _modelManager = AudioModelManager.instance;
-  final List<SoundEvent> _alertHistory = [];
-
+  MonitoringStatus _status = MonitoringStatus.off;
+  MonitoringFailure? _failure;
+  List<SoundEvent> _alertHistory = const [];
   SoundEvent? _currentAlert;
-  String _monitoringState = 'OFF';
-  String? _lastAlertType;
-  DateTime? _lastAlertTime;
   SettingsProvider? _settingsProvider;
-  bool _bridgeInitialized = false;
-  bool _usingInAppFallback = false;
+  bool _busy = false;
   bool _disposed = false;
-  String? _errorMessage;
-  Future<void> _historyWriteQueue = Future.value();
+
+  /// Shown on the active-alert banner, keyed by sound type.
+  static final Map<String, String> alertDescriptions = {
+    for (final sound in EnvironmentalSound.all) sound.type: sound.description,
+  };
 
   void setSettingsProvider(SettingsProvider settings) => _settingsProvider = settings;
 
-  bool get monitoringEnabled => _monitoringState == 'ACTIVE';
-  String get monitoringState => _monitoringState;
-  bool get isStarting => _monitoringState == 'STARTING';
-  bool get isStopping => _monitoringState == 'STOPPING';
-  bool get hasError => _monitoringState == 'ERROR';
-  bool get isProcessing => Platform.isAndroid
-      ? (_usingInAppFallback ? _soundService.isMonitoring : _bridge.isActive)
-      : _soundService.isMonitoring;
-  bool get isMicrophoneReady => Platform.isAndroid
-      ? (_usingInAppFallback ? _soundService.isMicrophoneReady : _bridge.isActive)
-      : _soundService.isMicrophoneReady;
-  bool get isModelReady => Platform.isAndroid
-      ? (_usingInAppFallback ? _soundService.isModelReady : _bridge.isActive && !hasError)
-      : _soundService.isModelReady;
-  String? get errorMessage => _errorMessage;
-  bool get isLocal => true;
-  String get environmentalStatus => monitoringEnabled ? 'Monitoring locally' : 'Off';
+  bool get monitoringEnabled => _status == MonitoringStatus.active;
+  bool get isStarting => _status == MonitoringStatus.starting;
+  bool get isStopping => _status == MonitoringStatus.stopping;
+  bool get hasError => _failure != null;
+  bool get isProcessing => monitoringEnabled;
+  String? get errorMessage => _failure?.message;
+
+  /// The remedy for the current failure is in the system's app settings.
+  bool get needsSystemSettings => _failure?.needsSystemSettings ?? false;
+
+  /// Newest first.
   List<SoundEvent> get alertHistory => List.unmodifiable(_alertHistory);
   SoundEvent? get currentAlert => _currentAlert;
 
-  List<SoundEvent> get recentAlerts {
-    final sorted = List<SoundEvent>.from(_alertHistory)
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    return sorted.take(20).toList();
-  }
-
-  static const Map<String, String> alertDescriptions = {
-    'Siren': 'A siren sound was detected nearby.',
-    'Doorbell': 'A doorbell sound was detected.',
-    'Knock': 'A knocking sound was detected at a door.',
-    'Baby Cry': 'A baby crying sound was detected.',
-  };
-
-  Future<void> _loadAlertHistory() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (_disposed) return;
-      final raw = prefs.getString(_historyKey);
-      if (raw != null && raw.isNotEmpty) {
-        final decoded = jsonDecode(raw);
-        if (decoded is List) {
-          _alertHistory
-            ..clear()
-            ..addAll(
-              decoded
-                  .whereType<Map>()
-                  .map((item) => SoundEvent.fromJson(Map<String, dynamic>.from(item)))
-                  .where((event) => SoundDetectionService.supportedEvents.contains(event.type)),
-            );
-          if (_disposed) return;
-          _alertHistory.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-          if (_alertHistory.isNotEmpty) {
-            _lastAlertType = _alertHistory.first.type;
-            _lastAlertTime = _alertHistory.first.timestamp;
-          }
-          await prefs.setString(
-            _historyKey,
-            jsonEncode(
-              _alertHistory.take(_maxHistoryEntries).map((event) => event.toJson()).toList(),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('Environmental alert history load error: $e');
-    }
-    if (!_disposed) notifyListeners();
-  }
-
-  Future<void> _saveAlertHistory() async {
-    if (_disposed) return;
-    _historyWriteQueue = _historyWriteQueue.then((_) async {
-      if (_disposed) return;
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        if (_disposed) return;
-        await prefs.setString(
-          _historyKey,
-          jsonEncode(
-            _alertHistory.take(_maxHistoryEntries).map((event) => event.toJson()).toList(),
-          ),
-        );
-      } catch (e) {
-        debugPrint('Environmental alert history save error: $e');
-      }
-    });
-    await _historyWriteQueue;
-  }
-
-  Future<void> _initializeNativeBridge() async {
-    if (_bridgeInitialized || _disposed) return;
-    _bridgeInitialized = true;
-    await _bridge.initialize(onChange: (state, event) {
-      if (_disposed) return;
-      if (_usingInAppFallback && state != 'OFF') return;
-      _monitoringState = state;
-      if (event != null) {
-        final type = event['type']?.toString();
-        final confidence = (event['confidence'] as num?)?.toDouble();
-        final severity = event['severity']?.toString() ?? 'warning';
-        if (type != null && confidence != null && !_disposed) {
-          processSoundEvent(
-            SoundEvent(type: type, confidence: confidence, severity: severity),
-          );
-        }
-      } else {
-        if (!_disposed) notifyListeners();
-      }
-    });
-  }
-
-  /// Monitoring startup is local-only. Model initialization copies the model
-  /// from the app package into app-private storage and never uses the network.
-  Future<bool> _prepareModel() => _modelManager.initialize();
-
   Future<void> toggleMonitoring() async {
-    if (_disposed || isStarting || isStopping) return;
-
-    if (_monitoringState == 'ACTIVE') {
-      _monitoringState = 'STOPPING';
-      _errorMessage = null;
-      notifyListeners();
-
-      if (Platform.isAndroid) {
-        if (_usingInAppFallback) {
-          _soundService.stopMonitoring();
-          _usingInAppFallback = false;
-          _monitoringState = 'OFF';
-        } else {
-          final stopped = await _bridge.stop();
-          if (_disposed) return;
-          if (!stopped) {
-            _monitoringState = 'ERROR';
-            _errorMessage = 'Environmental monitoring could not be stopped safely. Try again.';
-          }
-        }
+    if (_disposed || _busy || _status.isTransitioning) return;
+    _busy = true;
+    try {
+      if (monitoringEnabled) {
+        await _monitor.stop();
       } else {
-        _soundService.stopMonitoring();
-        _monitoringState = 'OFF';
+        await _start();
       }
-      if (!_disposed) notifyListeners();
-      return;
+    } finally {
+      _busy = false;
+      _sync();
     }
+  }
 
-    _errorMessage = null;
-    final permission = await Permission.microphone.request();
+  Future<void> _start() async {
+    _failure = null;
+    final permission = await _requestMicrophone();
     if (_disposed) return;
     if (!permission.isGranted) {
-      _monitoringState = 'ERROR';
-      _errorMessage = permission.isPermanentlyDenied
-          ? 'Microphone permission is blocked. Open App Settings and allow Microphone, then tap Start Monitoring again.'
-          : 'Microphone permission is required for Environmental Alerts.';
+      _status = MonitoringStatus.error;
+      _failure = permission.isPermanentlyDenied
+          ? MonitoringFailure.microphoneBlocked
+          : MonitoringFailure.microphoneDenied;
       notifyListeners();
       return;
     }
-
-    if (Platform.isAndroid) {
-      _monitoringState = 'STARTING';
-      _usingInAppFallback = false;
-      notifyListeners();
-      final modelReady = await _prepareModel();
-      if (_disposed) return;
-      if (!modelReady) {
-        _monitoringState = 'ERROR';
-        _errorMessage = 'Environmental sound detection could not load its built-in local model. Please update or reinstall the app.';
-        notifyListeners();
-        return;
-      }
-
-      final started = await _bridge.start();
-      if (_disposed) return;
-      if (started && _bridge.state == 'ACTIVE') {
-        _usingInAppFallback = false;
-        _monitoringState = 'ACTIVE';
-        notifyListeners();
-        return;
-      }
-
-      if (_bridge.state != 'OFF') {
-        _monitoringState = 'ERROR';
-        _errorMessage = 'Environmental monitoring could not start safely because the background service is still changing state. Try again in a moment.';
-        notifyListeners();
-        return;
-      }
-
-      final initialized = await _soundService.initialize(requestPermission: false);
-      if (_disposed) return;
-      if (initialized && _soundService.isMicrophoneReady) {
-        _soundService.onSoundDetected = processSoundEvent;
-        final fallbackStarted = await _soundService.startMonitoring(permissionAlreadyGranted: true);
-        if (_disposed) return;
-        if (fallbackStarted) {
-          _usingInAppFallback = true;
-          _monitoringState = 'ACTIVE';
-          notifyListeners();
-          return;
-        }
-      }
-
-      _usingInAppFallback = false;
-      _monitoringState = 'ERROR';
-      _errorMessage = 'Environmental monitoring could not start. Check microphone permission and Android battery/background restrictions, then try again.';
-      notifyListeners();
-      return;
-    }
-
-    _monitoringState = 'STARTING';
+    _status = MonitoringStatus.starting;
     notifyListeners();
-    final initialized = await _soundService.initialize(requestPermission: false);
-    if (_disposed) return;
-    if (!initialized || !_soundService.isMicrophoneReady) {
-      _monitoringState = 'ERROR';
-      _errorMessage = 'Microphone access is unavailable. Allow microphone access in App Settings, then try again.';
-      notifyListeners();
-      return;
-    }
+    await _monitor.start();
+  }
 
-    final modelReady = await _prepareModel();
-    if (_disposed) return;
-    if (!modelReady) {
-      _monitoringState = 'ERROR';
-      _errorMessage = 'Environmental sound detection could not load its built-in local model. Please update or reinstall the app.';
-      notifyListeners();
-      return;
-    }
+  Future<void> openMicrophoneSettings() => openAppSettings();
 
-    _soundService.onSoundDetected = processSoundEvent;
-    final started = await _soundService.startMonitoring(permissionAlreadyGranted: true);
-    if (_disposed) return;
-    if (started) {
-      _monitoringState = 'ACTIVE';
-    } else if (!_soundService.isModelReady) {
-      _monitoringState = 'ERROR';
-      _errorMessage = 'Environmental sound detection could not load its built-in local model. Please update or reinstall the app.';
-    } else {
-      _monitoringState = 'ERROR';
-      _errorMessage = 'The microphone recorder could not start. Check microphone access and try again.';
-    }
+  /// Dismisses [id], or the alert on the banner when no id is given.
+  Future<void> dismissAlert([String? id]) async {
+    final target = id ?? _currentAlert?.id;
+    if (_disposed || target == null) return;
+    if (_currentAlert?.id == target) _currentAlert = null;
+    _alertHistory = [
+      for (final event in _alertHistory) event.id == target ? event.copyWith(dismissed: true) : event,
+    ];
     notifyListeners();
+    _setHistory(await _history.markDismissed(target));
   }
 
-  Future<void> openMicrophoneSettings() async {
-    await openAppSettings();
-  }
-
-  bool processSoundEvent(SoundEvent event) {
-    if (_disposed ||
-        !monitoringEnabled ||
-        !SoundDetectionService.supportedEvents.contains(event.type) ||
-        event.confidence < _minConfidence) {
-      return false;
-    }
-    final settings = _settingsProvider;
-    if (settings != null && settings.allowedAlerts[event.type] == false) return false;
-    if (_lastAlertType == event.type &&
-        _lastAlertTime != null &&
-        DateTime.now().difference(_lastAlertTime!) < SoundDetectionService.cooldownDuration) {
-      return false;
-    }
-
-    _alertHistory.insert(0, event);
-    if (_alertHistory.length > _maxHistoryEntries) {
-      _alertHistory.removeRange(_maxHistoryEntries, _alertHistory.length);
-    }
-    _currentAlert = event;
-    _lastAlertType = event.type;
-    _lastAlertTime = event.timestamp;
-
-    if (settings != null) {
-      AlertService.instance.triggerAlert(
-        settings,
-        type: event.type,
-        confidence: event.confidence,
-        severity: event.severity,
-      );
-    }
-    if (!_disposed) notifyListeners();
-    unawaited(_saveAlertHistory());
-    return true;
-  }
-
-  void dismissAlert() {
+  Future<void> clearHistory() async {
     if (_disposed) return;
-    if (_currentAlert != null) {
-      final idx = _alertHistory.indexWhere((a) => a.id == _currentAlert!.id);
-      if (idx != -1) {
-        _alertHistory[idx] = _alertHistory[idx].copyWith(dismissed: true);
-        unawaited(_saveAlertHistory());
-      }
-    }
+    _alertHistory = const [];
     _currentAlert = null;
     notifyListeners();
+    _setHistory(await _history.clear());
   }
 
-  void clearHistory() {
+  void _onUpdate(MonitorUpdate update) {
     if (_disposed) return;
-    _alertHistory.clear();
-    _currentAlert = null;
-    unawaited(_saveAlertHistory());
+    final alert = update.alert;
+    if (alert != null) {
+      _currentAlert = alert;
+      _showInAppAlert(alert, _settingsProvider);
+      // The monitor has already recorded it; pick up that write.
+      unawaited(_reloadHistory());
+    }
+    _sync();
+  }
+
+  /// Mirrors the monitor, except that a permission failure found here stays
+  /// on screen until the user tries again.
+  void _sync() {
+    if (_disposed) return;
+    final permissionFailure = _failure == MonitoringFailure.microphoneDenied ||
+        _failure == MonitoringFailure.microphoneBlocked;
+    if (permissionFailure && _monitor.status.canStart) {
+      notifyListeners();
+      return;
+    }
+    _status = _monitor.status;
+    _failure = _status == MonitoringStatus.error ? (_monitor.failure ?? MonitoringFailure.service) : null;
     notifyListeners();
+  }
+
+  Future<void> _reloadHistory() async => _setHistory(await _history.load());
+
+  void _setHistory(List<SoundEvent> events) {
+    if (_disposed) return;
+    _alertHistory = events;
+    notifyListeners();
+  }
+
+  static void _flash(SoundEvent event, SettingsProvider? settings) {
+    AlertService.instance.flash(
+      event.severity,
+      screen: settings?.screenFlashAlerts ?? true,
+      flashlight: settings?.flashAlerts ?? false,
+    );
   }
 
   @override
@@ -349,11 +170,12 @@ class EnvironmentalProvider extends ChangeNotifier {
     super.notifyListeners();
   }
 
+  /// Leaves monitoring running: it is the user's choice, not this screen's,
+  /// and the provider is rebuilt whenever the signed-in account changes.
   @override
   void dispose() {
     _disposed = true;
-    _soundService.stopMonitoring();
-    unawaited(_bridge.dispose());
+    unawaited(_subscription.cancel());
     AlertService.instance.stopAll();
     super.dispose();
   }

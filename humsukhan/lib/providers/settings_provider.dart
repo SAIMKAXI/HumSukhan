@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
 import '../services/supabase_service.dart';
+import '../modules/environmental_alerts/models/environmental_sound.dart';
 
 class SettingsProvider extends ChangeNotifier {
   bool _isDarkMode = false, _isHighContrast = false, _isLargeText = false;
@@ -16,11 +17,9 @@ class SettingsProvider extends ChangeNotifier {
   bool _isLoaded = false;
   bool _disposed = false;
   final Set<String> _onboardedUsers = <String>{};
+  // One switch per sound Environmental Alerts can actually detect.
   final Map<String, bool> _allowedAlerts = {
-    'Siren': true,
-    'Doorbell': true,
-    'Knock': true,
-    'Baby Cry': true,
+    for (final type in EnvironmentalSound.types) type: true,
   };
 
   bool get isDarkMode => _isDarkMode;

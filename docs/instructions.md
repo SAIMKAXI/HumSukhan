@@ -191,6 +191,16 @@ Android 11+ package visibility requires a `<queries>` entry for
 A provider's async constructor load notified unconditionally.
 > **RULE:** async completions check liveness before touching state.
 
+**B16 · Environmental alerts could not detect anything, and misfired when they did**
+The sound model was built without `sherpa_onnx.initBindings()`, which every
+isolate must call first, so loading it threw. Labels were matched by substring,
+so "Water tap, faucet" was a knock and "Wind chime" a doorbell. Background
+alerts only rewrote a silent notification. Two windowing paths, two cooldowns
+and three thresholds disagreed, and the tests only grepped source text.
+> **RULE:** a model is loaded the way its library says, in every isolate that
+> uses it. Classifier labels are matched exactly. An alert is announced where it
+> is detected, once. Test behaviour, not the spelling of the source.
+
 ### 5.2 General DOs
 
 - Write the regression test **and prove it fails without the fix.**

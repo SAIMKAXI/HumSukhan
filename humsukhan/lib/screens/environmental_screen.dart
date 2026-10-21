@@ -76,7 +76,7 @@ class EnvironmentalScreen extends StatelessWidget {
                     label: Text(isActive ? s.stopMonitoring : s.startMonitoring),
                   ),
                 ),
-                if (env.hasError && errorText.toLowerCase().contains('settings')) ...[
+                if (env.hasError && env.needsSystemSettings) ...[
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
@@ -121,8 +121,8 @@ class EnvironmentalScreen extends StatelessWidget {
               ),
             )
           else
-            ...env.alertHistory.reversed.map(
-              (event) => AlertCard(event: event, onDismiss: env.dismissAlert),
+            ...env.alertHistory.map(
+              (event) => AlertCard(event: event, onDismiss: () => env.dismissAlert(event.id)),
             ),
         ],
       ),

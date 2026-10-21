@@ -7,9 +7,17 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+  bool _permissionRequested = false;
 
-  Future<void> initialize() async {
-    if (_initialized) return;
+  /// [requestPermission] asks the user for notification permission on
+  /// Android 13+. The environmental monitoring isolate has no activity to ask
+  /// from, so it initializes without asking and relies on the app having
+  /// asked when it was opened.
+  Future<void> initialize({bool requestPermission = true}) async {
+    if (_initialized) {
+      if (requestPermission) await _requestPermission();
+      return;
+    }
     const androidSettings = AndroidInitializationSettings('@drawable/humsukhan_logo');
     const appleSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -24,16 +32,27 @@ class NotificationService {
           macOS: appleSettings,
         ),
       );
-      final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-      await android?.requestNotificationsPermission();
       _initialized = true;
     } catch (e) {
       debugPrint('Notification initialization failed: $e');
+      return;
+    }
+    if (requestPermission) await _requestPermission();
+  }
+
+  Future<void> _requestPermission() async {
+    if (_permissionRequested) return;
+    _permissionRequested = true;
+    try {
+      final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await android?.requestNotificationsPermission();
+    } catch (e) {
+      debugPrint('Notification permission request failed: $e');
     }
   }
 
   Future<void> showEnvironmentalAlert({required String type, required String severity, required double confidence}) async {
-    await initialize();
+    await initialize(requestPermission: false);
     if (!_initialized) return;
     final importance = severity == 'critical' ? Importance.max : Importance.high;
     final priority = severity == 'critical' ? Priority.max : Priority.high;
