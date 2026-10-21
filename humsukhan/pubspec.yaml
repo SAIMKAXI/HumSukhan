@@ -1,11 +1,11 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 2.4.7+37
+version: 2.4.8+38
 
-# Release v2.4.7
-# Rebuild environmental alerts, improve offline speech recovery and session sync,
-# fix Professional Mode AI summary generation, and add missing user controls.
+# Release v2.4.8
+# Keep Conversational Mode temporary, keep Professional transcripts local,
+# and cache expiring AI insights in Supabase.
 
 environment:
   sdk: '>=3.8.0 <4.0.0'

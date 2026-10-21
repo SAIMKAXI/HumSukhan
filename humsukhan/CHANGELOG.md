@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.4.8+38
+
+### Privacy and Professional Mode
+- Conversational Mode transcripts are temporary and are cleared when leaving the screen; they are no longer saved to device history or cloud storage.
+- Professional Mode sessions, transcripts, and folders remain on the device. Reusable AI summaries, action items, deadlines, and mentioned people are cached in Supabase until the session retention deadline.
+- Existing cached insights are checked before requesting AI generation again, avoiding duplicate model requests for sessions that already have a saved result.
+- Retired the obsolete legacy insights endpoint; the current v2 endpoint remains the supported generation service.
+
 ### Speech to text
 - Captions now come from the phone's own recognizer first when it has the language installed, then from the cloud, then from a downloaded offline model. In Auto (English and Urdu together) the cloud goes first, because a phone recognizer listens in one language only.
 - With no internet connection the cloud is skipped, so captions start from the phone or the offline model without waiting out the cloud's timeouts.
