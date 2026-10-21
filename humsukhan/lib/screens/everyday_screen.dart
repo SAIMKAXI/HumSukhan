@@ -101,7 +101,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                children: quickReplies.orderedReplies.take(6).map((reply) => Padding(
+                children: quickReplies.orderedReplies.map((reply) => Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: QuickReplyChip(
                     reply: reply,
