@@ -70,6 +70,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         return 'Offline (Batch)';
       case STTMode.platform:
         return _usingFallback ? 'Platform fallback' : 'Online';
+      case STTMode.cloudBatch:
+        return 'Cloud (backup)';
       case STTMode.none:
         return 'Unavailable';
     }
@@ -88,6 +90,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         return _usingFallback
             ? 'Using the device speech recognizer after the primary Everyday recognizer became unavailable.'
             : 'Online bilingual speech recognition.';
+      case STTMode.cloudBatch:
+        return 'This device has no speech recognizer for the language, so speech is recognized in the cloud after each pause.';
       case STTMode.none:
         return 'Speech recognition unavailable.';
     }
@@ -198,7 +202,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     });
 
     try {
-      await _fallbackStt.startListening(language: language);
+      await _fallbackStt.startListening(language: language, bilingual: _language == 'Auto');
       if (_fallbackStt.isListening) {
         _listening = true;
         _usingFallback = true;

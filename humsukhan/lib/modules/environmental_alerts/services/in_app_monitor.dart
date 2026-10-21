@@ -1,52 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:record/record.dart';
 
 import '../../../models/models.dart';
+import '../../../services/audio/pcm_source.dart';
 import '../models/monitoring_status.dart';
 import 'environmental_alert_pipeline.dart';
 import 'environmental_monitor.dart';
 import 'sound_detection_engine.dart';
-
-/// Where in-app monitoring gets its audio.
-abstract class PcmSource {
-  Future<bool> hasPermission();
-
-  /// 16 kHz mono PCM16 little-endian.
-  Future<Stream<Uint8List>> start();
-
-  Future<void> stop();
-}
-
-class RecorderPcmSource implements PcmSource {
-  AudioRecorder? _recorder;
-
-  @override
-  Future<bool> hasPermission() => (_recorder ??= AudioRecorder()).hasPermission();
-
-  @override
-  Future<Stream<Uint8List>> start() => (_recorder ??= AudioRecorder()).startStream(
-        const RecordConfig(
-          encoder: AudioEncoder.pcm16bits,
-          sampleRate: SoundDetectionEngine.sampleRate,
-          numChannels: 1,
-        ),
-      );
-
-  @override
-  Future<void> stop() async {
-    final recorder = _recorder;
-    _recorder = null;
-    if (recorder == null) return;
-    try {
-      await recorder.stop();
-    } catch (e) {
-      debugPrint('Environmental recorder stop failed: $e');
-    }
-    await recorder.dispose();
-  }
-}
 
 /// iOS: monitoring runs inside the app, which keeps recording in the
 /// background through the `audio` background mode once started.

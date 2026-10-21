@@ -392,4 +392,6 @@ class SherpaSTTResult {
   });
 }
 
-enum STTMode { none, sherpaStreaming, sherpaBatch, platform }
+/// How speech is being recognized. [cloudBatch] is the recorded-utterance
+/// cloud backup, used when the device recognizer lacks the language.
+enum STTMode { none, sherpaStreaming, sherpaBatch, platform, cloudBatch }
