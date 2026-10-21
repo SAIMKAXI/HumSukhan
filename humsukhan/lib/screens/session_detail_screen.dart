@@ -29,9 +29,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<ProfessionalProvider>();
-      if (provider.getInsightForSession(widget.sessionId) == null) {
-        provider.generateInsights(widget.sessionId);
-      }
+      provider.loadInsight(widget.sessionId);
     });
   }
 
