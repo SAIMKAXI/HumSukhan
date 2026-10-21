@@ -110,7 +110,10 @@ class ProfessionalProvider extends ChangeNotifier {
     _isLoading = true; notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
-      _sessions = (jsonDecode(prefs.getString(_sessionsKey) ?? '[]') as List).map((s)=>ProfessionalSession.fromJson(s)).toList();
+      _sessions = (jsonDecode(prefs.getString(_sessionsKey) ?? '[]') as List)
+          .map((s) => ProfessionalSession.fromJson(s))
+          .where((session) => !session.id.startsWith('everyday_'))
+          .toList();
       _folders = (jsonDecode(prefs.getString(_foldersKey) ?? '[]') as List).map((f)=>Folder.fromJson(f)).toList();
       _insights = _canonicalizeInsights((jsonDecode(prefs.getString(_insightsKey) ?? '[]') as List).map((i)=>ProfessionalInsight.fromJson(i)));
       await _saveInsights();
