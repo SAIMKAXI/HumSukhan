@@ -115,7 +115,11 @@ class ProfessionalProvider extends ChangeNotifier {
           .where((session) => !session.id.startsWith('everyday_'))
           .toList();
       _folders = (jsonDecode(prefs.getString(_foldersKey) ?? '[]') as List).map((f)=>Folder.fromJson(f)).toList();
-      _insights = _canonicalizeInsights((jsonDecode(prefs.getString(_insightsKey) ?? '[]') as List).map((i)=>ProfessionalInsight.fromJson(i)));
+      _insights = _canonicalizeInsights(
+        (jsonDecode(prefs.getString(_insightsKey) ?? '[]') as List)
+            .map((i) => ProfessionalInsight.fromJson(i))
+            .where((insight) => !insight.sessionId.startsWith('everyday_')),
+      );
       await _saveInsights();
       if (SupabaseService.instance.isAuthenticated) await _syncFromCloud();
       await _cleanExpiredSessions();
