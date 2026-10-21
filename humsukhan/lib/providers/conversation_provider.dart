@@ -1,12 +1,24 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
-import '../services/supabase_service.dart';
-import '../services/database_service.dart';
 
 class ConversationProvider extends ChangeNotifier {
+  ConversationProvider() {
+    unawaited(_removeLegacySavedConversations());
+  }
+
+  Future<void> _removeLegacySavedConversations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in prefs.getKeys().where((key) => key.startsWith('everydayConversations:'))) {
+        await prefs.remove(key);
+      }
+    } catch (e) {
+      debugPrint('Legacy conversational history cleanup failed: $e');
+    }
+  }
+
   ConversationState _state = ConversationState.idle;
   final List<Caption> _captions = [];
   Caption? _currentPartial;
@@ -16,16 +28,7 @@ class ConversationProvider extends ChangeNotifier {
   String _currentLanguage = 'English';
   String _listeningStatus = 'Not listening';
   DateTime? _conversationStartedAt;
-  String? _currentSessionId;
 
-  String get _savedConversationsKey {
-    final userId = SupabaseService.instance.userId;
-    return userId.isEmpty ? 'everydayConversations:guest' : 'everydayConversations:$userId';
-  }
-
-  ConversationProvider() {
-    unawaited(_syncSavedConversationsFromCloud());
-  }
 
   ConversationState get state => _state;
   List<Caption> get captions => List.unmodifiable(_captions);
@@ -42,47 +45,6 @@ class ConversationProvider extends ChangeNotifier {
     return '${diff.inMinutes}:${(diff.inSeconds % 60).toString().padLeft(2, '0')}';
   }
 
-  Future<void> _syncSavedConversationsFromCloud() async {
-    if (!SupabaseService.instance.isAuthenticated) return;
-    try {
-      final cloudSessions = await DatabaseService.instance.fetchSessions();
-      final saved = cloudSessions.where((s) => s.id.startsWith('everyday_'));
-      if (saved.isEmpty) return;
-
-      final prefs = await SharedPreferences.getInstance();
-      final raw = jsonDecode(prefs.getString(_savedConversationsKey) ?? '[]');
-      final local = <Map<String, dynamic>>[];
-      if (raw is List) {
-        for (final item in raw) {
-          if (item is Map) local.add(Map<String, dynamic>.from(item));
-        }
-      }
-
-      final byId = <String, Map<String, dynamic>>{
-        for (final item in local)
-          if (item['id']?.toString().isNotEmpty == true) item['id'].toString(): item,
-      };
-
-      for (final session in saved) {
-        final existing = byId[session.id];
-        byId[session.id] = {
-          'id': session.id,
-          'captions': session.captions.map((c) => c.toJson()).toList(),
-          'startedAt': existing?['startedAt'] ?? session.createdAt.toIso8601String(),
-          'savedAt': existing?['savedAt'] ?? session.createdAt.toIso8601String(),
-          'language': session.captionLanguage,
-        };
-      }
-
-      final merged = byId.values.toList()
-        ..sort((a, b) => (b['savedAt']?.toString() ?? '').compareTo(a['savedAt']?.toString() ?? ''));
-      await prefs.setString(_savedConversationsKey, jsonEncode(merged));
-      debugPrint('Everyday conversations synced from cloud: ${saved.length}');
-    } catch (e) {
-      debugPrint('Everyday conversation cloud sync error: $e');
-    }
-  }
-
   void startConversation() {
     _partialCommitTimer?.cancel();
     _captions.clear();
@@ -92,7 +54,6 @@ class ConversationProvider extends ChangeNotifier {
     _isListening = false;
     _conversationStartedAt = DateTime.now();
     _listeningStatus = 'Tap the microphone to speak';
-    _currentSessionId = 'everyday_${DateTime.now().millisecondsSinceEpoch}';
     notifyListeners();
   }
 
@@ -108,50 +69,7 @@ class ConversationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> saveConversation() async {
-    _commitCurrentPartial();
-    if (_captions.isEmpty) {
-      _resetState();
-      return;
-    }
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final conversations = List<dynamic>.from(
-        jsonDecode(prefs.getString(_savedConversationsKey) ?? '[]'),
-      );
-      final sorted = _sortedCaptions();
-      final sessionId = _currentSessionId ?? 'everyday_${DateTime.now().millisecondsSinceEpoch}';
-      final session = {
-        'id': sessionId,
-        'captions': sorted.map((c) => c.toJson()).toList(),
-        'startedAt': _conversationStartedAt?.toIso8601String(),
-        'savedAt': DateTime.now().toIso8601String(),
-        'language': _currentLanguage,
-      };
-      conversations.removeWhere((item) => item is Map && item['id']?.toString() == sessionId);
-      conversations.add(session);
-      await prefs.setString(_savedConversationsKey, jsonEncode(conversations));
-
-      if (SupabaseService.instance.isAuthenticated) {
-        final transcript = sorted.map((c) => '${c.speaker}: ${c.text}').join('\n');
-        final professionalSession = ProfessionalSession(
-          id: sessionId,
-          title: 'Everyday Conversation — ${_formatDate(_conversationStartedAt)}',
-          type: SessionType.meeting,
-          captionLanguage: _currentLanguage,
-          retentionDays: 7,
-          status: SessionStatus.completed,
-          captions: sorted,
-          transcriptText: transcript,
-        );
-        await DatabaseService.instance.upsertSession(professionalSession);
-      }
-    } catch (e) {
-      debugPrint('Error saving everyday conversation: $e');
-    }
-    _resetState();
-  }
-
+  /// Clears the in-memory transcript. Conversational Mode never persists sessions.
   void deleteConversation() => _resetState();
 
   void _resetState() {
@@ -164,7 +82,6 @@ class ConversationProvider extends ChangeNotifier {
     _captions.clear();
     _currentPartial = null;
     _activeSpeakerDraft = null;
-    _currentSessionId = null;
     notifyListeners();
   }
 
@@ -341,11 +258,6 @@ class ConversationProvider extends ChangeNotifier {
     _sortCaptionsInPlace();
   }
 
-  List<Caption> _sortedCaptions() {
-    final copy = List<Caption>.from(_captions);
-    copy.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-    return copy;
-  }
 
   void _sortCaptionsInPlace() {
     _captions.sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -358,8 +270,4 @@ class ConversationProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Unknown';
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
 }

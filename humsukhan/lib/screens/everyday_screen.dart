@@ -20,14 +20,16 @@ class _EverydayScreenState extends State<EverydayScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late final ConversationEngine _engine;
+  late final ConversationProvider _conversation;
   bool _typedUrdu = false;
 
   @override
   void initState() {
     super.initState();
+    _conversation = context.read<ConversationProvider>();
     _engine = ConversationEngine(
       speech: context.read<SpeechProvider>(),
-      conversation: context.read<ConversationProvider>(),
+      conversation: _conversation,
     )..addListener(_onEngineChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _initSpeech());
   }
@@ -55,6 +57,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
   @override
   void dispose() {
     _engine..removeListener(_onEngineChanged)..dispose();
+    _conversation.deleteConversation();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -264,6 +267,24 @@ class _EverydayScreenState extends State<EverydayScreen> {
   }
 
   Widget _buildSaveDecision(BuildContext context, AppStrings s) {
-    return Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.save_alt, size: 64, color: Theme.of(context).colorScheme.primary), const SizedBox(height: 24), Text(s.saveConversation, style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center), const SizedBox(height: 12), Text(s.saveConversationDesc, style: Theme.of(context).textTheme.bodyLarge, textAlign: TextAlign.center), const SizedBox(height: 32), PrimaryActionButton(label: s.save, icon: Icons.save, onPressed: () => context.read<ConversationProvider>().saveConversation()), const SizedBox(height: 12), SecondaryActionButton(label: s.delete, icon: Icons.delete_outline, onPressed: () => context.read<ConversationProvider>().deleteConversation()), const SizedBox(height: 12), TextButton(onPressed: () => context.read<ConversationProvider>().cancelStop(), child: Text(s.continueListening))])));
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle_outline, size: 64, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 24),
+            Text('Conversation ended', style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            Text('This conversation is temporary and will not be saved.', style: Theme.of(context).textTheme.bodyLarge, textAlign: TextAlign.center),
+            const SizedBox(height: 32),
+            PrimaryActionButton(label: s.delete, icon: Icons.check, onPressed: () => context.read<ConversationProvider>().deleteConversation()),
+            const SizedBox(height: 12),
+            TextButton(onPressed: () => context.read<ConversationProvider>().cancelStop(), child: Text(s.continueListening)),
+          ],
+        ),
+      ),
+    );
   }
 }
