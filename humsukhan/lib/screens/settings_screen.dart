@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../models/models.dart';
 import '../widgets/reusable_widgets.dart';
+import '../modules/environmental_alerts/models/environmental_sound.dart';
 import '../widgets/modern_ui.dart';
 import '../l10n/app_strings.dart';
 
@@ -68,7 +69,7 @@ class SettingsScreen extends StatelessWidget {
         _SectionHeader(title: s.speechRecognition),
         const _SpeechModelsSection(),
         _SectionHeader(title: s.environmentalAlerts),
-        ...settings.allowedAlerts.entries.map((entry) => SwitchListTile(title: Text(entry.key), value: entry.value, onChanged: (_) => settings.toggleAllowedAlert(entry.key))),
+        ...settings.allowedAlerts.entries.map((entry) => SwitchListTile(title: Text(EnvironmentalSound.nameFor(entry.key, urdu: s.isUrdu)), value: entry.value, onChanged: (_) => settings.toggleAllowedAlert(entry.key))),
         _SectionHeader(title: '${s.privacySection} & ${s.defaultRetention}'),
         ListTile(title: Text(s.defaultRetentionPeriod), subtitle: Text('${settings.defaultRetentionDays} ${s.days}'), trailing: const Icon(Icons.chevron_right), onTap: () => _showRetentionDialog(context, settings, s)),
         _SectionHeader(title: s.privacySection),

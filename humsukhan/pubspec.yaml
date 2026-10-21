@@ -59,3 +59,6 @@ flutter:
     - family: NotoNastaliqUrdu
       fonts:
         - asset: fonts/noto_sans/NotoNastaliqUrdu-Regular.ttf
+    - family: NotoSans
+      fonts:
+        - asset: fonts/noto_sans/NotoSans-Regular.ttf

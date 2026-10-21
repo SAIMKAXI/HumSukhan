@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../l10n/app_strings.dart';
+import '../modules/environmental_alerts/models/environmental_sound.dart';
 
 // ===== STATUS INDICATOR =====
 class StatusIndicator extends StatelessWidget {
@@ -204,6 +205,7 @@ class AlertCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     final severityColor = AppTheme.alertColor(event.severity);
     return Card(
       child: ListTile(
@@ -213,8 +215,8 @@ class AlertCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(AppTokens.radiusSm)),
           child: Icon(_alertIcon(event.type), color: severityColor, size: 24),
         ),
-        title: Text(event.type, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTokens.textDeepForest)),
-        subtitle: Text('${(event.confidence * 100).toInt()}% confidence • ${_formatTime(event.timestamp)}',
+        title: Text(EnvironmentalSound.nameFor(event.type, urdu: s.isUrdu), style: const TextStyle(fontWeight: FontWeight.w600, color: AppTokens.textDeepForest)),
+        subtitle: Text('${(event.confidence * 100).toInt()}% ${s.confidence} • ${_formatTime(event.timestamp)}',
             style: const TextStyle(fontSize: 12, color: AppTokens.textMuted)),
         trailing: event.dismissed
             ? const Icon(Icons.check_circle, color: AppTokens.deepSage, size: 20)
@@ -224,13 +226,9 @@ class AlertCard extends StatelessWidget {
   }
 
   IconData _alertIcon(String type) => switch (type) {
-    'Fire Alarm' || 'Smoke Alarm' => Icons.local_fire_department,
     'Siren' => Icons.emergency,
     'Doorbell' => Icons.doorbell,
     'Knock' => Icons.back_hand,
-    'Phone' => Icons.phone,
-    'Alarm Clock' => Icons.alarm,
-    'Baby Cry' => Icons.child_care,
     _ => Icons.volume_up,
   };
 

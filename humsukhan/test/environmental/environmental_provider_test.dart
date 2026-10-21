@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:humsukhan/l10n/app_strings.dart';
 import 'package:humsukhan/models/models.dart';
@@ -126,16 +127,23 @@ void main() {
   });
 
   group('EnvironmentalScreen', () {
-    Future<EnvironmentalProvider> pumpScreen(WidgetTester tester) async {
+    Future<EnvironmentalProvider> pumpScreen(WidgetTester tester, {Locale locale = const Locale('en')}) async {
       final provider = build();
       await tester.pumpWidget(MultiProvider(
         providers: [
           ChangeNotifierProvider<EnvironmentalProvider>.value(value: provider),
           ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ],
-        child: const MaterialApp(
-          localizationsDelegates: [AppStrings.delegate],
-          home: EnvironmentalScreen(),
+        child: MaterialApp(
+          locale: locale,
+          supportedLocales: const [Locale('en'), Locale('ur')],
+          localizationsDelegates: const [
+            AppStrings.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: const EnvironmentalScreen(),
         ),
       ));
       await tester.pumpAndSettle();
@@ -175,6 +183,22 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(MonitoringFailure.model.message), findsOneWidget);
       expect(find.text('Open microphone settings'), findsNothing);
+    });
+
+    testWidgets('in Urdu the screen, the failure and its remedy are all Urdu', (tester) async {
+      permission = PermissionStatus.permanentlyDenied;
+      await tester.runAsync(() => AlertHistoryStore().append(SoundEvent(type: 'Doorbell', timestamp: DateTime(2026, 1, 1, 9))));
+      final provider = await pumpScreen(tester, locale: const Locale('ur'));
+      await tester.runAsync(pumpEventQueue);
+      await tester.pumpAndSettle();
+      expect(find.text('ماحولیاتی نگرانی بند ہے۔'), findsOneWidget);
+      expect(find.text('دروازے کی گھنٹی'), findsOneWidget);
+
+      await provider.toggleMonitoring();
+      await tester.pumpAndSettle();
+      expect(find.text(MonitoringFailure.microphoneBlocked.urduMessage), findsOneWidget);
+      expect(find.text('مائیکروفون کی ترتیبات کھولیں'), findsOneWidget);
+      expect(find.text(MonitoringFailure.microphoneBlocked.message), findsNothing);
     });
   });
 }

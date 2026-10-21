@@ -11,6 +11,8 @@ class EnvironmentalSound {
     required this.threshold,
     required this.labels,
     required this.description,
+    required this.urduName,
+    required this.urduDescription,
   });
 
   /// Name used in history, settings and notifications.
@@ -37,6 +39,16 @@ class EnvironmentalSound {
   final Set<String> labels;
 
   final String description;
+  final String urduName;
+  final String urduDescription;
+
+  String displayName({required bool urdu}) => urdu ? urduName : type;
+  String displayDescription({required bool urdu}) => urdu ? urduDescription : description;
+
+  /// The on-screen name for a stored alert [type], falling back to the type
+  /// itself for anything not in the catalog.
+  static String nameFor(String type, {required bool urdu}) =>
+      byType(type)?.displayName(urdu: urdu) ?? type;
 
   static const siren = EnvironmentalSound._(
     type: 'Siren',
@@ -51,6 +63,8 @@ class EnvironmentalSound {
       'emergency vehicle',
     },
     description: 'A siren sound was detected nearby.',
+    urduName: 'سائرن',
+    urduDescription: 'قریب سائرن کی آواز کا پتہ چلا۔',
   );
 
   static const doorbell = EnvironmentalSound._(
@@ -59,6 +73,8 @@ class EnvironmentalSound {
     threshold: 0.55,
     labels: {'doorbell', 'ding-dong'},
     description: 'A doorbell sound was detected.',
+    urduName: 'دروازے کی گھنٹی',
+    urduDescription: 'دروازے کی گھنٹی کی آواز کا پتہ چلا۔',
   );
 
   static const knock = EnvironmentalSound._(
@@ -68,6 +84,8 @@ class EnvironmentalSound {
     // AudioSet files "Tap" beside "Knock" under Door: a light knock.
     labels: {'knock', 'tap'},
     description: 'A knocking sound was detected at a door.',
+    urduName: 'دستک',
+    urduDescription: 'دروازے پر دستک کی آواز کا پتہ چلا۔',
   );
 
   static const List<EnvironmentalSound> all = [siren, doorbell, knock];

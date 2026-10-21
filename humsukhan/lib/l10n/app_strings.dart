@@ -12,6 +12,7 @@ class AppStrings {
   static const LocalizationsDelegate<AppStrings> delegate = _AppStringsDelegate();
 
   bool get _isUrdu => locale.languageCode == 'ur';
+  bool get isUrdu => _isUrdu;
 
   // ── General ──
   String get appName => 'HumSukhan';
@@ -125,6 +126,17 @@ class AppStrings {
   String get alertHistory => _isUrdu ? 'الرٹ کی تاریخ' : 'ALERT HISTORY';
   String get clearAll => _isUrdu ? 'سب صاف کریں' : 'Clear All';
   String get noAlertsYet => _isUrdu ? 'ابھی تک کوئی الرٹس نہیں' : 'No alerts yet';
+  String get startingMonitoring => _isUrdu ? 'نگرانی شروع ہو رہی ہے…' : 'Starting monitoring…';
+  String get monitoringListeningLocally => _isUrdu
+      ? 'HumSukhan آپ کے فون پر ہی معاون ماحولیاتی آوازیں سن رہا ہے۔'
+      : 'HumSukhan is listening locally for supported environmental sounds.';
+  String get monitoringIsOff => _isUrdu ? 'ماحولیاتی نگرانی بند ہے۔' : 'Environmental monitoring is off.';
+  String get monitoringFixAndRetry => _isUrdu
+      ? 'اجازت یا سروس کا مسئلہ حل کریں، پھر دوبارہ کوشش کریں۔'
+      : 'Fix the permission or service issue, then try again.';
+  String get monitoringUnavailable => _isUrdu ? 'ماحولیاتی نگرانی شروع نہیں ہو سکی۔' : 'Unable to start environmental monitoring.';
+  String get openMicrophoneSettings => _isUrdu ? 'مائیکروفون کی ترتیبات کھولیں' : 'Open microphone settings';
+  String get soundDetected => _isUrdu ? 'ایک آواز کا پتہ چلا۔' : 'A sound was detected.';
   String get noAlertsDesc => _isUrdu ? 'آوازوں کا پتہ لگنے پر الرٹ کی تاریخ یہاں ظاہر ہوگی۔' : 'Alert history will appear here when sounds are detected.';
   String get detected => _isUrdu ? 'پتہ لگا' : 'DETECTED';
   String get confidence => _isUrdu ? 'اعتماد' : 'confidence';

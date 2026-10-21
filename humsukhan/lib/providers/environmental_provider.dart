@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/models.dart';
-import '../modules/environmental_alerts/models/environmental_sound.dart';
 import '../modules/environmental_alerts/models/monitoring_status.dart';
 import '../modules/environmental_alerts/services/alert_history_store.dart';
 import '../modules/environmental_alerts/services/environmental_monitor.dart';
@@ -46,11 +45,6 @@ class EnvironmentalProvider extends ChangeNotifier {
   bool _busy = false;
   bool _disposed = false;
 
-  /// Shown on the active-alert banner, keyed by sound type.
-  static final Map<String, String> alertDescriptions = {
-    for (final sound in EnvironmentalSound.all) sound.type: sound.description,
-  };
-
   void setSettingsProvider(SettingsProvider settings) => _settingsProvider = settings;
 
   bool get monitoringEnabled => _status == MonitoringStatus.active;
@@ -59,6 +53,9 @@ class EnvironmentalProvider extends ChangeNotifier {
   bool get hasError => _failure != null;
   bool get isProcessing => monitoringEnabled;
   String? get errorMessage => _failure?.message;
+
+  /// Why monitoring is not running, for screens that show it localized.
+  MonitoringFailure? get failure => _failure;
 
   /// The remedy for the current failure is in the system's app settings.
   bool get needsSystemSettings => _failure?.needsSystemSettings ?? false;
