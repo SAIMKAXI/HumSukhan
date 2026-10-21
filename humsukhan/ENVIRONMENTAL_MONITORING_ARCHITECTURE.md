@@ -29,6 +29,19 @@ touches the network and no audio is stored or uploaded. sherpa-onnx bindings are
 initialised in whichever isolate loads the model — without that, the model can
 never load.
 
+## Verifying with real audio
+
+`test/environmental/real_model_evaluation_test.dart` runs labelled WAV clips
+through the bundled model and the production engine (8 KB chunks, windowing,
+loudness gate, policy). It is skipped unless `HUMSUKHAN_SOUND_CLIPS` points at a
+folder of clips; the file header explains the naming and setup.
+
+Measured on ESC-50 (42 sirens, 40 door knocks, 107 other everyday sounds):
+Siren 40/42, Knock 31/40, one false alert (a footstep the model itself scored
+66% "Knock"). Siren labels never exceeded 0.10 on a non-siren clip. Doorbell is
+untested for lack of a labelled recording; a synthesised chime is heard as
+"Music"/"Ding", not a doorbell.
+
 ## Android
 
 `EnvironmentalMonitoringService` is a microphone foreground service and the

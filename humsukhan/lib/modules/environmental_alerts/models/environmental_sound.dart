@@ -20,6 +20,13 @@ class EnvironmentalSound {
   final String severity;
 
   /// Minimum classifier probability before the sound is reported.
+  ///
+  /// Measured with the bundled model on ESC-50 clips (42 sirens, 40 door
+  /// knocks, 107 other sounds incl. car horns, alarms, bells, typing, water
+  /// and footsteps): no non-siren clip scored above 0.10 on a siren label, so
+  /// the siren bar is set for recall — missing a siren is the costliest
+  /// error this feature can make. Re-run with
+  /// test/environmental/real_model_evaluation_test.dart before changing one.
   final double threshold;
 
   /// Exact AudioSet display names (lower case) produced by the CED model.
@@ -34,7 +41,7 @@ class EnvironmentalSound {
   static const siren = EnvironmentalSound._(
     type: 'Siren',
     severity: 'critical',
-    threshold: 0.70,
+    threshold: 0.55,
     labels: {
       'siren',
       'civil defense siren',
@@ -57,7 +64,7 @@ class EnvironmentalSound {
   static const knock = EnvironmentalSound._(
     type: 'Knock',
     severity: 'warning',
-    threshold: 0.55,
+    threshold: 0.50,
     // AudioSet files "Tap" beside "Knock" under Door: a light knock.
     labels: {'knock', 'tap'},
     description: 'A knocking sound was detected at a door.',

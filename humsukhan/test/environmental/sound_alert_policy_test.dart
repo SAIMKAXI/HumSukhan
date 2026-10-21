@@ -51,16 +51,19 @@ void main() {
   });
 
   test('a sound must reach its own threshold', () {
-    expect(policy.evaluate([tag('Siren', 0.69)]), isEmpty);
+    expect(policy.evaluate([tag('Siren', 0.54)]), isEmpty);
     expect(policy.evaluate([tag('Doorbell', 0.54)]), isEmpty);
+    expect(policy.evaluate([tag('Knock', 0.49)]), isEmpty);
 
-    final siren = policy.evaluate([tag('Siren', 0.70)]).single;
+    final siren = policy.evaluate([tag('Siren', 0.55)]).single;
     expect(siren.type, 'Siren');
     expect(siren.severity, 'critical');
 
     final doorbell = policy.evaluate([tag('Doorbell', 0.55)]).single;
     expect(doorbell.type, 'Doorbell');
     expect(doorbell.severity, 'warning');
+
+    expect(policy.evaluate([tag('Knock', 0.50)]).single.type, 'Knock');
   });
 
   test('a sound scored under several labels is one alert at its best confidence', () {
