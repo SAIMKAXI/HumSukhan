@@ -242,11 +242,6 @@ class ConversationProvider extends ChangeNotifier {
     _sortCaptionsInPlace();
   }
 
-  List<Caption> _sortedCaptions() {
-    final copy = List<Caption>.from(_captions);
-    copy.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-    return copy;
-  }
 
   void _sortCaptionsInPlace() {
     _captions.sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -259,8 +254,4 @@ class ConversationProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Unknown';
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
 }
