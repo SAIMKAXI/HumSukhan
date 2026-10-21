@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Speech to text
+- Captions now come from the phone's own recognizer first when it has the language installed, then from the cloud, then from a downloaded offline model. In Auto (English and Urdu together) the cloud goes first, because a phone recognizer listens in one language only.
+- With no internet connection the cloud is skipped, so captions start from the phone or the offline model without waiting out the cloud's timeouts.
+- If the live cloud stream stops captioning, because the connection dropped, the microphone delivers only silence, or 10 seconds of speech came back with no words, the next recognizer takes over. Before, the screen could show "listening" indefinitely with nothing captioned.
+- The phone's recognizer was judged to have failed before it had reported starting, so a second recognizer was opened on the same microphone.
+- Speech recognition stops Environmental monitoring started from the Quick Settings tile before taking the microphone. It used to miss monitoring the app had not yet heard about.
+- When the live stream fails in Auto, the backup still recognizes both English and Urdu. It used to fall back to English only.
+
+### Urdu detection
+- In Auto, Urdu speech that the English recognizer had written out as Roman Urdu is now shown from the Urdu recognizer, in Urdu script. Before, captions mixed both scripts (for example "آپ کیا کرنا chahte ہیں") and were labelled "Auto" instead of Urdu.
+
+### Offline models
+- The English model's download link pointed to a repository that does not exist, so the Download button always failed. It now downloads the English streaming model (73 MB).
+- There is now an Urdu offline model: Whisper base, held to Urdu (161 MB). It recognizes each sentence after the speaker pauses, on a background isolate so the screen does not freeze.
+- Download shows its progress and says why it failed. A cut-off file is detected instead of being taken for a model, and files already downloaded are not fetched again.
+- A downloaded model is used from the next time listening starts, with nothing to set up. Before, it was only noticed after restarting the app.
+- Downloads no longer break after the signed-in account changes.
+
+### Quick replies
+- With the app in Urdu, saved quick replies, and which were starred, were replaced by the defaults at every launch. They are kept now.
+- The conversation row shows every quick reply, with favourites first and then your own, newest first. A newly added reply used to be hidden beyond the first six.
+
+### Professional Mode
+- AI summaries failed for every session: Google retired `gemini-2.5-flash` for this API key. `generate-insights-v2` now uses `gemini-3.5-flash`, then `gemini-3-flash-preview`, then `gemini-2.5-flash`.
+
+## 2.4.7+37
+
 ### Environmental Alerts
 - Rebuilt the detection and monitoring logic; the Alerts screen looks and works the same.
 - The sound model can now load. It was created without initialising sherpa-onnx, which refuses to run until that is done, so detection failed to start.

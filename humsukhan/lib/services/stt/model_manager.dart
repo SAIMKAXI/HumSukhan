@@ -12,7 +12,22 @@ import 'package:path_provider/path_provider.dart';
 class ModelManager {
   static ModelManager? _instance;
   static ModelManager get instance => _instance ??= ModelManager._();
-  ModelManager._();
+  ModelManager._({
+    Future<Directory> Function() documents = getApplicationDocumentsDirectory,
+    Map<String, LanguageModel> models = availableModels,
+  })  : _documents = documents,
+        _models = models;
+
+  /// A manager that keeps models under [documents], offering [models].
+  @visibleForTesting
+  factory ModelManager.test({
+    required Future<Directory> Function() documents,
+    Map<String, LanguageModel> models = availableModels,
+  }) =>
+      ModelManager._(documents: documents, models: models);
+
+  final Future<Directory> Function() _documents;
+  final Map<String, LanguageModel> _models;
 
   final StreamController<ModelDownloadProgress> _progressController =
       StreamController<ModelDownloadProgress>.broadcast();
@@ -27,26 +42,61 @@ class ModelManager {
       id: 'english_zipformer',
       name: 'English (Zipformer Streaming)',
       description: 'Real-time streaming speech recognition for English',
-      modelDir: 'sherpa-onnx-streaming-zipformer-bilingual-en-zh-2023-02-20',
-      encoder: 'encoder-epoch-99-avg-1-chunk-16-left-64.onnx',
-      decoder: 'decoder-epoch-99-avg-1-chunk-16-left-64.onnx',
-      joiner: 'joiner-epoch-99-avg-1-chunk-16-left-64.onnx',
+      modelDir: 'sherpa-onnx-streaming-zipformer-en-2023-06-26',
+      kind: ModelKind.transducer,
+      encoder: 'encoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx',
+      decoder: 'decoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx',
+      joiner: 'joiner-epoch-99-avg-1-chunk-16-left-64.int8.onnx',
       tokens: 'tokens.txt',
+      fileBytes: {
+        'encoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx': 71082637,
+        'decoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx': 1307236,
+        'joiner-epoch-99-avg-1-chunk-16-left-64.int8.onnx': 259335,
+        'tokens.txt': 5048,
+      },
       sampleRate: 16000,
-      sizeMB: 80,
+      sizeMB: 73,
       isStreaming: true,
       languages: ['English'],
-      baseUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-en-zh-2023-02-20/resolve/main',
+      baseUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main',
+    ),
+    // Whisper is multilingual, but it is always run with its language fixed
+    // to Urdu, so it cannot answer in another language or script.
+    'Urdu': LanguageModel(
+      id: 'urdu_whisper_base',
+      name: 'Urdu (Whisper base)',
+      description: 'Offline Urdu speech recognition, one sentence at a time',
+      modelDir: 'sherpa-onnx-whisper-base',
+      kind: ModelKind.whisper,
+      encoder: 'base-encoder.int8.onnx',
+      decoder: 'base-decoder.int8.onnx',
+      tokens: 'base-tokens.txt',
+      whisperLanguage: 'ur',
+      fileBytes: {
+        'base-encoder.int8.onnx': 29120534,
+        'base-decoder.int8.onnx': 130672026,
+        'base-tokens.txt': 816730,
+      },
+      sampleRate: 16000,
+      sizeMB: 161,
+      isStreaming: false,
+      languages: ['Urdu'],
+      baseUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main',
     ),
   };
+
+  final Map<String, String> _lastErrors = {};
+
+  /// Why the last download of [language] failed, or null.
+  String? lastError(String language) => _lastErrors[language];
 
   Future<void> initialize() async {
     if (_initialized) return;
     try {
-      final appDir = await getApplicationDocumentsDirectory();
+      final appDir = await _documents();
       final modelsDir = Directory('${appDir.path}/sherpa_models');
 
-      for (final entry in availableModels.entries) {
+      for (final entry in _models.entries) {
         final modelDir = Directory('${modelsDir.path}/${entry.value.modelDir}');
         final isDownloaded = await _verifyModelFiles(entry.value, modelDir.path);
 
@@ -68,14 +118,7 @@ class ModelManager {
   }
 
   Future<bool> _verifyModelFiles(LanguageModel model, String dirPath) async {
-    final requiredFiles = <String>[model.tokens];
-    if (model.isStreaming) {
-      requiredFiles.addAll([model.encoder, model.decoder, model.joiner]);
-    } else if (model.modelFile != null) {
-      requiredFiles.add(model.modelFile!);
-    }
-
-    for (final file in requiredFiles) {
+    for (final file in model.files) {
       final f = File('$dirPath/$file');
       if (!await f.exists()) return false;
       final stat = await f.stat();
@@ -97,18 +140,26 @@ class ModelManager {
     return status?.isDownloaded == true && status?.localPath != null;
   }
 
-  Future<bool> downloadModel(String language) async {
-    final model = availableModels[language];
+  /// Downloads [language]'s model and returns whether it is ready to use.
+  /// Progress, completion and failure are also reported on [onProgress].
+  Future<bool> downloadModel(String language, {http.Client Function()? client}) async {
+    await initialize();
+    final model = _models[language];
     if (model == null) {
-      debugPrint('No approved offline model available for $language');
+      _lastErrors[language] = 'No offline model is available for $language.';
+      debugPrint(_lastErrors[language]);
       return false;
     }
 
     final status = _modelStatuses[language];
-    if (status == null || status.isDownloaded || status.isDownloading) {
+    if (status == null) {
+      _lastErrors[language] = 'Offline models could not be prepared on this device.';
       return false;
     }
+    if (status.isDownloaded) return true;
+    if (status.isDownloading) return false;
 
+    _lastErrors.remove(language);
     _modelStatuses[language] = status.copyWith(isDownloading: true, downloadProgress: 0.0);
     _progressController.add(ModelDownloadProgress(
       language: language,
@@ -116,74 +167,73 @@ class ModelManager {
       status: DownloadStatus.downloading,
     ));
 
+    final httpClient = (client ?? http.Client.new)();
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final modelsDir = Directory('${appDir.path}/sherpa_models');
-      if (!await modelsDir.exists()) await modelsDir.create(recursive: true);
-
-      final targetDir = Directory('${modelsDir.path}/${model.modelDir}');
+      final appDir = await _documents();
+      final targetDir = Directory('${appDir.path}/sherpa_models/${model.modelDir}');
       if (!await targetDir.exists()) await targetDir.create(recursive: true);
 
-      final filesToDownload = <String>[model.tokens];
-      if (model.isStreaming) {
-        filesToDownload.addAll([model.encoder, model.decoder, model.joiner]);
-      } else if (model.modelFile != null) {
-        filesToDownload.add(model.modelFile!);
+      final total = model.totalBytes;
+      var done = 0;
+      var reported = 0.0;
+      void report(int bytes) {
+        final progress = total == 0 ? 0.0 : (bytes / total).clamp(0.0, 0.99);
+        // About every 1%, so a slow link still shows movement without
+        // rebuilding the screen for every network packet.
+        if (progress - reported < 0.01) return;
+        reported = progress;
+        _modelStatuses[language] = _modelStatuses[language]!.copyWith(downloadProgress: progress);
+        _progressController.add(ModelDownloadProgress(
+          language: language,
+          progress: progress,
+          status: DownloadStatus.downloading,
+        ));
       }
 
-      final client = http.Client();
-      try {
-        for (int i = 0; i < filesToDownload.length; i++) {
-          final fileName = filesToDownload[i];
-          final fileUrl = '${model.baseUrl}/$fileName';
-          final targetFile = File('${targetDir.path}/$fileName');
-
-          if (await targetFile.exists()) {
-            final stat = await targetFile.stat();
-            if (stat.size > 0) continue;
+      for (final fileName in model.files) {
+        final targetFile = File('${targetDir.path}/$fileName');
+        final expected = model.fileBytes[fileName];
+        if (await targetFile.exists()) {
+          final size = await targetFile.length();
+          if (size > 0 && (expected == null || size == expected)) {
+            done += size;
+            report(done);
+            continue;
           }
-
-          debugPrint('Downloading $fileName for $language...');
-          final request = http.Request('GET', Uri.parse(fileUrl));
-          final streamed = await client.send(request).timeout(const Duration(minutes: 10));
-          if (streamed.statusCode != 200) {
-            throw Exception('Failed to download $fileName: HTTP ${streamed.statusCode}');
-          }
-
-          final partFile = File('${targetFile.path}.part');
-          if (await partFile.exists()) await partFile.delete();
-          final sink = partFile.openWrite();
-          var bytesWritten = 0;
-          try {
-            await for (final chunk in streamed.stream.timeout(const Duration(minutes: 10))) {
-              sink.add(chunk);
-              bytesWritten += chunk.length;
-            }
-            await sink.flush();
-          } finally {
-            await sink.close();
-          }
-
-          if (bytesWritten == 0) {
-            if (await partFile.exists()) await partFile.delete();
-            throw Exception('Downloaded file is empty: $fileName');
-          }
-
-          if (await targetFile.exists()) await targetFile.delete();
-          await partFile.rename(targetFile.path);
-
-          final progress = (i + 1) / filesToDownload.length;
-          _progressController.add(ModelDownloadProgress(
-            language: language,
-            progress: progress,
-            status: DownloadStatus.downloading,
-          ));
-          _modelStatuses[language] = _modelStatuses[language]!.copyWith(
-            downloadProgress: progress,
-          );
         }
-      } finally {
-        client.close();
+
+        debugPrint('Downloading $fileName for $language...');
+        final streamed = await httpClient
+            .send(http.Request('GET', Uri.parse('${model.baseUrl}/$fileName')))
+            .timeout(const Duration(seconds: 30));
+        if (streamed.statusCode != 200) {
+          throw Exception('Failed to download $fileName: HTTP ${streamed.statusCode}');
+        }
+
+        final partFile = File('${targetFile.path}.part');
+        if (await partFile.exists()) await partFile.delete();
+        final sink = partFile.openWrite();
+        var bytesWritten = 0;
+        try {
+          // A stalled connection fails instead of hanging the button forever.
+          await for (final chunk in streamed.stream.timeout(const Duration(seconds: 60))) {
+            sink.add(chunk);
+            bytesWritten += chunk.length;
+            report(done + bytesWritten);
+          }
+          await sink.flush();
+        } finally {
+          await sink.close();
+        }
+
+        if (bytesWritten == 0 || (expected != null && bytesWritten != expected)) {
+          if (await partFile.exists()) await partFile.delete();
+          throw Exception('Download of $fileName was incomplete ($bytesWritten bytes)');
+        }
+
+        if (await targetFile.exists()) await targetFile.delete();
+        await partFile.rename(targetFile.path);
+        done += bytesWritten;
       }
 
       if (!await _verifyModelFiles(model, targetDir.path)) {
@@ -206,6 +256,9 @@ class ModelManager {
       return true;
     } catch (e) {
       debugPrint('Model download failed for $language: $e');
+      _lastErrors[language] = e is SocketException || e is TimeoutException || e is http.ClientException
+          ? 'The download was interrupted. Check your internet connection and try again.'
+          : 'The download failed: $e';
       _modelStatuses[language] = _modelStatuses[language]!.copyWith(
         isDownloading: false,
         downloadProgress: 0.0,
@@ -214,9 +267,11 @@ class ModelManager {
         language: language,
         progress: 0.0,
         status: DownloadStatus.failed,
-        error: e.toString(),
+        error: _lastErrors[language],
       ));
       return false;
+    } finally {
+      httpClient.close();
     }
   }
 
@@ -227,11 +282,13 @@ class ModelManager {
     try {
       final dir = Directory(status.localPath!);
       if (await dir.exists()) await dir.delete(recursive: true);
-      _modelStatuses[language] = status.copyWith(
+      _modelStatuses[language] = ModelStatus(
+        model: status.model,
         isDownloaded: false,
-        localPath: null,
+        isDownloading: false,
         downloadProgress: 0.0,
       );
+      _progressController.add(ModelDownloadProgress(language: language, progress: 0.0, status: DownloadStatus.deleted));
       return true;
     } catch (e) {
       debugPrint('Failed to delete model for $language: $e');
@@ -240,18 +297,18 @@ class ModelManager {
   }
 
   LanguageModel? getBestModel(String language) {
-    for (final model in availableModels.values) {
+    for (final model in _models.values) {
       if (model.languages.contains(language) && model.isStreaming && isModelReady(language)) {
         return model;
       }
     }
-    for (final model in availableModels.values) {
+    for (final model in _models.values) {
       if (model.languages.contains(language) && isModelReady(language)) return model;
     }
     return null;
   }
 
-  List<String> get availableLanguages => availableModels.keys.toList();
+  List<String> get availableLanguages => _models.keys.toList();
 
   List<String> get readyLanguages =>
       _modelStatuses.entries.where((e) => e.value.isDownloaded).map((e) => e.key).toList();
@@ -261,16 +318,25 @@ class ModelManager {
   }
 }
 
+enum ModelKind { transducer, whisper }
+
 class LanguageModel {
   final String id;
   final String name;
   final String description;
   final String modelDir;
+  final ModelKind kind;
   final String encoder;
   final String decoder;
   final String joiner;
   final String tokens;
-  final String? modelFile;
+
+  /// The language a [ModelKind.whisper] model is held to.
+  final String whisperLanguage;
+
+  /// Expected size of each file, so a cut-off download is caught and the
+  /// progress bar measures bytes rather than files.
+  final Map<String, int> fileBytes;
   final int sampleRate;
   final int sizeMB;
   final bool isStreaming;
@@ -282,17 +348,26 @@ class LanguageModel {
     required this.name,
     required this.description,
     required this.modelDir,
+    required this.kind,
     this.encoder = '',
     this.decoder = '',
     this.joiner = '',
     required this.tokens,
-    this.modelFile,
+    this.whisperLanguage = '',
+    this.fileBytes = const {},
     required this.sampleRate,
     required this.sizeMB,
     required this.isStreaming,
     required this.languages,
     required this.baseUrl,
   });
+
+  List<String> get files => [
+        for (final f in [encoder, decoder, joiner, tokens])
+          if (f.isNotEmpty) f,
+      ];
+
+  int get totalBytes => fileBytes.values.fold(0, (a, b) => a + b);
 
   String get sizeLabel => '$sizeMB MB';
 }
@@ -352,4 +427,5 @@ enum DownloadStatus {
   downloading,
   completed,
   failed,
+  deleted,
 }

@@ -208,12 +208,15 @@ class AppStrings {
   String get days => _isUrdu ? 'دن' : 'days';
   String get ready => _isUrdu ? 'تیار' : 'Ready';
   String get notDownloadedStatus => _isUrdu ? 'ڈاؤن لوڈ نہیں کیا گیا' : 'Not downloaded';
+  String downloadingPercent(int percent) => _isUrdu ? 'ڈاؤن لوڈ ہو رہا ہے $percent%' : 'Downloading $percent%';
+  String get modelReadyNotice => _isUrdu ? 'آف لائن ماڈل تیار ہے۔ انٹرنیٹ نہ ہونے پر کیپشنز اسی سے بنیں گے۔' : 'Offline model ready. Captions will use it when there is no internet.';
+  String get modelDownloadFailed => _isUrdu ? 'ماڈل ڈاؤن لوڈ نہیں ہو سکا۔ انٹرنیٹ کنکشن چیک کر کے دوبارہ کوشش کریں۔' : 'The model could not be downloaded. Check your internet connection and try again.';
   String get removeDownload => _isUrdu ? 'ڈاؤن لوڈ ہٹائیں' : 'Remove download';
   String get offlineModelsInfo => _isUrdu ? 'آف لائن ماڈلز انٹرنیٹ کے بغیر رازداری اور دستیابی بہتر بناتے ہیں۔ جہاں دستیاب ہو، آن لائن اسپیچ ریکگنیشن بھی استعمال کی جا سکتی ہے۔' : 'Offline models improve privacy and availability when you do not have internet access. You can also use online speech recognition when available.';
   String get englishModelTitle => _isUrdu ? 'انگریزی تقریر کی پہچان' : 'English speech recognition';
   String get englishModelDesc => _isUrdu ? 'انٹرنیٹ کنکشن کے بغیر ریئل ٹائم انگریزی کیپشنز کے لیے اختیاری آف لائن ماڈل۔' : 'Optional offline model for real-time English captions without an internet connection.';
   String get urduModelTitle => _isUrdu ? 'اردو تقریر کی پہچان' : 'Urdu speech recognition';
-  String get urduModelDesc => _isUrdu ? 'اردو تقریر کی پہچان اور اردو-اسکرپٹ کیپشنز کے لیے اختیاری آف لائن ماڈل۔' : 'Optional offline model for Urdu speech recognition and Urdu-script captions.';
+  String get urduModelDesc => _isUrdu ? 'انٹرنیٹ کے بغیر اردو کیپشنز کے لیے اختیاری آف لائن ماڈل۔ ہر جملہ بولنے والے کے رکنے کے بعد ظاہر ہوتا ہے۔' : 'Optional offline model for Urdu-script captions without an internet connection. Each sentence appears after the speaker pauses.';
 
   // ── Listening ──
   String get captionsLabel => _isUrdu ? 'کیپشنز' : 'captions';

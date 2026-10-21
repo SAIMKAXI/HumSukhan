@@ -7,7 +7,12 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+// Tried in order; a model Google has retired for this key answers 404 and
+// the next is used. GEMINI_MODEL (comma-separated) overrides the list.
+const GEMINI_MODELS = (Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash,gemini-3-flash-preview,gemini-2.5-flash")
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
 const MAX_TRANSCRIPT_CHARS = 60000;
 const MAX_SUMMARY_BULLETS = 6;
 const MAX_ACTION_ITEMS = 8;
@@ -201,8 +206,8 @@ Deno.serve(async (req) => {
       boundedTranscript,
     ].join("\n");
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    const request = (model: string) => fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -210,11 +215,12 @@ Deno.serve(async (req) => {
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.15,
-            maxOutputTokens: 2048,
-            // 2.5 Flash thinks by default, and thinking tokens are charged to
-            // maxOutputTokens. A summary needs none, and left on, the thinking
-            // can spend the whole budget and return no JSON at all.
-            thinkingConfig: { thinkingBudget: 0 },
+            maxOutputTokens: 8192,
+            // Flash models think by default, and thinking tokens are charged
+            // to maxOutputTokens. A summary needs little, and left on, the
+            // thinking can spend the whole budget and return no JSON at all.
+            // Gemini 3 replaced the token budget with a level.
+            thinkingConfig: model.startsWith("gemini-2") ? { thinkingBudget: 0 } : { thinkingLevel: "low" },
             responseMimeType: "application/json",
             responseSchema: {
               type: "OBJECT",
@@ -231,9 +237,17 @@ Deno.serve(async (req) => {
       },
     );
 
-    const raw = await response.text();
-    if (!response.ok) {
-      console.error("Gemini error", response.status, raw.slice(0, 1000));
+    let response: Response | null = null;
+    let raw = "";
+    for (const model of GEMINI_MODELS) {
+      response = await request(model);
+      raw = await response.text();
+      if (response.status !== 404) break;
+      console.error("Gemini model unavailable, trying the next one", model, raw.slice(0, 300));
+    }
+    if (!response || !response.ok) {
+      console.error("Gemini error", response?.status, raw.slice(0, 1000));
+      if (!response) return json({ error: "AI provider request failed" }, 502);
       return json(
         { error: "AI provider request failed", providerStatus: response.status },
         response.status === 429 ? 429 : 502,

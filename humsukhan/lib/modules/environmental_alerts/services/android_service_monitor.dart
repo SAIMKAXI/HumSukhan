@@ -82,6 +82,16 @@ class AndroidServiceMonitor extends EnvironmentalMonitor {
     }
   }
 
+  /// Asks the service first: monitoring can have been started from the Quick
+  /// Settings tile, or have stopped by itself, since this side last heard.
+  /// Going by a stale OFF would leave the service holding the microphone
+  /// while speech recognition starts.
+  @override
+  Future<bool> releaseMicrophone() async {
+    await attach();
+    return super.releaseMicrophone();
+  }
+
   @override
   Future<void> stop() async {
     await attach();

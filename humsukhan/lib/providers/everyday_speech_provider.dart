@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -11,18 +12,45 @@ import '../services/speech_capability.dart';
 import '../services/speech_engine.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/stt/model_manager.dart';
+import '../services/stt/stt_plan.dart';
+import '../services/supabase_service.dart';
 import 'speech_provider.dart' show ResilientTtsProvider;
 
-/// Everyday Mode speech provider.
+/// Speech for both Everyday and Professional Mode.
 ///
-/// Everyday owns one TTS implementation and one fallback STT controller. The
-/// bilingual recognizer is only created for Auto mode; explicit English/Urdu
-/// modes use a single language stream. This avoids the legacy provider's
-/// hidden second TTS stack and prevents unused recognizers from being opened.
+/// Listening tries recognizers in the order `sttPlan` gives: the phone's own
+/// recognizer when it has the language, then the cloud while there is a
+/// connection, then a downloaded offline model. If the one running fails
+/// mid-session, the next one takes over. There is one TTS implementation.
 class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
-  final EverydayBilingualSttService _bilingual = EverydayBilingualSttService.instance;
+  EverydaySpeechProvider({
+    Future<bool> Function()? cloudReachable,
+    @visibleForTesting EverydayBilingualSttService? cloudStream,
+    @visibleForTesting EnhancedSpeechProvider? fallback,
+  })  : _cloudReachable = cloudReachable ?? _signedInAndOnline,
+        _bilingual = cloudStream ?? EverydayBilingualSttService.instance,
+        _fallbackStt = fallback ?? EnhancedSpeechProvider() {
+    _modelProgress = _modelManager.onProgress.listen(_onModelProgress);
+  }
+
+  /// Whether the cloud speech services can be used, checked when listening
+  /// starts so a phone with no connection goes straight to what works
+  /// offline instead of waiting out every cloud timeout first.
+  final Future<bool> Function() _cloudReachable;
+
+  static Future<bool> _signedInAndOnline() async {
+    if (!SupabaseService.instance.isAuthenticated) return false;
+    try {
+      final result = await InternetAddress.lookup('api.deepgram.com').timeout(const Duration(seconds: 2));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  final EverydayBilingualSttService _bilingual;
   final ResilientTtsProvider _ttsProvider = ResilientTtsProvider();
-  final EnhancedSpeechProvider _fallbackStt = EnhancedSpeechProvider();
+  final EnhancedSpeechProvider _fallbackStt;
   final StreamController<SpeechResultEvent> _results = StreamController<SpeechResultEvent>.broadcast();
   final ModelManager _modelManager = ModelManager.instance;
   final SpeechCapability _capability = SpeechCapability.instance;
@@ -49,10 +77,9 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   String get currentLanguage => _language;
   String get lastSpokenText => _lastSpoken;
   String get latestFinalText => _latestFinal;
-  String? get lastStartError => _lastStartError ?? _bilingual.lastStartError ?? _fallbackStt.lastStartError;
+  String? get lastStartError => _lastStartError;
   LanguageResult? get detectedLanguage => _detected;
   STTMode get currentMode => _currentMode;
-  bool get isAvailable => _initialized || _fallbackStt.isAvailable;
   bool get isPlatformAvailable => _fallbackStt.isPlatformAvailable;
   bool get isSherpaAvailable => _fallbackStt.isSherpaAvailable;
   bool get isOfflineMode => _currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch;
@@ -69,7 +96,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       case STTMode.sherpaBatch:
         return 'Offline (Batch)';
       case STTMode.platform:
-        return _usingFallback ? 'Platform fallback' : 'Online';
+        return activeSource == SpeechSource.device ? 'Device recognizer' : 'Online';
       case STTMode.cloudBatch:
         return 'Cloud (backup)';
       case STTMode.none:
@@ -87,8 +114,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         if ((_language == 'Urdu' || _language == 'Auto') && !_capability.sttSupportsUrduCached) {
           return 'Using cloud or offline fallback because Urdu is not installed in the device speech recognizer.';
         }
-        return _usingFallback
-            ? 'Using the device speech recognizer after the primary Everyday recognizer became unavailable.'
+        return activeSource == SpeechSource.device
+            ? 'Using the speech recognizer installed on this device.'
             : 'Online bilingual speech recognition.';
       case STTMode.cloudBatch:
         return 'This device has no speech recognizer for the language, so speech is recognized in the cloud after each pause.';
@@ -134,55 +161,99 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         throw StateError('Environmental monitoring could not release the microphone for speech recognition.');
       }
 
-      _language = _normalizeLanguage(language);
+      _language = _normalizeLanguage(language) == 'Roman Urdu' ? 'Urdu' : _normalizeLanguage(language);
       _lastStartError = null;
       _latestFinal = '';
       _detected = null;
-      _currentMode = STTMode.platform;
       _usingFallback = false;
 
-      await _bilingualSubscription?.cancel();
-      _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
-      _connectionLostSubscription ??= _bilingual.onConnectionLost.listen(_onBilingualConnectionLost);
-      final started = await _bilingual.start(mode: _language);
-      if (started) {
-        _listening = true;
+      await _fallbackStt.initialize();
+      final online = await _cloudReachable();
+      _plan = sttPlan(
+        language: _language,
+        online: online,
+        deviceHas: _fallbackStt.deviceSupports,
+        offlineHas: _fallbackStt.offlineReady,
+      );
+      await _runPlan(from: 0);
+      if (!_listening) {
+        _lastStartError ??= online
+            ? 'Live speech recognition could not be started.'
+            : 'No internet connection, and no offline speech model is downloaded for $_language. '
+                'Download one in Settings to caption without a connection.';
         notifyListeners();
-        return;
       }
-
-      await _bilingualSubscription?.cancel();
-      _bilingualSubscription = null;
-      await _startFallback(_language == 'Auto' ? 'English' : _language);
     } finally {
       _startingListening = false;
     }
   }
 
-  /// The cloud recognizer dropped mid-conversation and could not reconnect.
-  /// Carry on captioning with the device recognizer rather than leave the
-  /// microphone open with nothing turning it into text; only if that cannot
-  /// start either is the conversation told that listening has stopped.
+  List<SpeechStep> _plan = const [];
+  int _planStep = -1;
+
+  /// The recognizer that is running, or null.
+  SpeechSource? get activeSource => _listening && _planStep >= 0 && _planStep < _plan.length ? _plan[_planStep].source : null;
+
+  /// Starts the first recognizer from step [from] of the plan that will run.
+  Future<void> _runPlan({required int from}) async {
+    for (var i = from; i < _plan.length && !_disposed; i++) {
+      final step = _plan[i];
+      final started = step.source == SpeechSource.cloudStream
+          ? await _startCloudStream(step.language)
+          : await _startFallbackStep(step);
+      if (started) {
+        _planStep = i;
+        _listening = true;
+        notifyListeners();
+        return;
+      }
+      _lastStartError = step.source == SpeechSource.cloudStream ? _bilingual.lastStartError : _fallbackStt.lastStartError;
+      debugPrint('Speech ${step.source.name} (${step.language}) did not start: $_lastStartError');
+    }
+    _planStep = -1;
+    _listening = false;
+    _currentMode = STTMode.none;
+  }
+
+  Future<bool> _startCloudStream(String language) async {
+    await _bilingualSubscription?.cancel();
+    _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
+    _connectionLostSubscription ??= _bilingual.onConnectionLost.listen(_onBilingualConnectionLost);
+    if (await _bilingual.start(mode: language)) {
+      _currentMode = STTMode.platform;
+      return true;
+    }
+    await _bilingualSubscription?.cancel();
+    _bilingualSubscription = null;
+    return false;
+  }
+
+  /// The live cloud stream dropped, or stopped producing captions, and could
+  /// not recover. Carry on with the next recognizer in the plan rather than
+  /// leave the microphone open with nothing turning it into text; only if
+  /// none starts is the conversation told that listening has stopped.
   Future<void> _onBilingualConnectionLost(String message) async {
     if (_disposed || !_listening || _usingFallback || _startingListening) return;
+    final failed = _planStep;
     await _bilingualSubscription?.cancel();
     _bilingualSubscription = null;
     await _bilingual.stop();
     _listening = false;
-    await _startFallback(_language == 'Auto' ? 'English' : _language);
+    _lastStartError = message;
+    await _runPlan(from: failed + 1);
     if (!_listening && !_results.isClosed) {
-      _results.addError(SpeechInterruption(_lastStartError ?? message));
+      _results.addError(SpeechInterruption(message));
     }
   }
 
-  Future<void> _startFallback(String language) async {
+  Future<bool> _startFallbackStep(SpeechStep step) async {
     await _fallbackSubscription?.cancel();
     _fallbackSubscription = _fallbackStt.onResult.listen((result) {
       if (!_listening && result.isFinal == false) return;
       final safe = EverydayLanguagePolicy.sanitizeHindi(result.text).trim();
       if (safe.isEmpty || _results.isClosed) return;
       final normalized = EverydayLanguagePolicy.normalizeRomanUrdu(safe);
-      final detected = _detectCaptionLanguage(normalized, fallback: language);
+      final detected = _detectCaptionLanguage(normalized, fallback: step.language);
       if (result.isFinal) _latestFinal = normalized;
       _detected = LanguageResult(
         language: detected,
@@ -201,26 +272,19 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       notifyListeners();
     });
 
-    try {
-      await _fallbackStt.startListening(language: language, bilingual: _language == 'Auto');
-      if (_fallbackStt.isListening) {
-        _listening = true;
-        _usingFallback = true;
-        _currentMode = _fallbackStt.currentMode;
-        notifyListeners();
-        return;
-      }
-    } catch (e) {
-      _lastStartError = 'Fallback speech recognition could not start: $e';
+    final route = switch (step.source) {
+      SpeechSource.device => SttRoute.device,
+      SpeechSource.cloudChunk => SttRoute.cloudChunk,
+      _ => SttRoute.offline,
+    };
+    if (await _fallbackStt.start(route, language: step.language, bilingual: _language == 'Auto')) {
+      _usingFallback = true;
+      _currentMode = _fallbackStt.currentMode;
+      return true;
     }
-
-    _listening = false;
-    _usingFallback = false;
-    _currentMode = STTMode.none;
-    _lastStartError ??= _fallbackStt.lastStartError ?? 'Live speech recognition could not be started.';
     await _fallbackSubscription?.cancel();
     _fallbackSubscription = null;
-    notifyListeners();
+    return false;
   }
 
   void _handleResult(EverydayBilingualResult result) {
@@ -268,6 +332,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     await _fallbackStt.stopListening();
     _listening = false;
     _usingFallback = false;
+    _planStep = -1;
     await _bilingualSubscription?.cancel();
     await _fallbackSubscription?.cancel();
     _bilingualSubscription = null;
@@ -289,15 +354,29 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   bool isModelReady(String language) => _modelManager.isModelReady(language);
   ModelStatus? getModelStatus(String language) => _modelManager.statuses[language];
 
+  /// Why the last download of [language]'s model failed, or null.
+  String? modelError(String language) => _modelManager.lastError(language);
+
+  late final StreamSubscription<ModelDownloadProgress> _modelProgress;
+
+  void _onModelProgress(ModelDownloadProgress progress) {
+    if (!_disposed) notifyListeners();
+  }
+
+  /// Downloads [language]'s offline model. Once it is on the phone the next
+  /// start uses it whenever the phone's recognizer and the cloud cannot be
+  /// used, with nothing more to set up.
   Future<bool> downloadOfflineModel(String language) async {
     final success = await _modelManager.downloadModel(language);
-    notifyListeners();
+    if (success) await _fallbackStt.reloadOfflineModels();
+    if (!_disposed) notifyListeners();
     return success;
   }
 
   Future<bool> deleteModel(String language) async {
     final success = await _modelManager.deleteModel(language);
-    notifyListeners();
+    if (success) await _fallbackStt.reloadOfflineModels();
+    if (!_disposed) notifyListeners();
     return success;
   }
 
@@ -452,6 +531,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   @override
   void dispose() {
     _disposed = true;
+    unawaited(_modelProgress.cancel());
     _cancelSubscriptions();
     unawaited(_results.close());
     _bilingual.stop();

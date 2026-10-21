@@ -12,6 +12,7 @@ import '../widgets/quick_reply_manager.dart';
 import '../modules/environmental_alerts/models/environmental_sound.dart';
 import '../widgets/modern_ui.dart';
 import '../l10n/app_strings.dart';
+import '../services/stt/model_manager.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -274,28 +275,62 @@ class _SpeechModelsSection extends StatelessWidget {
     return Column(children: [
       ListTile(leading: Icon(speech.isOfflineMode ? Icons.wifi_off : Icons.wifi, color: Theme.of(context).colorScheme.primary), title: Text(s.currentMode), subtitle: Text(speech.sttModeLabel), trailing: Text(speech.currentLanguage, style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600))),
       const Divider(height: 1),
-      _ModelTile(title: s.englishModelTitle, description: s.englishModelDesc, language: s.englishLabel, sizeMB: 80, isReady: speech.isModelReady('English'), onDownload: () => speech.downloadOfflineModel('English'), onDelete: () => speech.deleteModel('English'), s: s),
-      _ModelTile(title: s.urduModelTitle, description: s.urduModelDesc, language: s.urduLabel, sizeMB: 239, isReady: speech.isModelReady('Urdu'), onDownload: () => speech.downloadOfflineModel('Urdu'), onDelete: () => speech.deleteModel('Urdu'), s: s),
+      for (final (language, title, description, label) in [
+        ('English', s.englishModelTitle, s.englishModelDesc, s.englishLabel),
+        ('Urdu', s.urduModelTitle, s.urduModelDesc, s.urduLabel),
+      ])
+        _ModelTile(
+          title: title,
+          description: description,
+          language: label,
+          sizeMB: ModelManager.availableModels[language]!.sizeMB,
+          isReady: speech.isModelReady(language),
+          downloading: speech.getModelStatus(language)?.isDownloading == true ? speech.getModelStatus(language)!.downloadProgress : null,
+          onDownload: () => _download(context, speech, language),
+          onDelete: () => speech.deleteModel(language),
+          s: s,
+        ),
       Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: Text(s.offlineModelsInfo, style: Theme.of(context).textTheme.bodySmall)),
     ]);
   }
+}
+
+Future<void> _download(BuildContext context, SpeechProvider speech, String language) async {
+  final s = AppStrings.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  final ok = await speech.downloadOfflineModel(language);
+  messenger.showSnackBar(SnackBar(content: Text(ok ? s.modelReadyNotice : (speech.modelError(language) == null ? s.modelDownloadFailed : '${s.modelDownloadFailed}\n${speech.modelError(language)}'))));
 }
 
 class _ModelTile extends StatelessWidget {
   final String title, description, language;
   final int sizeMB;
   final bool isReady;
+
+  /// Progress from 0 to 1 while downloading, otherwise null.
+  final double? downloading;
   final VoidCallback onDownload, onDelete;
   final AppStrings s;
-  const _ModelTile({required this.title, required this.description, required this.language, required this.sizeMB, required this.isReady, required this.onDownload, required this.onDelete, required this.s});
+  const _ModelTile({required this.title, required this.description, required this.language, required this.sizeMB, required this.isReady, this.downloading, required this.onDownload, required this.onDelete, required this.s});
   @override
-  Widget build(BuildContext context) => ListTile(
-        leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest, child: Icon(isReady ? Icons.check_circle : Icons.download_outlined, color: Theme.of(context).colorScheme.primary, size: 20)),
-        title: Text(title),
-        subtitle: Text('${description}\n${isReady ? s.ready : s.notDownloadedStatus} · $sizeMB MB'),
-        isThreeLine: true,
-        trailing: isReady ? IconButton(tooltip: s.removeDownload, icon: const Icon(Icons.delete_outline), onPressed: onDelete) : TextButton(onPressed: onDownload, child: Text(s.downloadLabel)),
-      );
+  Widget build(BuildContext context) {
+    final progress = downloading;
+    final status = isReady ? s.ready : progress != null ? s.downloadingPercent((progress * 100).round()) : s.notDownloadedStatus;
+    return ListTile(
+      leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest, child: Icon(isReady ? Icons.check_circle : Icons.download_outlined, color: Theme.of(context).colorScheme.primary, size: 20)),
+      title: Text(title),
+      subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('$description\n$status · $sizeMB MB'),
+        if (progress != null) Padding(padding: const EdgeInsets.only(top: 6), child: LinearProgressIndicator(value: progress)),
+      ]),
+      isThreeLine: true,
+      trailing: isReady
+          ? IconButton(tooltip: s.removeDownload, icon: const Icon(Icons.delete_outline), onPressed: onDelete)
+          : progress != null
+              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))
+              : TextButton(onPressed: onDownload, child: Text(s.downloadLabel)),
+    );
+  }
 }
 
 class _AboutSection extends StatelessWidget {
