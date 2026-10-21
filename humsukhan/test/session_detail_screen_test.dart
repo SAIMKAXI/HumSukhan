@@ -38,6 +38,13 @@ class _FakeProfessionalProvider extends ProfessionalProvider {
   String? insightError(String sessionId) => _error;
 
   @override
+  Future<void> loadInsight(String sessionId) async {
+    if (getInsightForSession(sessionId) == null) {
+      await generateInsights(sessionId);
+    }
+  }
+
+  @override
   Future<void> generateInsights(String sessionId) async {
     generateCalls++;
   }
