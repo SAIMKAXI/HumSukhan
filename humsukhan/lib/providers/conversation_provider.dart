@@ -1,8 +1,24 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 
 class ConversationProvider extends ChangeNotifier {
+  ConversationProvider() {
+    unawaited(_removeLegacySavedConversations());
+  }
+
+  Future<void> _removeLegacySavedConversations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in prefs.getKeys().where((key) => key.startsWith('everydayConversations:'))) {
+        await prefs.remove(key);
+      }
+    } catch (e) {
+      debugPrint('Legacy conversational history cleanup failed: $e');
+    }
+  }
+
   ConversationState _state = ConversationState.idle;
   final List<Caption> _captions = [];
   Caption? _currentPartial;
