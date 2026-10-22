@@ -108,6 +108,8 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     });
 
     try {
+      // Sessions created before the Roman Urdu option was removed still
+      // carry it; it was always recognized as Urdu.
       await speech.startListening(
         language: session.captionLanguage == 'Roman Urdu'
             ? 'Urdu'
