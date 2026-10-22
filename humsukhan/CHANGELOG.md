@@ -2,8 +2,10 @@
 
 ## Unreleased
 
+## 2.4.9+39
+
 ### Installing
-- Releases could not be installed over the previous version ("App not installed"). Each release was signed with a debug key the build machine generated afresh, so every APK had a different signature. Release builds now use one permanent release key when it is configured (see RELEASE_CHECKLIST.md). Phones with 2.4.8 or older must uninstall once to move to it.
+- A permanent Android signing key is not configured for this release. CI therefore uses its runner's debug key. Because a later runner may use a different key, Android may reject this APK as an update to an existing installation. A permanent key is needed for reliable in-place updates. Uninstalling first can erase device-local Professional Mode sessions, transcripts, and folders, so preserve any needed data before uninstalling.
 
 ### Account
 - Password reset emails now open the app to set the new password. They used to send the user to a `localhost` address.
