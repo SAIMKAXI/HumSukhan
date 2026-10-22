@@ -1,11 +1,10 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 2.4.9+39
+version: 2.10.0+40
 
-# Release v2.4.9
-# Improve account recovery and profile editing, Professional Mode,
-# and environmental alert controls.
+# Release v2.10.0
+# Simplify Professional Mode speech-language selection.
 
 environment:
   sdk: '>=3.8.0 <4.0.0'

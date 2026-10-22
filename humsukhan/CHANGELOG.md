@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.10.0+40
+
+### Professional Mode
+- Removed the duplicate Roman Urdu speech-language option, which produced the same Urdu-script captions as Urdu. The available choices are Auto, English, and Urdu; existing sessions created with Roman Urdu continue to work as Urdu.
+
+### Installing
+- No permanent Android signing key is configured. CI uses its runner's debug key, so Android may reject this APK as an update if the signing key differs from the one used for the installed version. Uninstalling first can erase device-local Professional Mode sessions, transcripts, and folders; preserve any needed data before uninstalling.
+
 ## 2.4.9+39
 
 ### Installing
