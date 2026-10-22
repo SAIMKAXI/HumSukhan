@@ -27,9 +27,9 @@ class AlertService {
     unawaited(NotificationService.instance.initialize());
   }
 
-  /// System notification plus, if enabled, vibration.
-  Future<void> notify({required String type, required String severity, required double confidence, required bool haptic}) async {
-    await NotificationService.instance.showEnvironmentalAlert(type: type, severity: severity, confidence: confidence);
+  /// System notification and vibration, each if enabled.
+  Future<void> notify({required String type, required String severity, required double confidence, bool visual = true, required bool haptic}) async {
+    if (visual) await NotificationService.instance.showEnvironmentalAlert(type: type, severity: severity, confidence: confidence);
     if (haptic) await _triggerHaptic(severity);
   }
 

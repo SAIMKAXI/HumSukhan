@@ -13,6 +13,7 @@ import 'widgets/main_scaffold.dart';
 import 'l10n/app_strings.dart';
 import 'services/supabase_service.dart';
 import 'modules/environmental_alerts/background/environmental_background_pipeline.dart';
+import 'modules/environmental_alerts/services/environmental_monitor.dart';
 
 /// Entry point of the Flutter engine Android's environmental monitoring
 /// service starts; it runs with the app closed. Looked up by name from
@@ -288,6 +289,9 @@ class _SpeechLifecycleGuardState extends State<SpeechLifecycleGuard> with Widget
     }
     if (state == AppLifecycleState.resumed) {
       unawaited(_recheckSpeechCapabilities());
+      if (!context.read<SpeechProvider>().isListening) {
+        unawaited(EnvironmentalMonitoring.resumeAfterForegroundSpeech());
+      }
     }
   }
 

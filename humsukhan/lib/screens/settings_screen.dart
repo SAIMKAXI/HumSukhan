@@ -166,47 +166,12 @@ class SettingsScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _showEditProfileDialog(BuildContext context, AppStrings s) async {
-    final user = context.read<UserProvider>();
-    final nameController = TextEditingController(text: user.profile?.name ?? '');
-    String? avatarData = user.profile?.avatarData;
-    final picker = ImagePicker();
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setModalState) => Padding(
-        padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(s.editProfile, style: Theme.of(ctx).textTheme.headlineSmall),
-          const SizedBox(height: 20),
-          GestureDetector(
-            onTap: () async {
-              final file = await picker.pickImage(source: ImageSource.gallery, maxWidth: 512, maxHeight: 512, imageQuality: 82);
-              if (file == null) return;
-              final bytes = await file.readAsBytes();
-              setModalState(() => avatarData = base64Encode(bytes));
-            },
-            child: Stack(alignment: Alignment.bottomRight, children: [
-              _Avatar(profile: user.profile?.copyWith(avatarData: avatarData), radius: 46),
-              CircleAvatar(radius: 16, backgroundColor: Theme.of(ctx).colorScheme.primary, child: const Icon(Icons.camera_alt, size: 16)),
-            ]),
-          ),
-          const SizedBox(height: 16),
-          TextField(controller: nameController, decoration: InputDecoration(labelText: s.nameLabel)),
-          const SizedBox(height: 20),
-          PrimaryActionButton(label: s.save, icon: Icons.save, onPressed: () async {
-            final name = nameController.text.trim();
-            if (name.isEmpty) return;
-            final base = user.profile ?? UserProfile(name: name);
-            await user.saveProfile(base.copyWith(name: name, avatarData: avatarData));
-            if (ctx.mounted) Navigator.pop(ctx);
-          }),
-        ]),
-      )),
-    );
-    nameController.dispose();
-  }
+  Future<void> _showEditProfileDialog(BuildContext context, AppStrings s) => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (_) => const _EditProfileSheet(),
+      );
 
   void _showAppLanguageDialog(BuildContext context, SettingsProvider settings, AppStrings s) {
     showDialog<void>(
@@ -238,6 +203,84 @@ class SettingsScreen extends StatelessWidget {
           }).toList(),
         ),
       ),
+    );
+  }
+}
+
+/// Owns its text field, so the controller lives exactly as long as the
+/// sheet, including its closing animation.
+class _EditProfileSheet extends StatefulWidget {
+  const _EditProfileSheet();
+  @override
+  State<_EditProfileSheet> createState() => _EditProfileSheetState();
+}
+
+class _EditProfileSheetState extends State<_EditProfileSheet> {
+  late final TextEditingController _name;
+  String? _avatarData;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final profile = context.read<UserProvider>().profile;
+    _name = TextEditingController(text: profile?.name ?? '');
+    _avatarData = profile?.avatarData;
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    try {
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 512, maxHeight: 512, imageQuality: 82);
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (mounted) setState(() => _avatarData = base64Encode(bytes));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppStrings.of(context).photoUnavailable)));
+    }
+  }
+
+  Future<void> _save() async {
+    final name = _name.text.trim();
+    final s = AppStrings.of(context);
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.nameRequired)));
+      return;
+    }
+    setState(() => _saving = true);
+    final user = context.read<UserProvider>();
+    final base = user.profile ?? UserProfile(name: name);
+    await user.saveProfile(base.copyWith(name: name, avatarData: _avatarData));
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
+    final profile = context.watch<UserProvider>().profile;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text(s.editProfile, style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 20),
+        GestureDetector(
+          onTap: _pickPhoto,
+          child: Stack(alignment: Alignment.bottomRight, children: [
+            _Avatar(profile: (profile ?? UserProfile(name: '')).copyWith(avatarData: _avatarData), radius: 46),
+            CircleAvatar(radius: 16, backgroundColor: Theme.of(context).colorScheme.primary, child: const Icon(Icons.camera_alt, size: 16)),
+          ]),
+        ),
+        const SizedBox(height: 16),
+        TextField(controller: _name, decoration: InputDecoration(labelText: s.nameLabel), textInputAction: TextInputAction.done, onSubmitted: (_) => _save()),
+        const SizedBox(height: 20),
+        PrimaryActionButton(label: s.save, icon: Icons.save, onPressed: _saving ? null : _save),
+      ]),
     );
   }
 }

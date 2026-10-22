@@ -61,6 +61,7 @@ class EnvironmentalAlertPipeline {
         type: event.type,
         severity: event.severity,
         confidence: event.confidence,
+        visual: preferences.visualAlerts,
         haptic: preferences.hapticAlerts,
       );
 }

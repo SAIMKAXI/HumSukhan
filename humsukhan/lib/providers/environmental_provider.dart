@@ -122,7 +122,9 @@ class EnvironmentalProvider extends ChangeNotifier {
     if (_disposed) return;
     final alert = update.alert;
     if (alert != null) {
-      _currentAlert = alert;
+      // With visual alerts off the alert still reaches history, but no
+      // banner covers the screen.
+      if (_settingsProvider?.visualAlerts ?? true) _currentAlert = alert;
       _showInAppAlert(alert, _settingsProvider);
       // The monitor has already recorded it; pick up that write.
       unawaited(_reloadHistory());

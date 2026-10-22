@@ -121,7 +121,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
             ? 'Listening… tap microphone to stop'
             : 'Microphone could not be started';
         if (!listening) {
-          _startupError =
+          _startupError = speech.lastStartError ??
               'Speech recognition did not start. The selected language may be unavailable on this device, or microphone access may be blocked.';
           _acceptSpeechResults = false;
         }
