@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 import 'database_service.dart';
+import '../config/env_config.dart';
 import 'supabase_service.dart';
 
 class AuthService {
@@ -189,7 +190,7 @@ class AuthService {
 
     try {
       await _supabase.auth!
-          .resetPasswordForEmail(normalizeEmail(email))
+          .resetPasswordForEmail(normalizeEmail(email), redirectTo: EnvConfig.authRedirectUrl)
           .timeout(const Duration(seconds: 20));
       return const AuthResult.success(null);
     } on AuthException catch (e) {

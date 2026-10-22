@@ -57,7 +57,8 @@ class _EverydayScreenState extends State<EverydayScreen> {
   @override
   void dispose() {
     _engine..removeListener(_onEngineChanged)..dispose();
-    _conversation.deleteConversation();
+    // Conversations are temporary: leaving the screen discards this one.
+    _conversation.deleteConversation(notify: false);
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -275,11 +276,11 @@ class _EverydayScreenState extends State<EverydayScreen> {
           children: [
             Icon(Icons.check_circle_outline, size: 64, color: Theme.of(context).colorScheme.primary),
             const SizedBox(height: 24),
-            Text('Conversation ended', style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center),
+            Text(s.conversationEnded, style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            Text('This conversation is temporary and will not be saved.', style: Theme.of(context).textTheme.bodyLarge, textAlign: TextAlign.center),
+            Text(s.conversationTemporary, style: Theme.of(context).textTheme.bodyLarge, textAlign: TextAlign.center),
             const SizedBox(height: 32),
-            PrimaryActionButton(label: s.delete, icon: Icons.check, onPressed: () => context.read<ConversationProvider>().deleteConversation()),
+            PrimaryActionButton(label: s.doneAction, icon: Icons.check, onPressed: () => context.read<ConversationProvider>().deleteConversation()),
             const SizedBox(height: 12),
             TextButton(onPressed: () => context.read<ConversationProvider>().cancelStop(), child: Text(s.continueListening)),
           ],

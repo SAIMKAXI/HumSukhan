@@ -62,8 +62,11 @@ class AppStrings {
   String get everydayTitle => _isUrdu ? 'ہر روز' : 'Everyday';
   String get startListening => _isUrdu ? 'سننا شروع کریں' : 'Start Listening';
   String get stopConversation => _isUrdu ? 'گفتگو بند کریں' : 'Stop Conversation';
-  String get saveConversation => _isUrdu ? 'گفتگو محفوظ کریں؟' : 'Save Conversation?';
-  String get saveConversationDesc => _isUrdu ? 'کیا آپ ان کیپشنز کو حوالے کے لیے محفوظ کرنا چاہیں گے؟' : 'Would you like to save these captions for reference?';
+  String get photoUnavailable => _isUrdu ? 'تصویر نہیں کھل سکی۔ فوٹوز تک رسائی کی اجازت دے کر دوبارہ کوشش کریں۔' : 'The photo could not be opened. Allow access to photos and try again.';
+  String get nameRequired => _isUrdu ? 'براہ کرم اپنا نام لکھیں۔' : 'Please enter your name.';
+  String get conversationEnded => _isUrdu ? 'گفتگو ختم ہو گئی' : 'Conversation ended';
+  String get conversationTemporary => _isUrdu ? 'یہ گفتگو عارضی ہے اور محفوظ نہیں کی جائے گی۔' : 'This conversation is temporary and will not be saved.';
+  String get doneAction => _isUrdu ? 'ٹھیک ہے' : 'Done';
   String get save => _isUrdu ? 'محفوظ کریں' : 'Save';
   String get delete => _isUrdu ? 'حذف کریں' : 'Delete';
   String get continueListening => _isUrdu ? 'سننا جاری رکھیں' : 'Continue Listening';

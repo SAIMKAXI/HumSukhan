@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Installing
+- Releases could not be installed over the previous version ("App not installed"). Each release was signed with a debug key the build machine generated afresh, so every APK had a different signature. Release builds now use one permanent release key when it is configured (see RELEASE_CHECKLIST.md). Phones with 2.4.8 or older must uninstall once to move to it.
+
+### Account
+- Password reset emails now open the app to set the new password. They used to send the user to a `localhost` address.
+- Editing the profile: an empty name is explained instead of silently ignored, a photo that cannot be opened is reported, and closing the editor no longer raises an error.
+
+### Environmental Alerts
+- Monitoring that captions stopped to free the microphone starts again when captioning ends. It used to stay off until switched on again.
+- The Visual Alerts switch now works: off, alerts still vibrate and are kept in history, but there is no alert notification or banner. Before, it changed nothing.
+
+### Professional Mode
+- A new folder can be created when folders already exist. The button used to appear only while there were none.
+- Creating a folder with a name already in use says so instead of doing nothing.
+- The New session and Create folder dialogs no longer raise an error while closing.
+- When the microphone cannot start, the screen shows the actual reason (for example, no connection and no offline model).
+
+### Conversational Mode
+- Leaving the screen clears the conversation without disturbing the screens being closed. The end-of-conversation screen is translated into Urdu.
+
 ## 2.4.8+38
 
 ### Privacy and Professional Mode

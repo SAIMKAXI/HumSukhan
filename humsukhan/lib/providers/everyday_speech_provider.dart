@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../models/models.dart';
 import '../services/everyday_bilingual_stt.dart';
@@ -156,6 +156,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       // Environmental monitoring uses a dedicated native microphone capture
       // path, including when it was started from Quick Settings. Release that
       // capture completely before opening foreground speech recognition.
+      _monitoringResume?.cancel();
       final released = await EnvironmentalMonitoring.releaseForForegroundSpeech();
       if (!released) {
         throw StateError('Environmental monitoring could not release the microphone for speech recognition.');
@@ -177,6 +178,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       );
       await _runPlan(from: 0);
       if (!_listening) {
+        _scheduleMonitoringResume();
         _lastStartError ??= online
             ? 'Live speech recognition could not be started.'
             : 'No internet connection, and no offline speech model is downloaded for $_language. '
@@ -325,8 +327,26 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     notifyListeners();
   }
 
+  /// Environmental monitoring is restarted this long after listening stops,
+  /// unless listening starts again first (a reply being spoken pauses and
+  /// resumes listening, and must not bounce the microphone between the two).
+  static const Duration monitoringResumeDelay = Duration(seconds: 3);
+  Timer? _monitoringResume;
+
+  void _scheduleMonitoringResume() {
+    _monitoringResume?.cancel();
+    _monitoringResume = Timer(monitoringResumeDelay, () {
+      if (_disposed || _listening || _startingListening || _speaking) return;
+      // Android refuses to start a microphone service from the background;
+      // SpeechLifecycleGuard resumes monitoring when the app is back.
+      if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) return;
+      unawaited(EnvironmentalMonitoring.resumeAfterForegroundSpeech());
+    });
+  }
+
   @override
   Future<void> stopListening() async {
+    _scheduleMonitoringResume();
     ++_speechGeneration;
     await _bilingual.stop();
     await _fallbackStt.stopListening();
@@ -531,6 +551,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   @override
   void dispose() {
     _disposed = true;
+    _monitoringResume?.cancel();
     unawaited(_modelProgress.cancel());
     _cancelSubscriptions();
     unawaited(_results.close());

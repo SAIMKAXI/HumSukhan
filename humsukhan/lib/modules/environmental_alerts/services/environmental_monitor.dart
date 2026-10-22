@@ -48,8 +48,14 @@ abstract class EnvironmentalMonitor {
   Future<bool> releaseMicrophone() async {
     if (status.canStart) return true;
     await stop();
-    return status.canStart;
+    final released = status.canStart;
+    if (released) stoppedForSpeech = true;
+    return released;
   }
+
+  /// Monitoring was running and [releaseMicrophone] stopped it, so it should
+  /// be started again once speech recognition is done with the microphone.
+  bool stoppedForSpeech = false;
 }
 
 /// The monitor for this device. One per process, shared by the Alerts screen
@@ -68,4 +74,13 @@ class EnvironmentalMonitoring {
   /// Foreground speech and environmental monitoring cannot safely share the
   /// microphone, so speech releases it first.
   static Future<bool> releaseForForegroundSpeech() => instance.releaseMicrophone();
+
+  /// Starts monitoring again if speech stopped it. Monitoring is the user's
+  /// standing choice; captioning a conversation must not end it for good.
+  static Future<void> resumeAfterForegroundSpeech() async {
+    final monitor = instance;
+    if (!monitor.stoppedForSpeech) return;
+    monitor.stoppedForSpeech = false;
+    if (monitor.status.canStart) await monitor.start();
+  }
 }

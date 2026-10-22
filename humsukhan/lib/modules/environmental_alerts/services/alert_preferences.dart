@@ -13,6 +13,7 @@ class AlertPreferences {
   const AlertPreferences({
     this.allowedAlerts = const {},
     this.hapticAlerts = true,
+    this.visualAlerts = true,
     this.screenFlashAlerts = true,
     this.flashAlerts = false,
   });
@@ -20,6 +21,9 @@ class AlertPreferences {
   /// Missing entries mean allowed, matching `SettingsProvider`'s defaults.
   final Map<String, bool> allowedAlerts;
   final bool hapticAlerts;
+
+  /// The alert notification and the in-app banner.
+  final bool visualAlerts;
   final bool screenFlashAlerts;
   final bool flashAlerts;
 
@@ -44,6 +48,7 @@ class AlertPreferences {
     return AlertPreferences(
       allowedAlerts: allowed,
       hapticAlerts: prefs.getBool('hapticAlerts') ?? true,
+      visualAlerts: prefs.getBool('visualAlerts') ?? true,
       screenFlashAlerts: prefs.getBool('screenFlashAlerts') ?? true,
       flashAlerts: prefs.getBool('flashAlerts') ?? false,
     );

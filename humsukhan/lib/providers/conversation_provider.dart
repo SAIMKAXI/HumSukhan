@@ -70,9 +70,11 @@ class ConversationProvider extends ChangeNotifier {
   }
 
   /// Clears the in-memory transcript. Conversational Mode never persists sessions.
-  void deleteConversation() => _resetState();
+  /// [notify] is false when the screen showing the conversation is being
+  /// torn down, when listeners must not be told to rebuild.
+  void deleteConversation({bool notify = true}) => _resetState(notify: notify);
 
-  void _resetState() {
+  void _resetState({bool notify = true}) {
     _partialCommitTimer?.cancel();
     _partialCommitTimer = null;
     _state = ConversationState.idle;
@@ -82,7 +84,7 @@ class ConversationProvider extends ChangeNotifier {
     _captions.clear();
     _currentPartial = null;
     _activeSpeakerDraft = null;
-    notifyListeners();
+    if (notify) notifyListeners();
   }
 
   void cancelStop() {
