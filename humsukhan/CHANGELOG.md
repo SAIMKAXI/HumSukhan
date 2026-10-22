@@ -16,6 +16,7 @@
 - The Visual Alerts switch now works: off, alerts still vibrate and are kept in history, but there is no alert notification or banner. Before, it changed nothing.
 
 ### Professional Mode
+- Removed the Roman Urdu speech language: it produced the same Urdu-script captions as Urdu. The choices are Auto, English and Urdu; sessions created with Roman Urdu keep working as Urdu.
 - A new folder can be created when folders already exist. The button used to appear only while there were none.
 - Creating a folder with a name already in use says so instead of doing nothing.
 - The New session and Create folder dialogs no longer raise an error while closing.

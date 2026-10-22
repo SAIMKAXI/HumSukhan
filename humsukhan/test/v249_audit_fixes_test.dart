@@ -132,6 +132,17 @@ void main() {
       expect(pro.folders.map((f) => f.name), ['Work', 'Lectures 2026']);
     });
 
+    testWidgets('the speech language choices are Auto, English and Urdu only', (tester) async {
+      await pumpProfessional(tester);
+      await tester.tap(find.byType(FloatingActionButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Auto — detect language'));
+      await tester.pumpAndSettle();
+      expect(find.text('Roman Urdu'), findsNothing, reason: 'it gave the same pure Urdu captions as Urdu');
+      expect(find.text('Urdu'), findsWidgets);
+      expect(find.text('English'), findsWidgets);
+    });
+
     testWidgets('a duplicate name is explained and the dialog stays open', (tester) async {
       final pro = await pumpProfessional(tester);
       await tester.tap(find.text('Create Folder'));
