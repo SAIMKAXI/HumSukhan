@@ -1,7 +1,8 @@
-# Environmental monitoring architecture
+# Environmental alerts
 
-Everything lives in `lib/modules/environmental_alerts/`. Each rule has one
-home; if you need to change one, there is exactly one place to do it.
+HumSukhan listens for sirens, doorbells and knocks on the phone and announces
+them by notification and vibration, also with the app closed. The code lives in
+`humsukhan/lib/modules/environmental_alerts/`, and each rule has one home:
 
 | Concern | Owner |
 |---|---|
@@ -21,8 +22,12 @@ local sherpa-onnx CED-Tiny INT8 → `SoundAlertPolicy` → `EnvironmentalAlertPi
 (switch check → history → notification + vibration) → screen (banner, screen
 flash, torch).
 
-Labels are matched **whole**. Matching by substring turned "Water tap, faucet"
-and "Engine knocking" into knocks and "Wind chime" into a doorbell.
+Each output follows its switch in Settings: the per-sound switches, Haptic Alerts
+(vibration), Visual Alerts (notification and banner), Screen Flash and
+Flashlight. An alert is always recorded in the history.
+
+Labels are matched **whole**, so a sound such as "Water tap, faucet" or
+"Wind chime" can never pass for a knock or a doorbell.
 
 The model is copied out of the app bundle and loaded locally; monitoring never
 touches the network and no audio is stored or uploaded. sherpa-onnx bindings are
@@ -73,5 +78,9 @@ widget extension target.
 ## Foreground speech
 
 Speech recognition and environmental monitoring cannot share the microphone.
-Starting Everyday Mode calls `EnvironmentalMonitoring.releaseForForegroundSpeech()`,
-which stops monitoring on both platforms; the Alerts screen then shows it as off.
+When captions start, `EnvironmentalMonitoring.releaseForForegroundSpeech()` asks
+the monitor for its current state (it may have been started from the Quick
+Settings tile) and stops it. Three seconds after captioning ends,
+`resumeAfterForegroundSpeech()` starts it again if it had been on. Android does
+not let a microphone service start from the background, so if the app is not on
+screen at that moment, monitoring resumes when the app is next opened.

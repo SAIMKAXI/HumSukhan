@@ -54,7 +54,7 @@ class AppStrings {
   String get onboardingProfessional => _isUrdu ? 'پیشہ ورانہ سننا' : 'Professional Listening';
   String get onboardingProfessionalDesc => _isUrdu ? 'لیکچرز اور میٹنگز کیپچر کریں۔ AI سے چلائی جانے والی خلاصے، اعمال کے اقدامات، اور بصیرت حاصل کریں۔' : 'Capture lectures and meetings. Get AI-powered summaries, action items, and insights.';
   String get onboardingEnvironmental => _isUrdu ? 'ماحولیاتی آگاہی' : 'Environmental Awareness';
-  String get onboardingEnvironmentalDesc => _isUrdu ? 'اپنے آس پاس اہم آوازوں کے بارے میں جانیں — سائرن، دروازے کی گھنٹی، دستک، اور بچے کے رونے کی آوازیں۔' : 'Know about important sounds around you — sirens, doorbells, knocks, and baby cries.';
+  String get onboardingEnvironmentalDesc => _isUrdu ? 'اپنے آس پاس اہم آوازوں کے بارے میں جانیں — سائرن، دروازے کی گھنٹی اور دستک۔' : 'Know about important sounds around you — sirens, doorbells and knocks.';
   String get onboardingPrivacy => _isUrdu ? 'رازداری پہلے' : 'Privacy First';
   String get onboardingPrivacyDesc => _isUrdu ? 'آڈیو عارضی طور پر پروسیس ہوتا ہے اور ریلیز ہو جاتا ہے۔ خام آڈیو کبھی محفوظ نہیں کیا جاتا۔' : 'Audio is processed temporarily and released. No raw audio is ever stored.';
 
