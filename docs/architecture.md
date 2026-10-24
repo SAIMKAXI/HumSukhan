@@ -1,229 +1,105 @@
-# HumSukhan — Architecture (proposed redesign)
+# Architecture
 
-**Status:** a design I would build to, not a description of the current tree.
-`humsukhan/FEATURE_MODULE_ARCHITECTURE.md` describes the as-built structure.
+HumSukhan is a Flutter app with native Android code for background sound monitoring, and a Supabase backend for accounts, settings and AI insights. This document describes how the pieces fit together.
 
-Every rule below traces to a defect that actually shipped. The provenance is
-listed in §9 so nothing here reads as taste.
+## Overview
 
----
+```
+┌──────────────────────────── Flutter app ─────────────────────────────┐
+│  Screens: Home · Everyday · Professional · Alerts · Settings · Auth   │
+│                                                                      │
+│  Providers (state)                                                   │
+│    SpeechProvider: speech to text and text to speech, all modes      │
+│    ConversationProvider · ProfessionalProvider · EnvironmentalProvider│
+│    SettingsProvider · UserProvider · QuickReplyProvider · Auth       │
+│                                                                      │
+│  Services                                                            │
+│    Speech: phone recognizer · Deepgram stream · cloud per-sentence · │
+│            sherpa-onnx offline models · phone and cloud voices       │
+│    AI insights · Supabase database · notifications · alerts          │
+│    Environmental alerts module (sound classifier, monitor, pipeline) │
+└──────────┬──────────────────────────────────────────┬────────────────┘
+           │ MethodChannel / EventChannel             │ HTTPS
+┌──────────▼───────────── Android ─────────┐  ┌───────▼──────── Supabase ─────────┐
+│ EnvironmentalMonitoringService           │  │ Auth                               │
+│   (microphone foreground service,        │  │ Postgres: profiles, settings,      │
+│    headless Flutter engine)              │  │   quick_replies, insights (RLS)    │
+│ Quick Settings tile                      │  │ Edge Functions: Deepgram, speech   │
+│ Flashlight channel                       │  │   synthesis, Gemini, accounts      │
+└──────────────────────────────────────────┘  └────────────────────────────────────┘
+```
 
-## 1. What went wrong, and the principle each failure implies
+State is held in `ChangeNotifier` providers (`provider` package), created once in `main.dart` and rebuilt when the signed-in account changes. Screens read them; services do the work.
 
-| Shipped defect | Principle it forces |
+## Code layout
+
+| Path (under `humsukhan/lib/`) | Contents |
 |---|---|
-| `ConversationProvider` overwrote captions with `DeepgramTranscriptionService.lastFinalTranscript` — a singleton owned by a *different* recognizer that Everyday Mode never starts | **No ambient global state.** A component may only read data it was given. |
-| Two `SpeechProvider` classes; the app used one, two regression tests validated the other | **One implementation per role**, and tests bind to the wired one. |
-| `onDone: () {}` on the recognizer sockets — a dropped connection left the UI reading "Listening…" forever | **Every stream terminus is handled.** Sessions have explicit health. |
-| Capability probe called `speak('.')` — audible, on every resume | **Diagnostics must not be user-perceivable.** |
-| Corrupt model download became a permanent trap (existence-only readiness check) | **Readiness means usable, not present.** Failures must be self-healing. |
-| `generateInsights()` returned early on 5 different failures with no state change | **Async work is a state machine**: idle/loading/success/failure(reason). |
-| Silence timer wired to `_stopListening()` — closed the mic after one utterance | **Name the domain event** (utterance ended ≠ session ended). |
-| `<monochrome>` referenced a resource that didn't exist; pushed straight to `main` | **CI gates the default branch.** |
-| Stale negative capability cache never rechecked per language | **Negative caches expire.** |
+| `main.dart` | App start-up, themes, providers, account gate, app lifecycle handling, and the Android monitoring service's Dart entry point |
+| `screens/` | One file per screen |
+| `widgets/` | Reusable widgets: caption bubbles, quick reply chips, cards, badges |
+| `providers/` | App state |
+| `services/` | Speech, AI, database, notification and alert services |
+| `services/stt/` | Speech-to-text engines, the recognizer order (`stt_plan.dart`) and offline models |
+| `modules/environmental_alerts/` | Sound detection and monitoring; see [environmental-alerts.md](environmental-alerts.md) |
+| `l10n/app_strings.dart` | Every user-facing string, in English and Urdu |
+| `theme/` | Design tokens and themes |
+| `models/models.dart` | Data models: captions, sessions, folders, insights, quick replies, sound events |
 
----
+## Speech to text
 
-## 2. Layering
+`EverydaySpeechProvider` (exposed to the app as `SpeechProvider`) serves both Everyday and Professional Mode. When listening starts it:
 
-```mermaid
-flowchart TD
-    UI[presentation<br/>widgets · screens · view-models]
-    APP[application<br/>use cases · session state machines]
-    DOM[domain<br/>entities · value objects · ports]
-    INF[infrastructure<br/>adapters: Deepgram · FlutterTts · sherpa · Supabase]
+1. Frees the microphone from environmental monitoring. If monitoring was on, it starts again a few seconds after listening ends.
+2. Checks whether the cloud can be used: a signed-in account and a reachable network.
+3. Builds a plan with `sttPlan()` and starts the first recognizer that works.
 
-    UI --> APP --> DOM
-    INF -.implements.-> DOM
-    APP -.depends on abstractions.-> DOM
-```
+| Caption language | Plan |
+|---|---|
+| English or Urdu | phone recognizer (if the language is installed) → Deepgram live stream → cloud per-sentence → offline model |
+| Auto | Deepgram live stream, English and Urdu → cloud per-sentence, bilingual → phone recognizer → offline model |
 
-One rule, enforced by lint: **dependencies point inward.** `domain` imports
-nothing from Flutter or any plugin. That is what makes the speech stack testable
-without a device — the thing this codebase most lacked.
+The steps:
 
-## 3. Module layout
+- **Phone recognizer.** `speech_to_text`, using the locale the device reports as installed.
+- **Deepgram live stream** (`EverydayBilingualSttService`). A WebSocket per language, authorised with a short-lived token from the `deepgram-token` Edge Function. In Auto mode the English and Urdu streams run side by side, and their transcripts are compared segment by segment. Roman Urdu coming from the English recognizer is taken as evidence that Urdu was spoken, so the Urdu transcript is shown.
+- **Cloud per-sentence** (`CloudChunkStt`). Records until the speaker pauses and sends each sentence to `deepgram-transcribe` or `deepgram-transcribe-bilingual`.
+- **Offline models** (`SherpaSTTProvider`). English uses a streaming Zipformer. Urdu uses Whisper base held to Urdu, run on a background isolate one sentence at a time. Both are downloaded in Settings by `ModelManager`, checked against their expected sizes, and used without a restart.
 
-```
-lib/
-  core/           # tokens, theme, l10n, result types, logging — no feature logic
-  domain/
-    speech/       # Utterance, Turn, LanguageTag, SttPort, TtsPort, CapabilityPort
-    conversation/ # Conversation, Caption, TurnPolicy
-    professional/ # Session, Insight, RetentionPolicy
-    environment/  # SoundEvent, Severity, DetectorPort
-  application/
-    conversation/ # ConversationSession (state machine)
-    professional/ # SessionRecorder, InsightService
-    environment/  # MonitoringController
-  infrastructure/
-    stt/          # DeepgramSttAdapter, PlatformSttAdapter, SherpaSttAdapter
-    tts/          # NativeTtsAdapter, CloudTtsAdapter
-    model/        # ModelRepository (download, verify, heal)
-    backend/      # SupabaseClient wrappers
-  features/       # UI per pillar: conversation/ professional/ environment/ settings/ auth/
-```
+A `CaptionWatchdog` watches the live stream. A microphone delivering only silence for 3 seconds, or 10 seconds of speech with no words back, counts as a failed stream, and the next step of the plan takes over. A dropped connection that cannot reconnect is handled the same way. Only if no step can start is the screen told that listening stopped, with the reason.
 
-A feature may import `core`, `domain`, `application`, and its own folder. It may
-**not** import `infrastructure` or another feature. Composition happens once, at
-the root.
+## Text to speech
 
-## 4. Speech: ports and one state machine
+`ResilientTtsProvider` speaks with the phone's own voice when it has one for the language. Otherwise it uses the `speech-synthesis` Edge Function (Deepgram for English, Soniox for Urdu), then `speech-synthesis-v2`. Mixed English and Urdu text is split into runs and each run is spoken in its own language. While a reply is being spoken, listening pauses and then resumes.
 
-The single biggest structural change. Today speech logic is spread across
-`ConversationEngine`, `EverydaySpeechProvider`, `EverydayBilingualSttService`,
-`EnhancedSpeechProvider` and `ResilientTtsProvider`, each holding a slice of the
-truth. Replace with **narrow ports + one owner of session state.**
+## Everyday Mode
 
-```dart
-abstract interface class SttPort {
-  Stream<SttEvent> get events;            // Partial | Final | Ended(reason) | Failed(cause)
-  Future<Result<Unit, SttFailure>> start(SttRequest request);
-  Future<void> stop();
-}
+`ConversationEngine` turns speech results into a conversation. Live text updates the current caption, a natural pause commits it, and listening continues for the next sentence. The pause length is configurable, or captions can be ended by hand. `ConversationProvider` holds the captions in memory only: a conversation is discarded when it ends or the screen is left.
 
-abstract interface class TtsPort {
-  Future<Result<Unit, TtsFailure>> speak(Utterance utterance);
-  Future<void> stop();
-}
+## Professional Mode
 
-abstract interface class SpeechCapabilityPort {
-  Future<Capability> stt(LanguageTag language);
-  Future<Capability> tts(LanguageTag language);   // silent probe only
-}
-```
+`ProfessionalProvider` keeps sessions, folders and cached insights in local storage, scoped to the signed-in account. Sessions expire after their retention period (1, 7 or 15 days); expiry deletes the session and its insight on the phone and in Supabase.
 
-`SttEvent` **must** include `Ended` and `Failed`. The dead-session bug existed
-because the old stream had no way to say "I stopped".
+AI insights come from the `generate-insights-v2` Edge Function, which sends the transcript to Gemini Flash and returns summary bullets, action items, deadlines and mentioned people. The result is cached on the phone and in the `insights` table until the session expires. Opening a session again reuses it instead of generating it again.
 
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> Starting: start()
-    Starting --> Listening: ready
-    Starting --> Failed: cause
-    Listening --> Speaking: partial/final
-    Speaking --> Listening: utterance committed
-    Speaking --> Reconnecting: transport lost
-    Reconnecting --> Listening: recovered
-    Reconnecting --> Failed: attempts exhausted
-    Listening --> Idle: stop()
-    Failed --> Idle: acknowledged
-```
+## Accounts and settings
 
-`Reconnecting` and `Failed` are *first-class states the UI renders*, not internal
-booleans. That single change makes "it silently stopped" impossible to express.
+- **Sign-up** goes through the `create-account` Edge Function, which will not overwrite an existing account. Sign-in, sign-out and password reset use Supabase Auth.
+- **Password reset** emails link back into the app through the `com.humsukhan.humsukhan://login-callback/` deep link.
+- **Settings** are stored on the phone and mirrored to the `settings` table, so they follow the account.
+- **Profile and quick replies** are stored in `profiles` and `quick_replies` and kept on the phone as well.
+- **Built-in quick replies** are translated when the app language changes. The user's own replies and stars are kept.
 
-**Turn policy is a pure function** — the part that broke twice:
+## Environmental alerts
 
-```dart
-sealed class TurnSignal { }          // SpeechDetected | SilenceElapsed | UserStopped
-TurnDecision decide(TurnState s, TurnSignal e);  // Continue | CommitUtterance | EndSession
-```
+Sound detection runs on the phone with the CED-Tiny audio-tagging model. On Android it runs inside a microphone foreground service, so it keeps working with the app closed. See [environmental-alerts.md](environmental-alerts.md).
 
-Pure, so "a pause commits an utterance but does not close the microphone" and
-"finals accumulate within a turn" are unit tests with no plugins involved.
+## Backend
 
-## 5. Errors: no nulls, no silent returns
+Every API key lives in Supabase Edge Function secrets; the app holds only the public anon key. Tables, functions and secrets are described in [backend.md](backend.md).
 
-```dart
-sealed class Result<T, E> { }
-final class Ok<T, E> implements Result<T, E> { final T value; }
-final class Err<T, E> implements Result<T, E> { final E error; }
-```
+## Testing and CI
 
-Failures are typed and carry user-facing copy plus a remedy:
+`humsukhan/test/` holds unit and widget tests for the providers, the speech plan and its hand-over, the watchdog and the bilingual arbitration. It also has tests for the offline model downloads, environmental monitoring on both platforms, and smoke tests that operate every control in Settings. Tests that need real models run only when the models are available locally.
 
-```dart
-sealed class SpeechFailure {
-  String get message;       // what happened
-  String? get remedy;       // what the user can do
-  bool get isRecoverable;
-}
-```
-
-**Banned:** returning `null` to mean failure; `catch (_) {}`; early `return` from
-an async command without recording an outcome. Enforced by review + lint.
-
-## 6. Capability detection
-
-- Probes are **silent by construction** — the TTS adapter mutes before probing,
-  and the port's contract says so.
-- Results cached per `(platform, osVersion, engineId, language)`. Adding
-  `engineId` means installing a new TTS engine invalidates the cache.
-- Negative results carry a TTL and are rechecked on resume; positives are reused.
-- `Capability` is `available | unavailable(reason) | unknown` — never a bare bool,
-  so "we haven't checked" is distinguishable from "checked, absent".
-
-## 7. Model lifecycle (environmental)
-
-`ModelRepository` owns download → **verify** → install → heal:
-
-- verify size against `Content-Length` **and** a pinned checksum;
-- `isReady` means *loaded by the tagger at least once*, not "two files exist";
-- a load failure quarantines the artefact and re-downloads;
-- state is observable: `absent · downloading(progress) · verifying · ready · failed(reason)`.
-
-Ship the model **in the APK** (or as an install-time asset pack) rather than a
-runtime fetch from a third-party host. A first-run network dependency for a
-safety feature is the wrong trade; the runtime download stays only as an updater.
-
-## 8. State management & DI
-
-Riverpod, for three reasons this codebase needed: compile-time-checked
-dependencies (no `context.read` in `initState` ordering hazards), trivial
-override of a port with a fake in tests, and `AsyncValue` making
-loading/error/data states unrepresentable-as-blank.
-
-No stateful singletons. Lifetime is owned by the container, so "notified after
-dispose" and cross-session state leakage stop being possible.
-
-## 9. Testing strategy
-
-| Layer | How | Device needed |
-|---|---|---|
-| Domain (turn policy, language classification, normalizers) | Pure unit | No |
-| Application (session state machine, insight service) | Fake ports | No |
-| Adapters | Contract tests against a fake WS/plugin | No |
-| Presentation | Widget tests with overridden providers | No |
-| End-to-end | `integration_test` on a real device | **Yes** |
-
-Two rules learned the hard way:
-1. **A regression test must be shown to fail on the unfixed code.** Three of the
-   v2.4.1 tests were verified that way; the fourth was documented as not
-   reproducing the original condition instead of being claimed as proof.
-2. **Tests import the wired implementation.** A test that constructs a class the
-   app never builds is worse than no test — it is false confidence.
-
-## 10. Platform configuration as a checklist
-
-Android package visibility, foreground-service types and icon layers are
-invisible until they fail on a device. Keep an explicit, reviewed list:
-`RECORD_AUDIO`, `FOREGROUND_SERVICE_MICROPHONE`, `POST_NOTIFICATIONS`;
-`<queries>` for **both** `TTS_SERVICE` *and* `RecognitionService`; adaptive icon
-with all three layers present; every `@mipmap/@drawable` reference resolving.
-
-## 11. Delivery
-
-- `main` is protected. No direct pushes — the broken-icon outage came in that way.
-- CI gates: `dart format --set-exit-if-changed`, `flutter analyze --fatal-infos`,
-  `flutter test --coverage`, `flutter build apk --debug`.
-- Release is tag-driven, version/tag consistency asserted in the workflow, APK
-  existence and non-zero size asserted before publish (already true today).
-- Secrets only in Edge Functions. No third-party API key reaches the client —
-  the current Deepgram ephemeral-token design is correct and should be kept.
-
----
-
-## 12. What I would keep
-
-Not everything needs changing. These are good and survive the redesign:
-
-- **Server-side key custody** via Supabase Edge Functions with short-lived tokens.
-- **Ephemeral, on-device environmental classification** — no audio leaves the device.
-- **Per-user scoping of local storage** and rebuilding the provider tree on user
-  change; cross-user leakage is structurally prevented.
-- **The language policy module** — disjoint Unicode ranges, Devanagari stripped
-  before routing. It is small, pure and well tested.
-- **Generation counters** for cancelling superseded async speech work.
-- **Retention policy** with visible expiry.
+The **HumSukhan Flutter QA** workflow runs `flutter analyze`, `flutter test` and an Android build on pull requests and on `main`. **HumSukhan Android Release** builds and publishes the release APK; see [releasing.md](releasing.md).

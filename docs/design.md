@@ -1,8 +1,6 @@
-# HumSukhan — UI & Design Specification (as-built)
+# HumSukhan — UI & Design Specification
 
-**Scope:** documents the interface that ships in v2.4.x. This is a description of
-what exists, not an aspiration. Where the current UI has known debt it is called
-out under *Design debt* rather than quietly idealised.
+**Scope:** the interface as built: brand, design system, components and screens.
 
 **Audience:** designers and engineers changing the interface, and anyone
 rebuilding it.
@@ -19,7 +17,7 @@ pillars. Every design decision serves one of them:
 |---|---|---|
 | **Everyday** | Conversational Mode | See what the person in front of me is saying, and reply out loud |
 | **Professional** | Sessions | Capture a lecture/meeting completely, then understand it |
-| **Environmental** | Alerts | Know about sounds I cannot hear (doorbell, siren, alarm) |
+| **Environmental** | Alerts | Know about sounds I cannot hear (siren, doorbell, knock) |
 
 Two cross-cutting constraints shape everything:
 
@@ -41,7 +39,6 @@ A quill/feather inside a speech bubble with a three-dot ellipsis — "writing" a
 |---|---|
 | `assets/logo.png` | Full lockup (mark + Urdu wordmark), transparent — large contexts only |
 | `assets/icon_mark.png` | Mark only, transparent, safe-zone padded — small badges |
-| `assets/logo_rectangle*.png` | Wide lockups, for share cards/readme |
 | `mipmap-anydpi-v26/ic_launcher_{background,foreground,monochrome}.png` | Android adaptive icon layers |
 
 **Rule:** the wordmark is illegible below ~120dp. Anything smaller uses
@@ -114,11 +111,10 @@ authenticated → onboarding complete → `MainScaffold`.
 | `BrandLogo` | Brand badge on green | — |
 | `SpeakableCaptionBubble` | A caption + its Speak button | own/other, partial/final, speaking/idle, empty-disabled |
 | `MixedScriptCaptionText` | Direction-aware mixed-script rendering | RTL run, LTR run |
-| `CaptionBubble` | Static caption | partial (italic), final (medium) |
 | `StatusIndicator` / `StatusPill` | Live mic/connection state | active, inactive |
-| `LanguageBadge` | Detected caption language | English / Urdu / Roman Urdu / Auto |
+| `LanguageBadge` | Detected caption language | English / Urdu / mixed |
 | `OfflineBadge` | Connectivity | online, offline |
-| `QuickReplyChip` | One-tap phrase | enabled, disabled (while listening) |
+| `QuickReplyChip` | One-tap phrase; long-press to star or delete | enabled, disabled (while listening), starred |
 | `SessionCard` | Session in a list | in-progress, completed, expiring |
 | `RetentionBadge` | Days until auto-delete | normal, near-expiry |
 | `InsightCard` | AI summary block | — |
@@ -156,7 +152,8 @@ The most complex screen. Three states via `ConversationState`:
 
 - **idle** — privacy notice + "Start conversation"
 - **active** — speaker controls, caption list, quick replies, composer, Stop
-- **saveDecision** — Save / Delete / Continue
+- **ended** — "Conversation ended": Done / Continue listening. The conversation
+  is temporary and is not saved.
 
 **Speaker controls:** 78dp circular mic (primary → error red while listening,
 spinner while busy), status label, and a pause-threshold menu
@@ -165,6 +162,9 @@ spinner while busy), status label, and a pause-threshold menu
 **Caption area:** `ListView.builder` of `SpeakableCaptionBubble`, keyed by
 caption id, with the live partial appended as the last item. Own captions right
 aligned, speaker captions left.
+
+**Quick replies:** a scrolling row of every reply, starred ones first, then the
+user's own (newest first), then the built-in ones. Managed in Settings.
 
 **Composer:** multiline field (1–4 lines, max 120dp), auto-switches to RTL +
 Nastaliq when Urdu is typed, Speak button, Send button. Both disabled while the
@@ -175,17 +175,24 @@ listening); the mic button ends the *session*. The status line says "Pause
 detected — speak again to continue" precisely because the mic stays open.
 
 ### 5.6 Professional — list & live session
-List of sessions with type (meeting/lecture/class), retention badge, folders.
+Tabs: Folders · Classes · Meetings · Lectures. Folders lists General and the
+user's folders, with Create Folder; a folder can be deleted on its own (its
+sessions move to General) or together with its sessions. Sessions show type,
+retention badge and insight state.
+
+New session sheet: title, type (meeting/lecture/class), speech language
+(Auto · English · Urdu), folder, retention (1 · 7 · 15 days).
 
 Live session: hidden interim drafts (Professional must **never** flicker
 half-recognised text into the transcript — only finalised captions are
-committed), manual caption entry, Speak reply, duration timer, stop → save /
-discard / continue.
+committed), manual caption entry, Speak reply, duration timer. Stop offers
+Save session · Discard · Continue; a saved session stays on the phone.
 
 ### 5.7 Session detail
-Tabs: Overview · Summary · Actions · Transcript. Summary shows three distinct
+Tabs: Overview · Transcript · Summary · Actions. Summary shows three distinct
 states — **generating** (spinner), **failed** (reason), **empty** — never one
-ambiguous blank. Export/share. AI disclaimer always visible with AI output.
+ambiguous blank. The menu offers Export (text file or clipboard), Move to
+folder and Delete. AI disclaimer always visible with AI output.
 
 ### 5.8 Environmental
 Monitoring toggle, live state banner (off / starting / active / error with a
@@ -193,9 +200,11 @@ specific reason and remedy), supported-event list, alert history, per-event
 alert preferences.
 
 ### 5.9 Settings
-Profile (name, avatar) · appearance (dark, high contrast, large text, caption
-size) · language (app + caption) · alert channels (haptic, visual, flash,
-screen flash) · retention · offline models · account.
+Profile (name, photo) · account (sign in / sign out) · app language ·
+accessibility (dark, high contrast, large text, caption size) · alert channels
+(haptic, visual, screen flash, flashlight) · speech recognition (offline model
+downloads with progress) · environmental sounds (one switch per sound) · quick
+replies · default retention · reset settings · about.
 
 ---
 
@@ -232,20 +241,8 @@ Non-negotiable: **every failure is visible.**
 |---|---|
 | Speak (TTS) fails | `SnackBar` with the reason |
 | Mic can't start | Inline error + specific cause |
-| Recognizer disconnects | Reconnect attempt, then a stated reason |
+| Recognizer disconnects or stalls | Next recognizer takes over; a stated reason only if none can start |
+| Offline model download fails | `SnackBar` with the reason; Download stays available |
 | Monitoring can't start | Banner naming the cause *and* the remedy |
 | AI summary fails | Distinct failed state with reason |
 | Offline | `OfflineBadge` |
-
----
-
-## 9. Design debt (honest list)
-
-- Onboarding hero uses a hardcoded radius (40) instead of an `AppTokens` value.
-- `SpeakableCaptionBubble` decides "is this bubble speaking" by comparing caption
-  *text* to `lastSpokenText`; two identical captions both show the stop icon.
-- `LanguageBadge` can render the literal string `Auto` for mixed-script captions
-  — an internal mode name leaking into UI copy.
-- Several dense one-line widget files are hard to review.
-- `lib/modules/**` is a half-finished feature-first migration; the barrels alias
-  back to `lib/screens/**`. It is scaffolding, not structure.
