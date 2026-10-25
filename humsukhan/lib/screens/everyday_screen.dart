@@ -38,6 +38,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
 
   Future<void> _initSpeech() async {
     final speech = context.read<SpeechProvider>();
+    unawaited(speech.prepareListening());
     await speech.initialize(preferredLanguage: 'Auto');
     unawaited(speech.warmUpTts());
   }

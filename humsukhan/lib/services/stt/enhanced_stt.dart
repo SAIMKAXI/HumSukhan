@@ -62,8 +62,16 @@ class EnhancedSpeechProvider {
   bool get isOnlineMode => _currentMode == STTMode.platform;
   String? get lastStartError => _lastStartError;
 
-  Future<void> initialize() async {
-    if (_initialized) return;
+  Future<void>? _initializing;
+
+  /// Safe to call more than once and from several places at the same time:
+  /// later calls wait for the first.
+  Future<void> initialize() {
+    if (_initialized) return Future.value();
+    return _initializing ??= _initialize().whenComplete(() => _initializing = null);
+  }
+
+  Future<void> _initialize() async {
     await _modelManager.initialize();
     try {
       _platformAvailable = await _platformSTT.initialize(

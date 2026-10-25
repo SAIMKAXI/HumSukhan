@@ -127,8 +127,11 @@ class ConversationEngine extends ChangeNotifier {
       _errorMessage = null;
       _state = ConversationEngineState.idle;
       conversation.startConversation();
+      speech.holdMicrophoneForConversation(true);
       notifyListeners();
-      await speech.warmUpTts();
+      // Not awaited: commands run in turn, and a tap on the microphone must
+      // not wait for the voices to load.
+      unawaited(speech.warmUpTts());
     });
   }
 
@@ -284,6 +287,9 @@ class ConversationEngine extends ChangeNotifier {
     _latestTranscript = _joinTurn(_settledTurnText, text);
     if (event.isFinal) _settledTurnText = _latestTranscript;
     _latestLanguage = event.language;
+    // Show the words as they are recognized; the pause only decides when
+    // the caption is complete.
+    conversation.updateSpeakerTurn(_latestTranscript, language: _latestLanguage);
     if (_state == ConversationEngineState.listening) {
       _state = ConversationEngineState.speechActive;
     }
@@ -311,6 +317,7 @@ class ConversationEngine extends ChangeNotifier {
       _cancelSilenceTimer();
       _turnGeneration++;
       await speech.stopListening();
+      speech.holdMicrophoneForConversation(false);
       conversation.stopConversation();
       _latestTranscript = '';
       _settledTurnText = '';
@@ -330,6 +337,7 @@ class ConversationEngine extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    speech.holdMicrophoneForConversation(false);
     _cancelSilenceTimer();
     unawaited(_subscription?.cancel());
     _subscription = null;

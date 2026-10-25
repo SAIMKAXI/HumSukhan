@@ -66,6 +66,8 @@ The steps:
 - **Cloud per-sentence** (`CloudChunkStt`). Records until the speaker pauses and sends each sentence to `deepgram-transcribe` or `deepgram-transcribe-bilingual`.
 - **Offline models** (`SherpaSTTProvider`). English uses a streaming Zipformer. Urdu uses Whisper base held to Urdu, run on a background isolate one sentence at a time. Both are downloaded in Settings by `ModelManager`, checked against their expected sizes, and used without a restart.
 
+Starting is kept under a second. The Deepgram token lasts an hour and is fetched once, ahead of the first tap, and shared by both streams. The two streams connect at the same time, and the microphone opens while they connect, so what is said meanwhile is sent once they are open. Freeing the microphone from monitoring, checking the network and loading the phone recognizer run side by side. Stopping closes the microphone at once and waits at most 300 ms for words the recognizers still hold.
+
 A `CaptionWatchdog` watches the live stream. A microphone delivering only silence for 3 seconds, or 10 seconds of speech with no words back, counts as a failed stream, and the next step of the plan takes over. A dropped connection that cannot reconnect is handled the same way. Only if no step can start is the screen told that listening stopped, with the reason.
 
 ## Text to speech
@@ -74,7 +76,7 @@ A `CaptionWatchdog` watches the live stream. A microphone delivering only silenc
 
 ## Everyday Mode
 
-`ConversationEngine` turns speech results into a conversation. Live text updates the current caption, a natural pause commits it, and listening continues for the next sentence. The pause length is configurable, or captions can be ended by hand. `ConversationProvider` holds the captions in memory only: a conversation is discarded when it ends or the screen is left.
+`ConversationEngine` turns speech results into a conversation. Each result updates the current caption as soon as it arrives, a natural pause commits it, and listening continues for the next sentence. While a conversation is open, environmental monitoring stays paused between turns and resumes 20 seconds after the last one, or 3 seconds after the conversation ends, so each tap on the microphone does not wait for the monitoring service to stop. The pause length is configurable, or captions can be ended by hand. `ConversationProvider` holds the captions in memory only: a conversation is discarded when it ends or the screen is left.
 
 ## Professional Mode
 

@@ -194,7 +194,47 @@ class EverydayBilingualSttService {
   bool get isReady => _ready;
   String? get lastStartError => _lastStartError;
 
-  Future<String?> _getTemporaryToken() async {
+  // Deepgram tokens from `deepgram-token` last an hour. One is kept and
+  // shared by both recognizers, so starting the microphone does not wait on
+  // the edge function every time.
+  String? _token;
+  DateTime _tokenExpiry = DateTime.fromMillisecondsSinceEpoch(0);
+  Future<String?>? _tokenRequest;
+  static const Duration _tokenMargin = Duration(minutes: 2);
+
+  /// Fetches a token ahead of the first start, so the first tap on the
+  /// microphone only has to connect.
+  Future<void> prewarm() async {
+    await _getTemporaryToken();
+  }
+
+  @visibleForTesting
+  void debugForgetToken() => _forgetToken();
+
+  void _forgetToken() {
+    _token = null;
+    _tokenExpiry = DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  Future<String?> _getTemporaryToken() {
+    final cached = _token;
+    if (cached != null && DateTime.now().isBefore(_tokenExpiry)) return Future.value(cached);
+    return _tokenRequest ??= _requestToken().whenComplete(() => _tokenRequest = null);
+  }
+
+  /// Replaces the `deepgram-token` call in tests.
+  @visibleForTesting
+  Future<({String token, Duration lifetime})?> Function()? debugTokenSource;
+
+  Future<String?> _requestToken() async {
+    final source = debugTokenSource;
+    if (source != null) {
+      final issued = await source();
+      if (issued == null) return null;
+      _token = issued.token;
+      _tokenExpiry = DateTime.now().add(issued.lifetime - _tokenMargin);
+      return issued.token;
+    }
     final client = SupabaseService.instance.client;
     if (client == null || client.auth.currentSession == null) {
       _lastStartError = 'Authenticated Supabase session is unavailable.';
@@ -209,11 +249,15 @@ class EverydayBilingualSttService {
         _lastStartError = 'Deepgram token service returned an invalid response.';
         return null;
       }
-      final token = Map<String, dynamic>.from(data)['accessToken']?.toString();
+      final body = Map<String, dynamic>.from(data);
+      final token = body['accessToken']?.toString();
       if (token == null || token.isEmpty) {
         _lastStartError = 'Deepgram token service returned no access token.';
         return null;
       }
+      final lifetime = Duration(seconds: (body['expiresIn'] as num?)?.toInt() ?? 0);
+      _token = token;
+      _tokenExpiry = DateTime.now().add(lifetime - _tokenMargin);
       return token;
     } catch (e) {
       _lastStartError = 'Unable to initialize speech recognition: $e';
@@ -243,6 +287,8 @@ class EverydayBilingualSttService {
         headers: {'Authorization': 'Bearer $token'},
       ).timeout(const Duration(seconds: 6));
     } catch (e) {
+      // The token may be what was refused; fetch a fresh one next time.
+      _forgetToken();
       _lastStartError = 'Speech recognition connection failed: $e';
       return null;
     }
@@ -276,41 +322,28 @@ class EverydayBilingualSttService {
     final needsEnglish = _mode == 'English' || _mode == 'Auto';
     final needsUrdu = _mode == 'Urdu' || _mode == 'Auto';
 
-    WebSocket? english;
-    WebSocket? urdu;
+    // The microphone opens while the recognizers connect, and what is said
+    // meanwhile is kept and sent once they are open. Both recognizers
+    // connect at the same time, with one token.
+    final microphone = _openMicrophone(generation);
+    final token = await _getTemporaryToken();
+    final connections = token == null
+        ? const <WebSocket?>[]
+        : await Future.wait([
+            needsEnglish ? _connect('en-US', token) : Future<WebSocket?>.value(),
+            needsUrdu ? _connect('ur', token) : Future<WebSocket?>.value(),
+          ]);
+    final micOpen = await microphone;
+    final english = connections.isEmpty ? null : connections[0];
+    final urdu = connections.isEmpty ? null : connections[1];
+    final connected = token != null && (!needsEnglish || english != null) && (!needsUrdu || urdu != null);
 
-    if (needsEnglish) {
-      final token = await _getTemporaryToken();
-      if (token == null) return false;
-      if (generation != _sessionGeneration) return false;
-      english = await _connect('en-US', token);
-      if (english == null) return false;
-      if (generation != _sessionGeneration) {
-        try { await english.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
-        return false;
+    if (!connected || !micOpen || generation != _sessionGeneration) {
+      for (final socket in [english, urdu]) {
+        if (socket != null) unawaited(_close(socket, 'superseded'));
       }
-    }
-
-    if (needsUrdu) {
-      final token = await _getTemporaryToken();
-      if (token == null) {
-        try { await english?.close(WebSocketStatus.normalClosure, 'Urdu channel unavailable'); } catch (_) {}
-        return false;
-      }
-      if (generation != _sessionGeneration) {
-        try { await english?.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
-        return false;
-      }
-      urdu = await _connect('ur', token);
-      if (urdu == null) {
-        try { await english?.close(WebSocketStatus.normalClosure, 'Urdu channel unavailable'); } catch (_) {}
-        return false;
-      }
-      if (generation != _sessionGeneration) {
-        try { await english?.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
-        try { await urdu.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
-        return false;
-      }
+      if (generation == _sessionGeneration) await _closeMicrophone();
+      return false;
     }
 
     _englishSocket = english;
@@ -327,6 +360,24 @@ class EverydayBilingualSttService {
     if (english != null) _listenToSocket('English', english, generation);
     if (urdu != null) _listenToSocket('Urdu', urdu, generation);
 
+    _recording = true;
+    _watchdog.reset();
+    final early = List<Uint8List>.of(_earlyAudio);
+    _earlyAudio.clear();
+    _earlyAudioBytes = 0;
+    early.forEach(_sendAudio);
+    return true;
+  }
+
+  /// Audio recorded before the recognizers were open, at most
+  /// [_earlyAudioLimit] bytes (3 s of 16 kHz PCM16).
+  final List<Uint8List> _earlyAudio = <Uint8List>[];
+  int _earlyAudioBytes = 0;
+  static const int _earlyAudioLimit = 16000 * 2 * 3;
+
+  Future<bool> _openMicrophone(int generation) async {
+    _earlyAudio.clear();
+    _earlyAudioBytes = 0;
     try {
       final stream = await _recorder.startStream(const RecordConfig(
         encoder: AudioEncoder.pcm16bits,
@@ -335,25 +386,17 @@ class EverydayBilingualSttService {
       ));
       if (generation != _sessionGeneration) {
         try { await _recorder.stop(); } catch (_) {}
-        try { await english?.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
-        try { await urdu?.close(WebSocketStatus.normalClosure, 'superseded'); } catch (_) {}
-        await _englishSubscription?.cancel();
-        await _urduSubscription?.cancel();
-        _englishSubscription = null;
-        _urduSubscription = null;
-        if (identical(_englishSocket, english)) _englishSocket = null;
-        if (identical(_urduSocket, urdu)) _urduSocket = null;
-        _ready = false;
         return false;
       }
-      _recording = true;
-      _watchdog.reset();
       _audioSubscription = stream.listen(
         (data) {
-          if (!_recording) return;
-          if (_englishSocket?.readyState == WebSocket.open) _englishSocket!.add(data);
-          if (_urduSocket?.readyState == WebSocket.open) _urduSocket!.add(data);
-          _watchdog.audio(data);
+          if (generation != _sessionGeneration) return;
+          if (_recording) {
+            _sendAudio(data);
+          } else if (_earlyAudioBytes < _earlyAudioLimit) {
+            _earlyAudio.add(data);
+            _earlyAudioBytes += data.length;
+          }
         },
         onError: (Object error) {
           _lastStartError = 'Android microphone stream failed: $error';
@@ -362,9 +405,28 @@ class EverydayBilingualSttService {
       return true;
     } catch (e) {
       _lastStartError = 'Failed to start microphone stream: $e';
-      await stop();
       return false;
     }
+  }
+
+  void _sendAudio(Uint8List data) {
+    if (_englishSocket?.readyState == WebSocket.open) _englishSocket!.add(data);
+    if (_urduSocket?.readyState == WebSocket.open) _urduSocket!.add(data);
+    _watchdog.audio(data);
+  }
+
+  Future<void> _closeMicrophone() async {
+    _earlyAudio.clear();
+    _earlyAudioBytes = 0;
+    final subscription = _audioSubscription;
+    _audioSubscription = null;
+    if (subscription == null) return;
+    await subscription.cancel();
+    try { await _recorder.stop(); } catch (_) {}
+  }
+
+  static Future<void> _close(WebSocket socket, String reason) async {
+    try { await socket.close(WebSocketStatus.normalClosure, reason); } catch (_) {}
   }
 
   String _normalizeMode(String mode) {
@@ -478,6 +540,7 @@ class EverydayBilingualSttService {
     try {
       final data = jsonDecode(message);
       if (data is! Map || data['type'] != 'Results') return;
+      if (data['from_finalize'] == true) _finalizeAnswered();
       final channel = data['channel'];
       if (channel is! Map) return;
       final alternatives = channel['alternatives'];
@@ -508,13 +571,19 @@ class EverydayBilingualSttService {
         });
       } else {
         _emitTimer?.cancel();
-        _emitTimer = Timer(const Duration(milliseconds: 120), () {
+        _emitTimer = Timer(const Duration(milliseconds: 50), () {
           _emit(complete: false);
         });
       }
     } catch (e) {
       debugPrint('Everyday bilingual STT parse failed: $e');
     }
+  }
+
+  void _finalizeAnswered() {
+    final finalized = _finalized;
+    if (finalized == null || finalized.isCompleted) return;
+    if (--_finalizePending <= 0) finalized.complete();
   }
 
   List<_WordToken> _parseWords(dynamic rawWords, String source) {
@@ -722,28 +791,35 @@ class EverydayBilingualSttService {
     _reconnectingSources.clear();
     _reconnectAttempts.clear();
 
-    if (_recording) {
-      _recording = false;
-      await _audioSubscription?.cancel();
-      _audioSubscription = null;
-      try { await _recorder.stop(); } catch (_) {}
+    final hadPendingWords = _englishInterim.isNotEmpty || _urduInterim.isNotEmpty;
+    _recording = false;
+    await _closeMicrophone();
+
+    final sockets = [_englishSocket, _urduSocket].whereType<WebSocket>().toList();
+    final open = sockets.where((socket) => socket.readyState == WebSocket.open).toList();
+    if (hadPendingWords && open.isNotEmpty) {
+      // Ask for the words the recognizers still hold, waiting only until
+      // each has answered, and never longer than [_finalizeWait].
+      _finalizePending = open.length;
+      _finalized = Completer<void>();
+      for (final socket in open) {
+        try { socket.add(jsonEncode({'type': 'Finalize'})); } catch (_) {}
+      }
+      await _finalized!.future.timeout(_finalizeWait, onTimeout: () {});
+      _finalized = null;
     }
 
-    for (final socket in [_englishSocket, _urduSocket]) {
-      try {
-        if (socket?.readyState == WebSocket.open) {
-          socket!.add(jsonEncode({'type': 'Finalize'}));
-        }
-      } catch (_) {}
-    }
-
-    await Future<void>.delayed(const Duration(milliseconds: 300));
     await _englishSubscription?.cancel();
     await _urduSubscription?.cancel();
     _englishSubscription = null;
     _urduSubscription = null;
-    try { await _englishSocket?.close(WebSocketStatus.normalClosure, 'turn ended'); } catch (_) {}
-    try { await _urduSocket?.close(WebSocketStatus.normalClosure, 'turn ended'); } catch (_) {}
+    // Closing waits for Deepgram's reply; nothing here needs it.
+    for (final socket in sockets) {
+      if (socket.readyState == WebSocket.open) {
+        try { socket.add(jsonEncode({'type': 'CloseStream'})); } catch (_) {}
+      }
+      unawaited(_close(socket, 'turn ended'));
+    }
     _englishSocket = null;
     _urduSocket = null;
     _ready = false;
@@ -754,6 +830,10 @@ class EverydayBilingualSttService {
     _urduInterim = '';
     _lastEmitted = '';
   }
+
+  static const Duration _finalizeWait = Duration(milliseconds: 300);
+  Completer<void>? _finalized;
+  int _finalizePending = 0;
 
   void dispose() {
     unawaited(stop());
