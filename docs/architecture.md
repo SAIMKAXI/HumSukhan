@@ -62,7 +62,11 @@ State is held in `ChangeNotifier` providers (`provider` package), created once i
 The steps:
 
 - **Phone recognizer.** `speech_to_text`, using the locale the device reports as installed.
-- **Deepgram live stream** (`EverydayBilingualSttService`). A WebSocket per language, authorised with a short-lived token from the `deepgram-token` Edge Function. In Auto mode the English and Urdu streams run side by side, and their transcripts are compared segment by segment. Roman Urdu coming from the English recognizer is taken as evidence that Urdu was spoken, so the Urdu transcript is shown.
+- **Deepgram live stream** (`EverydayBilingualSttService`). A WebSocket per language, authorised with a short-lived token from the `deepgram-token` Edge Function. Audio comes from Android's speech-recognition microphone source, which skips the gain and noise processing that blurs consonants. In Auto mode the English and Urdu streams run side by side, and their transcripts are compared segment by segment:
+  - Roman Urdu from the English recognizer is taken as evidence that Urdu was spoken, so the Urdu transcript is shown.
+  - Urdu speech is full of short function words (ہے، کے، کہ، نہیں …); English written out in Urdu letters has none. An Urdu segment with them is preferred, one without them is not.
+  - Within an utterance, the language of the part before tips a close call.
+  - Both recognizers hear the same audio, so the slower one's copy of an utterance already shown is dropped.
 - **Cloud per-sentence** (`CloudChunkStt`). Records until the speaker pauses and sends each sentence to `deepgram-transcribe` or `deepgram-transcribe-bilingual`.
 - **Offline models** (`SherpaSTTProvider`). English uses a streaming Zipformer. Urdu uses Whisper base held to Urdu, run on a background isolate one sentence at a time. Both are downloaded in Settings by `ModelManager`, checked against their expected sizes, and used without a restart.
 
@@ -76,9 +80,25 @@ A `CaptionWatchdog` watches the live stream. A microphone delivering only silenc
 
 ## Everyday Mode
 
-`ConversationEngine` turns speech results into a conversation. Each result updates the current caption as soon as it arrives, a natural pause commits it, and listening continues for the next sentence. While a conversation is open, environmental monitoring stays paused between turns and resumes 20 seconds after the last one, or 3 seconds after the conversation ends, so each tap on the microphone does not wait for the monitoring service to stop. The pause length is configurable, or captions can be ended by hand. `ConversationProvider` holds the captions in memory only: a conversation is discarded when it ends or the screen is left.
+`ConversationEngine` turns speech results into a conversation. Each result updates the current caption as soon as it arrives, a pause commits it, and listening continues for the next sentence.
+
+How long a pause has to be is decided by rules in `turn_taking.dart`, not a fixed timer. They read the words said so far, in English, Urdu and Roman Urdu:
+
+| The words end… | Example | The caption ends after |
+|---|---|---|
+| as a finished sentence | "I am going home now." · "میں کل آؤں گا۔" | about half the chosen pause (at least 0.6 s) |
+| either way | "maybe tomorrow" | the chosen pause |
+| mid-sentence | "…and" · "…the" · "…کہ" · "…کے" · "um" · "…" | 1.8 × the chosen pause (at most 4.5 s) |
+
+- Each speaker's own pauses are learned during the conversation, so someone who stops longer to think is given longer.
+- A sound from the speaker during a pause (Deepgram's speech-started event) keeps the caption open, at most twice, so a noisy room cannot hold it open.
+- Speech after a hesitation carries on the same sentence, and the full stop the recognizer put at the pause is removed. Speech after a finished sentence starts a new sentence in the same caption.
+
+The microphone and the speaker never run at the same time: while a reply is spoken aloud the microphone is off, or the app would caption its own voice. Everything else works while the speaker talks. Typing, quick replies and Speak are available with the microphone on: what the speaker said so far becomes their caption, the reply follows it, and listening carries on by itself after a spoken reply. While a conversation is open, environmental monitoring stays paused between turns and resumes 20 seconds after the last one, or 3 seconds after the conversation ends, so each tap on the microphone does not wait for the monitoring service to stop. The pause length is configurable, or captions can be ended by hand. `ConversationProvider` holds the captions in memory only: a conversation is discarded when it ends or the screen is left.
 
 ## Professional Mode
+
+The microphone stays on for the whole recording; nothing is spoken aloud. The recognizer ends a piece at every pause, so a piece that ends mid-sentence is held, for up to 3 seconds, and joined to the next one (`SentenceAssembler`), and the transcript keeps whole sentences.
 
 `ProfessionalProvider` keeps sessions, folders and cached insights in local storage, scoped to the signed-in account. Sessions expire after their retention period (1, 7 or 15 days); expiry deletes the session and its insight on the phone and in Supabase.
 

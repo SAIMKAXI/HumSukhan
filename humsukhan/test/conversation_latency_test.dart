@@ -53,6 +53,8 @@ class _CloudStream implements EverydayBilingualSttService {
   @override
   Stream<String> get onConnectionLost => lost.stream;
   @override
+  Stream<void> get onVoiceStarted => const Stream.empty();
+  @override
   String? get lastStartError => null;
   @override
   Future<bool> start({String mode = 'Auto'}) async => true;

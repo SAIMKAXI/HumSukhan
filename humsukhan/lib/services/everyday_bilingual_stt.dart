@@ -147,6 +147,7 @@ class EverydayBilingualSttService {
   final AudioRecorder _recorder = AudioRecorder();
   final StreamController<EverydayBilingualResult> _controller = StreamController<EverydayBilingualResult>.broadcast();
   final StreamController<String> _connectionLost = StreamController<String>.broadcast();
+  final StreamController<void> _voiceStarted = StreamController<void>.broadcast();
 
   WebSocket? _englishSocket;
   WebSocket? _urduSocket;
@@ -184,12 +185,22 @@ class EverydayBilingualSttService {
   double _urduConfidence = 0.0;
   String _lastEmitted = '';
 
+  /// Audio time, in seconds, up to which speech has been emitted as a
+  /// finished utterance. Both recognizers hear the same audio, and the
+  /// slower one's copy of a finished utterance must not be captioned again.
+  double _completedUntil = 0;
+
   Stream<EverydayBilingualResult> get onResult => _controller.stream;
 
   /// Fires, with the reason, when reconnecting has failed and no recognizer
   /// socket is left open: the microphone is still recording but nothing can
   /// turn it into captions any more.
   Stream<String> get onConnectionLost => _connectionLost.stream;
+
+  /// Deepgram heard someone start speaking, before any words come back.
+  /// Lets a pause be told from the end of a sentence by sound, not only by
+  /// words.
+  Stream<void> get onVoiceStarted => _voiceStarted.stream;
   bool get isListening => _recording;
   bool get isReady => _ready;
   String? get lastStartError => _lastStartError;
@@ -275,7 +286,9 @@ class EverydayBilingualSttService {
       'interim_results': 'true',
       'smart_format': 'true',
       'punctuate': 'true',
-      'endpointing': '350',
+      // Long enough that a breath inside a sentence does not end it, so the
+      // recognizer finalizes words with the rest of their sentence in view.
+      'endpointing': '500',
       'utterance_end_ms': '1000',
       'vad_events': 'true',
       'words': 'true',
@@ -355,6 +368,7 @@ class EverydayBilingualSttService {
     _englishConfidence = 0.0;
     _urduConfidence = 0.0;
     _lastEmitted = '';
+    _completedUntil = 0;
     _ready = true;
 
     if (english != null) _listenToSocket('English', english, generation);
@@ -375,15 +389,21 @@ class EverydayBilingualSttService {
   int _earlyAudioBytes = 0;
   static const int _earlyAudioLimit = 16000 * 2 * 3;
 
+  /// 16 kHz mono PCM from the source Android tunes for speech recognition:
+  /// no automatic gain or noise processing that smears consonants, which
+  /// costs recognizers more accuracy than the noise they remove.
+  static const RecordConfig recognitionAudio = RecordConfig(
+    encoder: AudioEncoder.pcm16bits,
+    sampleRate: 16000,
+    numChannels: 1,
+    androidConfig: AndroidRecordConfig(audioSource: AndroidAudioSource.voiceRecognition),
+  );
+
   Future<bool> _openMicrophone(int generation) async {
     _earlyAudio.clear();
     _earlyAudioBytes = 0;
     try {
-      final stream = await _recorder.startStream(const RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: 16000,
-        numChannels: 1,
-      ));
+      final stream = await _recorder.startStream(recognitionAudio);
       if (generation != _sessionGeneration) {
         try { await _recorder.stop(); } catch (_) {}
         return false;
@@ -452,6 +472,7 @@ class EverydayBilingualSttService {
     _englishInterim = '';
     _urduInterim = '';
     _lastEmitted = '';
+    _completedUntil = 0;
   }
 
   @visibleForTesting
@@ -515,6 +536,8 @@ class EverydayBilingualSttService {
           _urduSocket = socket;
         }
         _listenToSocket(source, socket, generation);
+        // A new socket counts audio time from zero.
+        _completedUntil = 0;
         _reconnectAttempts[source] = 0;
         if (_recording && generation == _sessionGeneration) {
           _lastStartError = null;
@@ -539,7 +562,24 @@ class EverydayBilingualSttService {
     if (message is! String) return;
     try {
       final data = jsonDecode(message);
-      if (data is! Map || data['type'] != 'Results') return;
+      if (data is! Map) return;
+      switch (data['type']) {
+        case 'SpeechStarted':
+          if (_recording) _voiceStarted.add(null);
+          return;
+        case 'UtteranceEnd':
+          // Sent after a second with no words, even when noise kept the
+          // recognizer from marking the end of speech.
+          if (_englishInterim.isNotEmpty || _urduInterim.isNotEmpty) {
+            _finalTimer?.cancel();
+            _finalTimer = Timer(const Duration(milliseconds: 140), () => _emit(complete: true));
+          }
+          return;
+        case 'Results':
+          break;
+        default:
+          return;
+      }
       if (data['from_finalize'] == true) _finalizeAnswered();
       final channel = data['channel'];
       if (channel is! Map) return;
@@ -550,7 +590,9 @@ class EverydayBilingualSttService {
       if (rawTranscript.isEmpty) return;
       _watchdog.captioned();
       final confidence = (alternative['confidence'] as num?)?.toDouble() ?? 0.0;
-      final words = _parseWords(alternative['words'], source);
+      final parsed = _parseWords(alternative['words'], source);
+      final words = parsed.where((word) => word.end > _completedUntil + 0.02).toList();
+      if (parsed.isNotEmpty && words.isEmpty) return;
       final isFinal = data['is_final'] == true;
       final speechFinal = data['speech_final'] == true;
 
@@ -659,8 +701,56 @@ class EverydayBilingualSttService {
   /// Urdu recognizer's transcript of the same words is the one to show.
   bool _englishHeardUrdu = false;
 
-  double _score(_TranscriptSegment segment) {
-    var score = segment.confidence.clamp(0.0, 1.0).toDouble();
+  /// Function words found in nearly every Urdu sentence. Urdu speech
+  /// recognized as Urdu is full of them; English speech written out in Urdu
+  /// letters by the Urdu recognizer has almost none.
+  static const Set<String> _urduFunctionWords = {
+    'ہے', 'ہیں', 'تھا', 'تھی', 'تھے', 'ہو', 'ہوں', 'گا', 'گی', 'گے', 'کے', 'کی',
+    'کا', 'کو', 'سے', 'میں', 'نے', 'پر', 'اور', 'یہ', 'وہ', 'نہیں', 'نہ', 'کیا',
+    'کہ', 'تو', 'بھی', 'ہی', 'جو', 'اس', 'ان', 'آپ', 'ہم', 'مجھے', 'تم', 'رہا',
+    'رہی', 'رہے', 'گیا', 'کر', 'کچھ', 'بہت', 'اب', 'جی', 'ہاں', 'لیکن', 'اگر',
+  };
+
+  /// The English equivalent, for English speech recognized as English.
+  static const Set<String> _englishFunctionWords = {
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'to', 'of', 'and', 'in', 'on',
+    'it', 'you', 'i', 'we', 'they', 'that', 'this', 'for', 'with', 'have', 'has',
+    'do', 'does', 'not', 'be', 'will', 'can', 'my', 'your', 'what', 'how', 'at',
+  };
+
+  static ({int hits, double share}) _functionWords(_TranscriptSegment segment, Set<String> functionWords) {
+    final words = segment.words
+        .map((w) => w.text.toLowerCase().replaceAll(RegExp(r'''[.?!۔؟,،;:"']'''), '').replaceAll('ي', 'ی').replaceAll('ك', 'ک'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (words.isEmpty) return (hits: 0, share: 0);
+    final hits = words.where(functionWords.contains).length;
+    return (hits: hits, share: hits / words.length);
+  }
+
+  /// How much a segment reads like real speech in its recognizer's
+  /// language. Short segments say too little to judge.
+  ///
+  /// Only the absence of function words counts against English: Urdu
+  /// misheard as English is still full of "a", "are" and "the".
+  double _plausibility(_TranscriptSegment segment) {
+    if (_mode != 'Auto' || segment.words.length < 3) return 0;
+    if (segment.source == 'Urdu') {
+      final found = _functionWords(segment, _urduFunctionWords);
+      if (found.hits >= 2 && found.share >= 0.25) return 0.12;
+      if (found.hits == 0) return -0.15;
+      return 0;
+    }
+    return _functionWords(segment, _englishFunctionWords).hits == 0 ? -0.08 : 0;
+  }
+
+  /// A speaker rarely switches language for a moment and back: within one
+  /// utterance the language of the part before tips a close call.
+  static const double _continuity = 0.05;
+
+  double _score(_TranscriptSegment segment, {String? previousSource}) {
+    var score = segment.confidence.clamp(0.0, 1.0).toDouble() + _plausibility(segment);
+    if (previousSource != null && segment.source == previousSource) score += _continuity;
     if (_mode == 'English') {
       score += segment.hasLatin ? 0.18 : -0.12;
     } else if (_mode == 'Urdu') {
@@ -693,15 +783,20 @@ class EverydayBilingualSttService {
     final selected = <_TranscriptSegment>[];
     for (final candidate in candidates) {
       final conflicts = selected.where((existing) => _overlaps(existing, candidate)).toList();
+      final before = selected.where((existing) => existing.end <= candidate.start + _overlapToleranceSeconds).toList();
+      final previousSource = before.isEmpty ? null : before.reduce((a, b) => a.end >= b.end ? a : b).source;
       if (conflicts.isEmpty) {
         selected.add(candidate);
         continue;
       }
 
       final strongestConflict = conflicts.reduce(
-        (a, b) => _score(a) >= _score(b) ? a : b,
+        (a, b) => _score(a, previousSource: previousSource) >= _score(b, previousSource: previousSource) ? a : b,
       );
-      if (_score(candidate) <= _score(strongestConflict) + 0.02) continue;
+      if (_score(candidate, previousSource: previousSource) <=
+          _score(strongestConflict, previousSource: previousSource) + 0.02) {
+        continue;
+      }
 
       selected.remove(strongestConflict);
       selected.add(candidate);
@@ -772,6 +867,9 @@ class EverydayBilingualSttService {
     ));
 
     if (complete) {
+      for (final word in [..._englishWords, ..._urduWords]) {
+        if (word.end > _completedUntil) _completedUntil = word.end;
+      }
       _englishWords = const [];
       _urduWords = const [];
       _englishInterim = '';
@@ -838,6 +936,7 @@ class EverydayBilingualSttService {
   void dispose() {
     unawaited(stop());
     _controller.close();
+    _voiceStarted.close();
     unawaited(_recorder.dispose());
   }
 }

@@ -8,6 +8,7 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/speech_engine.dart';
 import '../services/stt/enhanced_stt.dart';
+import '../services/turn_taking.dart';
 import '../theme/app_theme.dart';
 import '../widgets/reusable_widgets.dart';
 import '../widgets/speakable_caption_bubble.dart';
@@ -30,6 +31,17 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   DateTime _startTime = DateTime.now();
 
   Caption? _hiddenDraft;
+
+  /// Pieces the recognizer ended at a pause in the middle of a sentence,
+  /// held until the rest of the sentence comes.
+  final SentenceAssembler _sentences = SentenceAssembler();
+  DateTime? _sentenceStartedAt;
+  String _sentenceLanguage = 'English';
+  Timer? _sentenceTimer;
+
+  /// How long an unfinished piece waits for the rest of its sentence before
+  /// it is kept as it is.
+  static const Duration _sentenceHold = Duration(seconds: 3);
   String _speechStatus = 'Preparing microphone…';
   String? _startupError;
   bool _sessionStarting = true;
@@ -101,6 +113,9 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
 
     _acceptSpeechResults = true;
     _hiddenDraft = null;
+    _sentenceTimer?.cancel();
+    _sentences.flush();
+    _sentenceStartedAt = null;
     setState(() {
       _startupError = null;
       _isListening = false;
@@ -219,15 +234,32 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     }
 
     final existing = _hiddenDraft;
+    _hiddenDraft = null;
+    _sentenceStartedAt ??= existing?.timestamp ?? now;
+    _sentenceLanguage = result.language;
+    _sentenceTimer?.cancel();
+    final sentence = _sentences.add(text);
+    if (sentence != null) {
+      _keepSentence(sentence);
+    } else {
+      _sentenceTimer = Timer(_sentenceHold, () {
+        // Still talking: the next piece will carry the sentence on.
+        if (!mounted || _hiddenDraft != null) return;
+        final held = _sentences.flush();
+        if (held != null) _keepSentence(held);
+      });
+    }
+  }
+
+  void _keepSentence(String text) {
     final caption = Caption(
-      id: existing?.id,
       text: text,
       speaker: 'Speaker 1',
-      timestamp: existing?.timestamp ?? now,
-      language: result.language,
+      timestamp: _sentenceStartedAt ?? DateTime.now(),
+      language: _sentenceLanguage,
       isPartial: false,
     );
-    _hiddenDraft = null;
+    _sentenceStartedAt = null;
     unawaited(_persistFinalCaption(caption));
   }
 
@@ -256,9 +288,20 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
 
   Future<void> _flushHiddenDraft() async {
     final draft = _hiddenDraft;
-    if (draft == null || draft.text.trim().isEmpty) return;
     _hiddenDraft = null;
-    await _persistFinalCaption(draft.copyWith(isPartial: false));
+    _sentenceTimer?.cancel();
+    final text = _sentences.flush(tail: draft?.text ?? '');
+    if (text == null) return;
+    final caption = Caption(
+      id: draft?.id,
+      text: text,
+      speaker: 'Speaker 1',
+      timestamp: _sentenceStartedAt ?? draft?.timestamp ?? DateTime.now(),
+      language: draft?.language ?? _sentenceLanguage,
+      isPartial: false,
+    );
+    _sentenceStartedAt = null;
+    await _persistFinalCaption(caption);
   }
 
   Future<void> _addManualCaption(String text) async {
@@ -367,6 +410,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   void dispose() {
     _speechSubscription?.cancel();
     _durationTimer?.cancel();
+    _sentenceTimer?.cancel();
     _captionController.dispose();
     _scrollController.dispose();
     super.dispose();

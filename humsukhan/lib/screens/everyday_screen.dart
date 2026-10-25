@@ -111,7 +111,8 @@ class _EverydayScreenState extends State<EverydayScreen> {
                   child: QuickReplyChip(
                     reply: reply,
                     isHighContrast: settings.isHighContrast,
-                    onTap: conv.isListening || _engine.isBusy ? null : () { conv.addOwnCaption(reply.text); _scrollToBottom(); },
+                    // Replies work while the speaker is talking: the microphone stays on.
+                    onTap: _engine.isBusy ? null : () { _engine.reply(reply.text); _scrollToBottom(); },
                     onLongPress: () => showQuickReplyActions(context, reply),
                   ),
                 )).toList(),
@@ -131,7 +132,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                         constraints: const BoxConstraints(maxHeight: 120),
                         child: TextField(
                           controller: _textController,
-                          enabled: !conv.isListening && !_engine.isBusy,
+                          enabled: !_engine.isBusy,
                           minLines: 1,
                           maxLines: 4,
                           keyboardType: TextInputType.multiline,
@@ -141,7 +142,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                           textCapitalization: TextCapitalization.sentences,
                           style: TextStyle(fontFamily: inputIsUrdu ? 'NotoNastaliqUrdu' : null, fontSize: 17, height: 1.45),
                           decoration: InputDecoration(
-                            hintText: conv.isListening ? 'Speaker is talking…' : (appIsUrdu ? 'اردو یا انگریزی میں جواب لکھیں' : 'Type in Urdu or English'),
+                            hintText: appIsUrdu ? 'اردو یا انگریزی میں جواب لکھیں' : 'Type in Urdu or English',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTokens.radiusFull), borderSide: BorderSide.none),
                             filled: true,
                             fillColor: theme.cardColor,
@@ -164,7 +165,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                       // conversation engine reports its speaking state as busy.
                       onPressed: speech.isSpeaking
                           ? () => _speakOrStop(speech, typedResponse)
-                          : conv.isListening || _engine.isBusy || typedResponse.isEmpty
+                          : _engine.isBusy || typedResponse.isEmpty
                               ? null
                               : () => _speakOrStop(speech, typedResponse),
                     ),
@@ -172,7 +173,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     IconButton.filled(
                       tooltip: 'Send response',
                       icon: const Icon(Icons.send),
-                      onPressed: conv.isListening || _engine.isBusy || typedResponse.isEmpty ? null : () => _sendTypedText(_textController.text),
+                      onPressed: _engine.isBusy || typedResponse.isEmpty ? null : () => _sendTypedText(_textController.text),
                     ),
                   ],
                 ),
@@ -223,7 +224,9 @@ class _EverydayScreenState extends State<EverydayScreen> {
       return;
     }
     try {
-      await speech.speak(text, language: language);
+      // Pauses the microphone while the reply plays, so the app does not
+      // caption its own voice, and resumes it afterwards.
+      await _engine.speakReply(text, language: language);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -235,7 +238,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
   void _sendTypedText(String text) {
     final value = text.trim();
     if (value.isEmpty) return;
-    context.read<ConversationProvider>().addOwnCaption(value);
+    _engine.reply(value);
     _textController.clear();
     if (mounted) setState(() => _typedUrdu = false);
     _scrollToBottom();

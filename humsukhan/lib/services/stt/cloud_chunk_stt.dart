@@ -135,7 +135,7 @@ typedef EdgeFunctionInvoker = Future<Object?> Function(String function, Map<Stri
 /// `deepgram-transcribe-bilingual`; a fixed language uses `deepgram-transcribe`.
 class CloudChunkStt {
   CloudChunkStt({PcmSource Function()? source, EdgeFunctionInvoker? invoke})
-      : _newSource = source ?? RecorderPcmSource.new,
+      : _newSource = source ?? (() => RecorderPcmSource(forSpeech: true)),
         _invoke = invoke ?? _invokeSupabase;
 
   static const singleLanguageFunction = 'deepgram-transcribe';

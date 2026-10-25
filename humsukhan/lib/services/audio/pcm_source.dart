@@ -15,6 +15,11 @@ abstract class PcmSource {
 }
 
 class RecorderPcmSource implements PcmSource {
+  /// [forSpeech] records from the source Android tunes for speech
+  /// recognition; otherwise from the default microphone.
+  RecorderPcmSource({this.forSpeech = false});
+
+  final bool forSpeech;
   AudioRecorder? _recorder;
 
   @override
@@ -22,10 +27,13 @@ class RecorderPcmSource implements PcmSource {
 
   @override
   Future<Stream<Uint8List>> start() => (_recorder ??= AudioRecorder()).startStream(
-        const RecordConfig(
+        RecordConfig(
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 16000,
           numChannels: 1,
+          androidConfig: forSpeech
+              ? const AndroidRecordConfig(audioSource: AndroidAudioSource.voiceRecognition)
+              : const AndroidRecordConfig(),
         ),
       );
 

@@ -60,6 +60,12 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   StreamSubscription<EverydayBilingualResult>? _bilingualSubscription;
   StreamSubscription<SpeechResultEvent>? _fallbackSubscription;
   StreamSubscription<String>? _connectionLostSubscription;
+  StreamSubscription<void>? _voiceSubscription;
+  final StreamController<void> _voiceStarted = StreamController<void>.broadcast();
+
+  /// The speaker started making sound again, before any words come back.
+  /// Only the live cloud stream can tell.
+  Stream<void> get onSpeechStarted => _voiceStarted.stream;
   bool _initialized = false;
   bool _listening = false;
   bool _startingListening = false;
@@ -241,6 +247,9 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     await _bilingualSubscription?.cancel();
     _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
     _connectionLostSubscription ??= _bilingual.onConnectionLost.listen(_onBilingualConnectionLost);
+    _voiceSubscription ??= _bilingual.onVoiceStarted.listen((_) {
+      if (_listening && !_voiceStarted.isClosed) _voiceStarted.add(null);
+    });
     if (await _bilingual.start(mode: language)) {
       _currentMode = STTMode.platform;
       return true;
@@ -593,6 +602,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     unawaited(_modelProgress.cancel());
     _cancelSubscriptions();
     unawaited(_results.close());
+    unawaited(_voiceStarted.close());
     _bilingual.stop();
     _fallbackStt.stopListening();
     _ttsProvider.dispose();
@@ -606,6 +616,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     unawaited(_bilingualSubscription?.cancel());
     unawaited(_connectionLostSubscription?.cancel());
     _connectionLostSubscription = null;
+    unawaited(_voiceSubscription?.cancel());
+    _voiceSubscription = null;
     unawaited(_fallbackSubscription?.cancel());
     _bilingualSubscription = null;
     _fallbackSubscription = null;
