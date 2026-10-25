@@ -24,6 +24,8 @@ class _FakeCloudStream implements EverydayBilingualSttService {
   @override
   Stream<String> get onConnectionLost => lost.stream;
   @override
+  Stream<void> get onVoiceStarted => const Stream.empty();
+  @override
   String? get lastStartError => startResult ? null : 'cloud refused';
 
   @override

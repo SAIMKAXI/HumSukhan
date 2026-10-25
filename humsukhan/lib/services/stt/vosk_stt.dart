@@ -156,10 +156,13 @@ class SherpaSTTProvider {
 
     try {
       if (!await _audioRecorder.hasPermission()) return;
+      // The source Android tunes for speech recognition, as the cloud
+      // stream uses.
       final config = const RecordConfig(
         encoder: AudioEncoder.pcm16bits,
         sampleRate: 16000,
         numChannels: 1,
+        androidConfig: AndroidRecordConfig(audioSource: AndroidAudioSource.voiceRecognition),
       );
 
       _listening = true;

@@ -27,6 +27,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     Future<bool> Function()? cloudReachable,
     @visibleForTesting EverydayBilingualSttService? cloudStream,
     @visibleForTesting EnhancedSpeechProvider? fallback,
+    @visibleForTesting this.resumeDelay = monitoringResumeDelay,
+    @visibleForTesting this.conversationResumeDelay = conversationMonitoringResumeDelay,
   })  : _cloudReachable = cloudReachable ?? _signedInAndOnline,
         _bilingual = cloudStream ?? EverydayBilingualSttService.instance,
         _fallbackStt = fallback ?? EnhancedSpeechProvider() {
@@ -58,6 +60,12 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   StreamSubscription<EverydayBilingualResult>? _bilingualSubscription;
   StreamSubscription<SpeechResultEvent>? _fallbackSubscription;
   StreamSubscription<String>? _connectionLostSubscription;
+  StreamSubscription<void>? _voiceSubscription;
+  final StreamController<void> _voiceStarted = StreamController<void>.broadcast();
+
+  /// The speaker started making sound again, before any words come back.
+  /// Only the live cloud stream can tell.
+  Stream<void> get onSpeechStarted => _voiceStarted.stream;
   bool _initialized = false;
   bool _listening = false;
   bool _startingListening = false;
@@ -140,6 +148,20 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   Future<void> warmUpTts() => _ttsProvider.warmUp();
 
+  /// Gets listening ready before the first tap on the microphone: the
+  /// phone's recognizer and offline models are loaded and a cloud token is
+  /// fetched, so starting only has to open the microphone and connect.
+  Future<void> prepareListening() async {
+    try {
+      await Future.wait([
+        _fallbackStt.initialize(),
+        if (SupabaseService.instance.isAuthenticated) _bilingual.prewarm(),
+      ]);
+    } catch (e) {
+      debugPrint('Speech warm-up failed: $e');
+    }
+  }
+
   Future<void> recheckSpeechCapabilities() async {
     await _fallbackStt.recheckPlatformCapabilities();
     await _ttsProvider.recheckMissingCapabilities();
@@ -157,19 +179,23 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       // path, including when it was started from Quick Settings. Release that
       // capture completely before opening foreground speech recognition.
       _monitoringResume?.cancel();
-      final released = await EnvironmentalMonitoring.releaseForForegroundSpeech();
-      if (!released) {
-        throw StateError('Environmental monitoring could not release the microphone for speech recognition.');
-      }
-
       _language = _normalizeLanguage(language) == 'Roman Urdu' ? 'Urdu' : _normalizeLanguage(language);
       _lastStartError = null;
       _latestFinal = '';
       _detected = null;
       _usingFallback = false;
 
-      await _fallbackStt.initialize();
-      final online = await _cloudReachable();
+      // None of these depends on another. Run one after another, their
+      // delays added up before the microphone could open.
+      final ready = await Future.wait<bool>([
+        EnvironmentalMonitoring.releaseForForegroundSpeech(),
+        _cloudReachable(),
+        _fallbackStt.initialize().then((_) => true),
+      ]);
+      if (!ready[0]) {
+        throw StateError('Environmental monitoring could not release the microphone for speech recognition.');
+      }
+      final online = ready[1];
       _plan = sttPlan(
         language: _language,
         online: online,
@@ -221,6 +247,9 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     await _bilingualSubscription?.cancel();
     _bilingualSubscription = _bilingual.onResult.listen(_handleResult);
     _connectionLostSubscription ??= _bilingual.onConnectionLost.listen(_onBilingualConnectionLost);
+    _voiceSubscription ??= _bilingual.onVoiceStarted.listen((_) {
+      if (_listening && !_voiceStarted.isClosed) _voiceStarted.add(null);
+    });
     if (await _bilingual.start(mode: language)) {
       _currentMode = STTMode.platform;
       return true;
@@ -331,11 +360,29 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   /// unless listening starts again first (a reply being spoken pauses and
   /// resumes listening, and must not bounce the microphone between the two).
   static const Duration monitoringResumeDelay = Duration(seconds: 3);
+
+  /// The same, while a conversation is open. Restarting monitoring between
+  /// every turn made each tap on the microphone wait for the monitoring
+  /// service to stop again.
+  static const Duration conversationMonitoringResumeDelay = Duration(seconds: 20);
+  final Duration resumeDelay;
+  final Duration conversationResumeDelay;
   Timer? _monitoringResume;
+  bool _conversationOpen = false;
+
+  /// A conversation has started ([open]) or ended. While one is open,
+  /// monitoring resumes only after [conversationMonitoringResumeDelay] with
+  /// no one speaking.
+  void holdMicrophoneForConversation(bool open) {
+    if (_disposed || _conversationOpen == open) return;
+    _conversationOpen = open;
+    if (!open && !_listening && !_startingListening) _scheduleMonitoringResume();
+  }
 
   void _scheduleMonitoringResume() {
     _monitoringResume?.cancel();
-    _monitoringResume = Timer(monitoringResumeDelay, () {
+    final delay = _conversationOpen ? conversationResumeDelay : resumeDelay;
+    _monitoringResume = Timer(delay, () {
       if (_disposed || _listening || _startingListening || _speaking) return;
       // Android refuses to start a microphone service from the background;
       // SpeechLifecycleGuard resumes monitoring when the app is back.
@@ -555,6 +602,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     unawaited(_modelProgress.cancel());
     _cancelSubscriptions();
     unawaited(_results.close());
+    unawaited(_voiceStarted.close());
     _bilingual.stop();
     _fallbackStt.stopListening();
     _ttsProvider.dispose();
@@ -568,6 +616,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
     unawaited(_bilingualSubscription?.cancel());
     unawaited(_connectionLostSubscription?.cancel());
     _connectionLostSubscription = null;
+    unawaited(_voiceSubscription?.cancel());
+    _voiceSubscription = null;
     unawaited(_fallbackSubscription?.cancel());
     _bilingualSubscription = null;
     _fallbackSubscription = null;
