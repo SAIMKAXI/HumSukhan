@@ -110,12 +110,19 @@ jobs:
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
 
       - name: Verify APK exists and has a valid signature
+        shell: bash
         run: |
           set -euo pipefail
           APK=build/app/outputs/flutter-apk/app-release.apk
           test -s "$APK"
-          apksigner verify --verbose "$APK"
-          apksigner verify --print-certs "$APK"
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner -print 2>/dev/null | sort -V | tail -n 1)"
+          if [[ -z "$APKSIGNER" ]]; then
+            echo "::error::Could not find apksigner under $SDK_ROOT/build-tools"
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose "$APK"
+          "$APKSIGNER" verify --print-certs "$APK"
 
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/HumSukhan-${{ steps.release.outputs.version }}.apk
