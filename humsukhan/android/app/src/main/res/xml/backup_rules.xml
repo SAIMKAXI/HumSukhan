@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older. Wellbeing check-ins stay on this phone only
+     (lib/modules/wellbeing/services/mood_store.dart); everything else is
+     backed up as before. -->
+<full-backup-content>
+    <exclude domain="file" path="wellbeing/" />
+</full-backup-content>

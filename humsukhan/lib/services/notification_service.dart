@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -8,6 +10,63 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   bool _permissionRequested = false;
+  bool _launchPayloadTaken = false;
+  final StreamController<String> _taps = StreamController<String>.broadcast();
+
+  /// Payload of the wellbeing check-in reminder; tapping it opens the
+  /// check-in.
+  static const String checkInPayload = 'wellbeing.checkin';
+
+  /// Payloads of notifications the user taps while HumSukhan is running.
+  Stream<String> get taps => _taps.stream;
+
+  /// The payload of the notification that started HumSukhan, once; null if
+  /// the app was opened some other way.
+  Future<String?> takeLaunchPayload() async {
+    if (_launchPayloadTaken) return null;
+    _launchPayloadTaken = true;
+    await initialize(requestPermission: false);
+    if (!_initialized) return null;
+    try {
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      if (details?.didNotificationLaunchApp != true) return null;
+      return details?.notificationResponse?.payload;
+    } catch (e) {
+      debugPrint('Notification launch details unavailable: $e');
+      return null;
+    }
+  }
+
+  /// The plugin, initialized; null when notifications cannot be used here.
+  Future<FlutterLocalNotificationsPlugin?> plugin() async {
+    await initialize(requestPermission: false);
+    return _initialized ? _plugin : null;
+  }
+
+  /// Asks for notification permission (Android 13+) when it has not been
+  /// granted, and reports whether notifications can be shown.
+  Future<bool> ensurePermission() async {
+    await initialize(requestPermission: false);
+    if (!_initialized) return false;
+    try {
+      final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (android != null) {
+        if (await android.areNotificationsEnabled() == true) return true;
+        return await android.requestNotificationsPermission() == true;
+      }
+      final ios = _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
+      if (ios != null) return await ios.requestPermissions(alert: true) == true;
+      return true;
+    } catch (e) {
+      debugPrint('Notification permission check failed: $e');
+      return false;
+    }
+  }
+
+  void _onResponse(NotificationResponse response) {
+    final payload = response.payload;
+    if (payload != null && payload.isNotEmpty) _taps.add(payload);
+  }
 
   /// [requestPermission] asks the user for notification permission on
   /// Android 13+. The environmental monitoring isolate has no activity to ask
@@ -31,6 +90,7 @@ class NotificationService {
           iOS: appleSettings,
           macOS: appleSettings,
         ),
+        onDidReceiveNotificationResponse: _onResponse,
       );
       _initialized = true;
     } catch (e) {

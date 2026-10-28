@@ -187,6 +187,7 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
         ChangeNotifierProvider(create: (_) => EnvironmentalProvider()),
         ChangeNotifierProvider(create: (_) => SpeechProvider()),
         ChangeNotifierProvider(create: (_) => QuickReplyProvider()),
+        ChangeNotifierProvider(create: (_) => WellbeingProvider()),
         ChangeNotifierProvider(create: (_) => ConnectivityProvider()..initialize()),
       ],
       child: SpeechLifecycleGuard(
@@ -210,6 +211,9 @@ class _HumSukhanAppState extends State<HumSukhanApp> {
             }
 
             context.read<EnvironmentalProvider>().setSettingsProvider(settings);
+            final wellbeing = context.read<WellbeingProvider>();
+            final urduReminders = settings.appLanguage == 'ur';
+            WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(wellbeing.setUrdu(urduReminders)));
 
             final appLocale = Locale(settings.appLanguage);
             const delegates = [AppStrings.delegate, GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate];

@@ -28,6 +28,13 @@ HumSukhan (هم سخن, *one who speaks with you*) helps people who are Deaf or 
 - Announces each alert with a **notification and vibration**, including when the app is closed. With the app open it also shows a banner, flashes the screen and can pulse the camera flashlight.
 - On Android, monitoring runs as a foreground service and can be switched from a **Quick Settings tile**.
 
+### Wellbeing
+- **Optional mood check-ins**: five faces, optional words such as "tired" or "left out", and an optional private note. A gentle reminder once or twice a day, at times the user picks, if they want one.
+- **Your own pattern**: a 7- and 30-day chart, compared with your usual level rather than a plain average. HumSukhan never diagnoses.
+- **Get help**: pre-written ideas in Urdu and English (or both side by side), chosen by how the last few days have gone, with a read-aloud button. They include a breathing guide you can follow by sight.
+- The lowest mood, or words about self-harm in a note, opens a fixed help screen instead, with a large message to show to someone nearby.
+- **Check-ins stay on the phone.** They are never uploaded, and are left out of Android backups.
+
 ### Accessibility and settings
 - Light, dark and a dedicated **high-contrast** theme; large text on top of the system text size; adjustable caption size.
 - English and Urdu interface, with right-to-left layout and Nastaliq script for Urdu.
@@ -57,6 +64,7 @@ HumSukhan (هم سخن, *one who speaks with you*) helps people who are Deaf or 
 | Account, profile, settings, quick replies | Supabase, readable only by their owner |
 | AI insights | Supabase, deleted when their session expires |
 | Environmental audio | Processed on the phone; never stored or uploaded |
+| Wellbeing check-ins and notes | On the phone only; not uploaded, and excluded from Android cloud backup and device transfer |
 
 Audio is sent to Deepgram only while cloud speech recognition is in use. A session's transcript is sent to Gemini only to generate its insights. Neither is stored by HumSukhan.
 

@@ -12,6 +12,7 @@ class AppRouter {
   static const String sessionLive = '/session/live';
   static const String environmental = '/environmental';
   static const String settings = '/settings';
+  static const String wellbeing = '/wellbeing';
 
   static bool _requiresAuthentication(String? name) => name != null && name != onboarding && name != auth;
 
@@ -44,6 +45,8 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => const EnvironmentalScreen());
       case settings:
         return MaterialPageRoute(builder: (_) => const SettingsScreen());
+      case wellbeing:
+        return MaterialPageRoute(builder: (_) => WellbeingScreen(openCheckIn: routeSettings.arguments == true));
       default:
         return MaterialPageRoute(builder: (_) => authenticated ? const MainScaffold() : const AuthScreen());
     }

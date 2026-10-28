@@ -4,6 +4,7 @@ export '../modules/home/home.dart';
 export '../modules/conversation/conversation.dart';
 export '../modules/professional/professional.dart';
 export '../modules/environmental_alerts/environmental_alerts.dart';
+export '../modules/wellbeing/wellbeing.dart';
 export '../modules/settings/settings.dart';
 export '../modules/onboarding/onboarding.dart';
 export '../modules/auth/auth.dart';

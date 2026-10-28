@@ -90,6 +90,14 @@ class HomeScreen extends StatelessWidget {
                 ),
                 onTap: () => Navigator.pushNamed(context, '/environmental'),
               ),
+              const SizedBox(height: 12),
+              ModernModeCard(
+                eyebrow: s.wellbeingTitle,
+                title: s.wellbeingTitle,
+                subtitle: s.wellbeingHomeSubtitle,
+                icon: Icons.self_improvement_rounded,
+                onTap: () => Navigator.pushNamed(context, '/wellbeing'),
+              ),
 
               const SizedBox(height: 32),
               ModernSectionHeader(
