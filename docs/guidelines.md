@@ -58,6 +58,14 @@ Detected sounds raise a notification and vibration, plus a banner, screen flash
 and optional torch while the app is open. History is reviewable. Audio is
 classified on the phone and never uploaded.
 
+### 2.5 Wellbeing
+Home → Wellbeing. The first visit explains the feature and offers an evening
+reminder (optional). A check-in is a face, optional words and an optional note;
+"Skip" is always there. A low check-in offers ideas; the lowest mood or words
+about self-harm open the fixed help screen. Check-ins stay on the phone and can
+be deleted one by one or all at once. Never present anything here as a
+diagnosis, and never generate text for the help screen.
+
 ---
 
 ## 3. Copy rules

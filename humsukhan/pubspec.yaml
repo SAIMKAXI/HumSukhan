@@ -31,6 +31,8 @@ dependencies:
   record: ^5.1.0
   audioplayers: ^6.8.1
   flutter_local_notifications: ^20.1.0
+  # Used directly to schedule wellbeing check-in reminders at an exact instant.
+  timezone: ^0.10.1
   image_picker: ^1.2.3
 
 dependency_overrides:

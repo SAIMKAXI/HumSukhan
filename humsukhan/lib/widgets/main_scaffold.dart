@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import '../navigation/app_router.dart';
 import '../screens/screens.dart';
 import '../l10n/app_strings.dart';
 import '../services/alert_service.dart';
+import '../services/notification_service.dart';
 import 'modern_ui.dart';
 
 class MainScaffold extends StatefulWidget {
@@ -13,6 +17,7 @@ class MainScaffold extends StatefulWidget {
 
 class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
+  StreamSubscription<String>? _notificationTaps;
 
   final _screens = const [
     HomeScreen(),
@@ -27,7 +32,26 @@ class _MainScaffoldState extends State<MainScaffold> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AlertService.instance.registerContext(context);
+      unawaited(_openLaunchNotification());
     });
+    _notificationTaps = NotificationService.instance.taps.listen(_onNotificationTap);
+  }
+
+  /// HumSukhan was started by tapping a notification.
+  Future<void> _openLaunchNotification() async {
+    final payload = await NotificationService.instance.takeLaunchPayload();
+    if (payload != null) _onNotificationTap(payload);
+  }
+
+  void _onNotificationTap(String payload) {
+    if (!mounted || payload != NotificationService.checkInPayload) return;
+    Navigator.of(context).pushNamed(AppRouter.wellbeing, arguments: true);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_notificationTaps?.cancel());
+    super.dispose();
   }
 
   @override

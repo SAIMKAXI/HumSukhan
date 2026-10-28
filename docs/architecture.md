@@ -42,6 +42,7 @@ State is held in `ChangeNotifier` providers (`provider` package), created once i
 | `services/` | Speech, AI, database, notification and alert services |
 | `services/stt/` | Speech-to-text engines, the recognizer order (`stt_plan.dart`) and offline models |
 | `modules/environmental_alerts/` | Sound detection and monitoring; see [environmental-alerts.md](environmental-alerts.md) |
+| `modules/wellbeing/` | Mood check-ins: storage, pattern rules, reminders and the pre-written support library |
 | `l10n/app_strings.dart` | Every user-facing string, in English and Urdu |
 | `theme/` | Design tokens and themes |
 | `models/models.dart` | Data models: captions, sessions, folders, insights, quick replies, sound events |
@@ -115,6 +116,24 @@ AI insights come from the `generate-insights-v2` Edge Function, which sends the 
 ## Environmental alerts
 
 Sound detection runs on the phone with the CED-Tiny audio-tagging model. On Android it runs inside a microphone foreground service, so it keeps working with the app closed. See [environmental-alerts.md](environmental-alerts.md).
+
+## Wellbeing
+
+Optional mood check-ins, reached from the Home screen (`/wellbeing`). `WellbeingProvider` holds them for the signed-in account. Nothing in this feature talks to the server.
+
+- **Storage** (`MoodStore`). One JSON file per account in the app's private `files/wellbeing/` folder. Writes go to a temporary file that then replaces the old one, one at a time. A damaged file is set aside and reported, not overwritten. `res/xml/backup_rules.xml` and `res/xml/data_extraction_rules.xml` leave that folder out of cloud backup and device transfer; everything else is backed up as before. Check-ins older than 400 days are dropped.
+- **Pattern** (`MoodPatterns`). Rules, all in one file, compare recent check-ins with the user's own usual level:
+
+  | State | When |
+  |---|---|
+  | Urgent | The latest check-in is the lowest mood, or its note mentions self-harm (`CrisisWords`: English, Urdu, Roman Urdu) |
+  | Several low days | Three low check-ins in a row within a week, or the last 3 days average at least 1 point below the 14 days before, and no higher than "okay" |
+  | Low day | The latest check-in is low |
+  | Doing well / steady | Otherwise, by the latest check-in |
+
+  A check-in older than 36 hours says nothing about now.
+- **Support** (`SupportLibrary`). Fixed, pre-written items in English and Urdu for each state, shown in the app language or both. Nothing is generated. The urgent state always gets the fixed help screen: safety steps, a full-screen message in both languages for the user to show someone nearby, and a breathing guide that works by sight.
+- **Reminders** (`ReminderPlan`, `LocalNotificationReminders`). Off until the user turns them on. Once a day at 20:00 by default, or twice; the times can be changed. They are scheduled as single notifications over the next two weeks, rescheduled whenever the app opens or a check-in is saved, so a slot already checked in for is skipped and reminders stop if the app goes unused. Inexact alarms, so no exact-alarm permission. The plugin's boot receiver restores them after a restart or update. Tapping one opens the check-in.
 
 ## Backend
 

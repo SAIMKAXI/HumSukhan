@@ -237,6 +237,92 @@ class AppStrings {
   String get languageEnglish => 'English';
   String get languageUrdu => 'اردو';
 
+  // ── Wellbeing ──
+  String get wellbeingTitle => _isUrdu ? 'ذہنی سکون' : 'Wellbeing';
+  String get wellbeingHomeSubtitle => _isUrdu ? 'روزانہ چیک اِن کریں کہ آپ کیسا محسوس کر رہے ہیں' : 'Check in each day with how you feel';
+  String get wellbeingIntroTitle => _isUrdu ? 'آپ کے لیے ایک نجی چیک اِن' : 'A private check-in, just for you';
+  String get wellbeingIntroBody => _isUrdu
+      ? 'دن میں ایک بار بتائیں کہ آپ کیسا محسوس کر رہے ہیں۔ آپ وقت کے ساتھ اپنا رجحان دیکھیں گے اور ایسی تجاویز ملیں گی جو مدد کر سکتی ہیں۔ آپ کے چیک اِن صرف اسی فون پر رہتے ہیں۔'
+      : 'Once a day, tell HumSukhan how you feel. Over time you will see your pattern and get ideas that may help. Your check-ins stay on this phone only.';
+  String get wellbeingIntroRemind => _isUrdu ? 'مجھے ہر شام یاد دلائیں' : 'Remind me every evening';
+  String get wellbeingIntroNotNow => _isUrdu ? 'ابھی نہیں' : 'Not now';
+  String get howAreYouFeeling => _isUrdu ? 'آپ کیسا محسوس کر رہے ہیں؟' : 'How are you feeling?';
+  String get moodVeryLow => _isUrdu ? 'بہت اداس' : 'Very low';
+  String get moodLow => _isUrdu ? 'اداس' : 'Low';
+  String get moodOkay => _isUrdu ? 'ٹھیک' : 'Okay';
+  String get moodGood => _isUrdu ? 'اچھا' : 'Good';
+  String get moodGreat => _isUrdu ? 'بہت اچھا' : 'Great';
+  String get tagTired => _isUrdu ? 'تھکاوٹ' : 'Tired';
+  String get tagLonely => _isUrdu ? 'تنہائی' : 'Lonely';
+  String get tagLeftOut => _isUrdu ? 'نظرانداز' : 'Left out';
+  String get tagAnxious => _isUrdu ? 'گھبراہٹ' : 'Anxious';
+  String get tagStressed => _isUrdu ? 'دباؤ' : 'Stressed';
+  String get tagSad => _isUrdu ? 'اداسی' : 'Sad';
+  String get tagCalm => _isUrdu ? 'سکون' : 'Calm';
+  String get tagHappy => _isUrdu ? 'خوشی' : 'Happy';
+  String get tagGrateful => _isUrdu ? 'شکرگزاری' : 'Grateful';
+  String get checkInTagsLabel => _isUrdu ? 'کوئی لفظ شامل کریں (اختیاری)' : 'Add a word (optional)';
+  String get checkInNoteLabel => _isUrdu ? 'نوٹ (اختیاری)' : 'Note (optional)';
+  String get checkInNoteHint => _isUrdu ? 'آپ کے ذہن میں کیا ہے؟ یہ صرف آپ دیکھ سکتے ہیں۔' : 'What is on your mind? Only you can see this.';
+  String get saveCheckIn => _isUrdu ? 'چیک اِن محفوظ کریں' : 'Save check-in';
+  String get skipForNow => _isUrdu ? 'ابھی چھوڑیں' : 'Skip for now';
+  String get checkInSaved => _isUrdu ? 'چیک اِن محفوظ ہو گیا' : 'Check-in saved';
+  String get checkInFailed => _isUrdu ? 'چیک اِن محفوظ نہیں ہو سکا۔ دوبارہ کوشش کریں۔' : 'Your check-in could not be saved. Please try again.';
+  String get checkInAgain => _isUrdu ? 'دوبارہ چیک اِن کریں' : 'Check in again';
+  String get todayLabel => _isUrdu ? 'آج' : 'Today';
+  String get yourPattern => _isUrdu ? 'آپ کا رجحان' : 'Your pattern';
+  String get sevenDays => _isUrdu ? '7 دن' : '7 days';
+  String get thirtyDays => _isUrdu ? '30 دن' : '30 days';
+  String streakDays(int days) => _isUrdu ? '$days دن مسلسل چیک اِن' : '$days-day check-in streak';
+  String get patternNoData => _isUrdu ? 'اپنا رجحان دیکھنے کے لیے چیک اِن کریں۔' : 'Check in to start seeing your pattern.';
+  String get patternDoingWell => _isUrdu ? 'آپ اچھا محسوس کر رہے ہیں۔ جو چیز مدد کرتی ہے اسے یاد رکھیں۔' : 'You have been feeling good. Keep noticing what helps.';
+  String get patternSteady => _isUrdu ? 'حالات ٹھیک لگ رہے ہیں۔' : 'Things look steady.';
+  String get patternLowDay => _isUrdu ? 'آج کا دن مشکل لگتا ہے۔ کچھ تجاویز مدد کر سکتی ہیں۔' : 'Today seems hard. A few ideas may help.';
+  String get patternSeveralLowDays => _isUrdu ? 'آپ کے کچھ دن مشکل گزرے ہیں۔ آپ کو یہ اکیلے نہیں سہنا۔' : 'You have had a few hard days. You do not have to handle this alone.';
+  String get patternUrgent => _isUrdu ? 'لگتا ہے حالات بہت مشکل ہیں۔ مدد قریب ہو سکتی ہے۔' : 'It sounds like things are very hard. Help can be close.';
+  String get getHelp => _isUrdu ? 'مدد حاصل کریں' : 'Get help';
+  String get ideasThatMayHelp => _isUrdu ? 'مددگار تجاویز' : 'Ideas that may help';
+  String get feelUnsafe => _isUrdu ? 'کیا آپ محفوظ محسوس نہیں کر رہے؟' : 'Do you feel unsafe?';
+  String get openUrgentHelp => _isUrdu ? 'فوری مدد کھولیں' : 'Open urgent help';
+  String get listenAction => _isUrdu ? 'سنیں' : 'Listen';
+  String get stopAction => _isUrdu ? 'روکیں' : 'Stop';
+  String get listenFailed => _isUrdu ? 'یہ متن سنایا نہیں جا سکا۔' : 'This text could not be read aloud.';
+  String get showBothLanguages => _isUrdu ? 'اردو اور انگریزی ایک ساتھ دکھائیں' : 'Show Urdu and English together';
+  String get recentCheckIns => _isUrdu ? 'حالیہ چیک اِن' : 'Recent check-ins';
+  String get noCheckInsYet => _isUrdu ? 'ابھی تک کوئی چیک اِن نہیں۔' : 'No check-ins yet.';
+  String get showAll => _isUrdu ? 'سب دکھائیں' : 'Show all';
+  String get deleteCheckInConfirm => _isUrdu ? 'یہ چیک اِن حذف کریں؟' : 'Delete this check-in?';
+  String get dailyReminder => _isUrdu ? 'روزانہ یاد دہانی' : 'Daily reminder';
+  String get dailyReminderDesc => _isUrdu ? 'چیک اِن کے لیے ایک نرم یاد دہانی' : 'A gentle reminder to check in';
+  String get twiceADay => _isUrdu ? 'دن میں دو بار' : 'Twice a day';
+  String get reminderTime => _isUrdu ? 'یاد دہانی کا وقت' : 'Reminder time';
+  String get reminderPermissionDenied => _isUrdu
+      ? 'HumSukhan کے لیے اطلاعات بند ہیں۔ یاد دہانی کے لیے فون کی ترتیبات میں اطلاعات کی اجازت دیں۔'
+      : 'Notifications are off for HumSukhan. Allow them in your phone settings to get reminders.';
+  String get reminderSchedulingFailed => _isUrdu ? 'یاد دہانی مقرر نہیں ہو سکی۔ دوبارہ کوشش کریں۔' : 'The reminder could not be set. Please try again.';
+  String get reminderKeepsGoing => _isUrdu
+      ? 'جب تک آپ ہر دو ہفتے میں کم از کم ایک بار HumSukhan کھولتے رہیں، یاد دہانی جاری رہتی ہے۔'
+      : 'Reminders keep going as long as you open HumSukhan at least once every two weeks.';
+  String get deleteAllCheckIns => _isUrdu ? 'میرے تمام چیک اِن حذف کریں' : 'Delete all my check-ins';
+  String get deleteAllCheckInsConfirm => _isUrdu
+      ? 'اس فون سے آپ کے تمام چیک اِن اور نوٹ حذف ہو جائیں گے۔ یہ واپس نہیں ہو سکتا۔'
+      : 'All your check-ins and notes will be deleted from this phone. This cannot be undone.';
+  String get checkInsDeleted => _isUrdu ? 'تمام چیک اِن حذف ہو گئے' : 'All check-ins deleted';
+  String get deleteFailed => _isUrdu ? 'حذف نہیں ہو سکا۔ دوبارہ کوشش کریں۔' : 'Could not delete. Please try again.';
+  String get wellbeingPrivacy => _isUrdu
+      ? 'آپ کے چیک اِن صرف اسی فون پر رہتے ہیں۔ یہ کبھی اپ لوڈ یا بیک اپ نہیں ہوتے۔'
+      : 'Your check-ins stay on this phone. They are never uploaded or backed up.';
+  String get wellbeingDisclaimer => _isUrdu
+      ? 'HumSukhan کوئی طبی سروس نہیں ہے اور تشخیص نہیں کرتا۔ اگر آپ خطرے میں ہیں تو اپنے قریب کسی سے مدد مانگیں۔'
+      : 'HumSukhan is not a medical service and does not diagnose. If you are in danger, ask someone near you for help.';
+  String get wellbeingLoadDamaged => _isUrdu
+      ? 'کچھ پرانے چیک اِن پڑھے نہیں جا سکے اور الگ رکھ دیے گئے۔'
+      : 'Some earlier check-ins could not be read and were set aside.';
+  String get showThisToSomeone => _isUrdu ? 'یہ اپنے قریب کسی کو دکھائیں' : 'Show this to someone near you';
+  String get iAmSafeNow => _isUrdu ? 'میں اب محفوظ ہوں' : 'I am safe now';
+  String get breatheIn => _isUrdu ? 'سانس اندر لیں' : 'Breathe in';
+  String get breatheOut => _isUrdu ? 'سانس باہر نکالیں' : 'Breathe out';
+
   // ── Quick Replies ──
   static const quickRepliesEn = [
     ('Hello', 'Conversation'),
