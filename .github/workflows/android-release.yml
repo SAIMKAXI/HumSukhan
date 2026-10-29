@@ -105,7 +105,10 @@ jobs:
         env:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
+          # ARM phones only: x86_64 is used by emulators and Chromebooks, not
+          # by phones, and would add about 19 MB to the download.
           flutter build apk --release \
+            --target-platform android-arm,android-arm64 \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
 
@@ -123,6 +126,24 @@ jobs:
           fi
           "$APKSIGNER" verify --verbose "$APK"
           "$APKSIGNER" verify --print-certs "$APK"
+
+      - name: Verify APK contains ARM code only
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          ABIS=$(unzip -Z1 "$APK" 'lib/*' | cut -d/ -f2 | sort -u | tr '\n' ' ')
+          echo "Native code for: $ABIS"
+          test "$ABIS" = "arm64-v8a armeabi-v7a " || {
+            echo "::error::Expected native code for arm64-v8a and armeabi-v7a only, found: $ABIS"
+            exit 1
+          }
+          for abi in arm64-v8a armeabi-v7a; do
+            for lib in libflutter.so libapp.so libonnxruntime.so libsherpa-onnx-c-api.so; do
+              unzip -Z1 "$APK" "lib/$abi/$lib" > /dev/null || { echo "::error::lib/$abi/$lib is missing"; exit 1; }
+            done
+          done
+          ls -l "$APK"
 
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/HumSukhan-${{ steps.release.outputs.version }}.apk

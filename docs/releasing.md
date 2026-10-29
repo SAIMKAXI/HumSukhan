@@ -31,3 +31,5 @@ For a local release build, put the same four values in `humsukhan/android/key.pr
 5. Install the APK over the previous release on an Android device before announcing it. If it installs over the old version, the signing key is right.
 
 The workflow runs analysis and the full test suite first. It checks that the tag matches the app version, and that the APK exists, before publishing.
+
+The APK contains code for ARM phones only (`arm64-v8a` and `armeabi-v7a`); the build uses `--target-platform android-arm,android-arm64`, and `android/app/build.gradle.kts` packages the plugins' native libraries for the same platforms. Leaving out x86_64, which only emulators and Chromebooks use, keeps the download about 19 MB smaller. The workflow refuses to publish an APK with any other platform in it.
