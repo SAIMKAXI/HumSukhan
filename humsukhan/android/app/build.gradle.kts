@@ -19,6 +19,22 @@ val releaseKey = Properties().apply {
 val hasReleaseKey = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
     .all { !releaseKey.getProperty(it).isNullOrBlank() }
 
+// `flutter build --target-platform` compiles Flutter's own code only for the
+// platforms given, but the Flutter Gradle plugin still packages the plugins'
+// native libraries (speech recognition, ONNX Runtime) for every platform.
+// Package them for the same platforms. Releases are built for ARM phones only.
+val targetAbis: List<String>? = (project.findProperty("target-platform") as String?)
+    ?.split(",")
+    ?.map { platform ->
+        when (platform.trim()) {
+            "android-arm" -> "armeabi-v7a"
+            "android-arm64" -> "arm64-v8a"
+            "android-x64" -> "x86_64"
+            "android-x86" -> "x86"
+            else -> throw GradleException("Unknown target platform: $platform")
+        }
+    }
+
 android {
     namespace = "com.humsukhan.humsukhan"
     compileSdk = 37
@@ -36,6 +52,12 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        targetAbis?.let { abis ->
+            ndk {
+                abiFilters.clear()
+                abiFilters.addAll(abis)
+            }
+        }
     }
 
     signingConfigs {
