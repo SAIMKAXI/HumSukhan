@@ -28,7 +28,8 @@ async function transcribe(key: string, audio: Uint8Array, mimeType: string, lang
   const response = await fetch(`https://api.deepgram.com/v1/listen?${params}`, {
     method: "POST",
     headers: { Authorization: `Token ${key}`, "Content-Type": mimeType },
-    body: audio,
+    // Uint8Array.from gave the audio a buffer of its own, exactly its size.
+    body: audio.buffer as ArrayBuffer,
   });
   if (!response.ok) return { ok: false, status: response.status, error: await response.text() };
   const payload = await response.json();
