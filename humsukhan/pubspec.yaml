@@ -53,8 +53,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/logo.png
-    - assets/icon_mark.png
+    - assets/logo.webp
+    - assets/icon_mark.webp
     - assets/environmental/model.int8.onnx
     - assets/environmental/class_labels_indices.csv
   fonts:
