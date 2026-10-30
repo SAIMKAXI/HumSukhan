@@ -51,14 +51,6 @@ void main() {
       }
     });
 
-    test('signInAnonymously returns failure when Supabase is unavailable', () async {
-      final auth = AuthService.instance;
-      if (!auth.isAvailable) {
-        final result = await auth.signInAnonymously();
-        expect(result.success, isFalse);
-      }
-    });
-
     test('signOut does not throw when Supabase is unavailable', () async {
       final auth = AuthService.instance;
       if (!auth.isAvailable) {

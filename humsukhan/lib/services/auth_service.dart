@@ -18,8 +18,12 @@ class AuthService {
 
   static final RegExp _emailPattern =
       RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
-  static final RegExp _strongEightCharPassword =
-      RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8}$');
+  /// Supabase Auth accepts at most 72 characters. Passwords made under the
+  /// old exactly-8 rule still fit.
+  static const int minPasswordLength = 8;
+  static const int maxPasswordLength = 72;
+  static final RegExp _strongPassword =
+      RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])');
 
   static String normalizeEmail(String email) => email.trim().toLowerCase();
 
@@ -33,13 +37,26 @@ class AuthService {
   }
 
   static String? validatePassword(String password) {
-    if (password.length != 8) {
-      return 'Password must be exactly 8 characters.';
+    if (password.length < minPasswordLength || password.length > maxPasswordLength) {
+      return 'Password must be $minPasswordLength to $maxPasswordLength characters.';
     }
-    if (!_strongEightCharPassword.hasMatch(password)) {
+    if (!_strongPassword.hasMatch(password)) {
       return 'Password must contain uppercase, lowercase, number, and special character.';
     }
     return null;
+  }
+
+  /// What to tell the user when create-account refuses a sign-up. Its 400,
+  /// 409 and 429 answers carry a message written for the user (the details
+  /// were refused, the email is taken, too many new accounts); anything else
+  /// is reported generically.
+  @visibleForTesting
+  static String signUpFailureMessage(int status, Object? details) {
+    final message = details is Map ? details['error'] : null;
+    if (const {400, 409, 429}.contains(status) && message is String && message.trim().isNotEmpty) {
+      return message.trim();
+    }
+    return 'Account creation failed. Please try again.';
   }
 
   Future<AuthResult> signUp({
@@ -91,8 +108,8 @@ class AuthService {
     } on AuthException catch (e) {
       return AuthResult.failure(_friendlyAuthMessage(e));
     } on FunctionException catch (e) {
-      debugPrint('Sign up function error: ${e.details}');
-      return AuthResult.failure('Account creation failed. Please try again.');
+      debugPrint('Sign up function error: ${e.status}');
+      return AuthResult.failure(signUpFailureMessage(e.status, e.details));
     } on Exception catch (e) {
       debugPrint('Sign up error: $e');
       return AuthResult.failure('Account creation failed. Check your connection and try again.');
@@ -151,31 +168,6 @@ class AuthService {
       );
     } catch (e) {
       debugPrint('Profile ensure error: $e');
-    }
-  }
-
-  Future<AuthResult> signInAnonymously() async {
-    if (!isAvailable) {
-      return AuthResult.failure(
-        'Authentication unavailable. Please check your connection and try again.',
-      );
-    }
-    try {
-      final response = await _supabase.auth!
-          .signInAnonymously()
-          .timeout(const Duration(seconds: 20));
-      if (response.user != null) {
-        return AuthResult.success(
-          response.user!,
-          hasActiveSession: response.session != null,
-        );
-      }
-      return AuthResult.failure('Anonymous sign in failed.');
-    } on AuthException catch (e) {
-      return AuthResult.failure(_friendlyAuthMessage(e));
-    } on Exception catch (e) {
-      debugPrint('Anonymous sign in error: $e');
-      return AuthResult.failure('Anonymous sign in failed. Check your connection and try again.');
     }
   }
 

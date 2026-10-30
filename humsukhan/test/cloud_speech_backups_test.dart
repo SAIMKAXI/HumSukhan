@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:humsukhan/services/audio/pcm_source.dart';
 import 'package:humsukhan/services/cloud_tts_service.dart';
 import 'package:humsukhan/services/stt/cloud_chunk_stt.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException;
 
 /// [ms] of 16 kHz PCM16 at a constant [level].
 Uint8List tone(int ms, int level) {
@@ -188,6 +189,19 @@ void main() {
         return {'error': 'Text is required', 'status': 400};
       });
       await expectLater(service.synthesize(text: ' ', language: 'english'), throwsA(isA<CloudTtsException>()));
+      expect(tried, ['speech-synthesis']);
+    });
+
+    test('a request over the shared usage limit is not repeated against the backup', () async {
+      final tried = <String>[];
+      final service = CloudTtsService.withInvoker((function, _) async {
+        tried.add(function);
+        throw FunctionException(status: 429, details: {'error': 'Too many requests. Please wait a minute and try again.'});
+      });
+      await expectLater(
+        service.synthesize(text: 'hello', language: 'english'),
+        throwsA(isA<CloudTtsException>().having((e) => e.statusCode, 'statusCode', 429)),
+      );
       expect(tried, ['speech-synthesis']);
     });
 

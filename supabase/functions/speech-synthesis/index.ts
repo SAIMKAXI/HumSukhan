@@ -1,9 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { corsHeaders, errorResponse, HttpError, json, readJson, requireUser } from "../_shared/guard.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// Deepgram's own limit for one request. The app's longest text (a wellbeing
+// idea read aloud) is about 400 characters.
+const MAX_TEXT_CHARS = 2000;
 
 const DEEPGRAM_KEYS = [
   Deno.env.get("DEEPGRAM_API_KEY_1"),
@@ -21,13 +21,6 @@ const SONIOX_KEYS = [
 let deepgramCursor = 0;
 let sonioxCursor = 0;
 
-function corsJson(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 function stripBlockedScript(text: string): string {
   return text
     .replace(/[\u0900-\u097F]+/gu, " ")
@@ -44,10 +37,6 @@ function detectProvider(language: string, text: string): "soniox" | "deepgram" {
   if (normalized === "urdu" || normalized === "roman urdu") return "soniox";
   if (normalized === "auto" && containsUrdu(text)) return "soniox";
   return "deepgram";
-}
-
-function detectSonioxLanguage(language: string, text: string): "ur" {
-  return "ur";
 }
 
 async function synthesizeDeepgram(text: string) {
@@ -127,36 +116,34 @@ function toBase64(bytes: Uint8Array): string {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
-    const auth = req.headers.get("Authorization");
-    if (!auth?.startsWith("Bearer ")) return corsJson({ error: "Unauthorized" }, 401);
-
-    const body = await req.json();
-    const rawText = typeof body?.text === "string" ? body.text.trim() : "";
-    const language = typeof body?.language === "string" ? body.language : "auto";
-    if (!rawText) return corsJson({ error: "Text is required" }, 400);
+    const body = await readJson(req, 16 * 1024);
+    const rawText = typeof body.text === "string" ? body.text.trim() : "";
+    const language = typeof body.language === "string" ? body.language : "auto";
+    if (!rawText) throw new HttpError(400, "Text is required");
+    if (rawText.length > MAX_TEXT_CHARS) throw new HttpError(400, "Text is too long to speak in one request");
 
     const text = stripBlockedScript(rawText);
-    if (!text) return corsJson({ error: "No supported speech text remains after validation" }, 400);
+    if (!text) throw new HttpError(400, "No supported speech text remains after validation");
 
     const normalizedLanguage = language.toLowerCase().trim();
-    if (["hindi", "hi"].includes(normalizedLanguage)) {
-      return corsJson({ error: "Unsupported speech language" }, 400);
-    }
+    if (["hindi", "hi"].includes(normalizedLanguage)) throw new HttpError(400, "Unsupported speech language");
+
+    await requireUser(req, "speech");
 
     const provider = detectProvider(normalizedLanguage, text);
     const result = provider === "soniox"
       ? await synthesizeSoniox(text)
       : await synthesizeDeepgram(text);
 
-    return corsJson({
+    return json({
       provider: result.provider,
       mimeType: result.mimeType,
       audioBase64: toBase64(result.bytes),
     });
   } catch (error) {
-    console.error(error);
-    return corsJson({ error: error instanceof Error ? error.message : "Speech synthesis failed" }, 503);
+    return errorResponse(error, "speech-synthesis error", "Speech synthesis is unavailable right now", 503);
   }
 });

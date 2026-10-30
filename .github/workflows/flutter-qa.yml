@@ -15,6 +15,25 @@ on:
       - '.github/workflows/flutter-qa.yml'
 
 jobs:
+  edge-functions:
+    # Type-checks every Edge Function and runs the security tests (sign-in,
+    # usage limits, size limits, no leaked provider errors) against fakes.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type check
+        run: deno check */index.ts
+      - name: Security tests
+        run: deno test --allow-env --allow-read --allow-net tests/
+
   flutter-qa:
     runs-on: ubuntu-latest
     defaults:
