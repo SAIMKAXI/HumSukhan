@@ -1,7 +1,7 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 2.11.1+43
+version: 2.11.2+44
 
 # Release v2.11.1
 # Smaller download: the APK carries code for ARM phones only.
@@ -53,8 +53,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/logo.png
-    - assets/icon_mark.png
+    - assets/logo.webp
+    - assets/icon_mark.webp
     - assets/environmental/model.int8.onnx
     - assets/environmental/class_labels_indices.csv
   fonts:

@@ -26,13 +26,13 @@ class BrandLogo extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      // assets/icon_mark.png is the adaptive-icon foreground layer, so it
+      // assets/icon_mark.webp is the adaptive-icon foreground layer, so it
       // carries the 108dp-canvas safe-zone padding. Android shows only the
       // centre 72dp of that canvas, so scale by 108/72 to reproduce the
       // launcher icon's framing instead of a mark that looks too small.
       child: Transform.scale(
         scale: 1.5,
-        child: Image.asset('assets/icon_mark.png', fit: BoxFit.contain),
+        child: Image.asset('assets/icon_mark.webp', fit: BoxFit.contain),
       ),
     );
   }

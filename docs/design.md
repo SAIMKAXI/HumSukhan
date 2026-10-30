@@ -37,12 +37,12 @@ A quill/feather inside a speech bubble with a three-dot ellipsis — "writing" a
 
 | Asset | Purpose |
 |---|---|
-| `assets/logo.png` | Full lockup (mark + Urdu wordmark), transparent — large contexts only |
-| `assets/icon_mark.png` | Mark only, transparent, safe-zone padded — small badges |
+| `assets/logo.webp` | Full lockup (mark + Urdu wordmark), transparent — large contexts only |
+| `assets/icon_mark.webp` | Mark only, transparent, safe-zone padded — small badges |
 | `mipmap-anydpi-v26/ic_launcher_{background,foreground,monochrome}.png` | Android adaptive icon layers |
 
 **Rule:** the wordmark is illegible below ~120dp. Anything smaller uses
-`icon_mark.png`. The in-app badge (`BrandLogo`) scales the mark by `108/72` to
+`icon_mark.webp`. The in-app badge (`BrandLogo`) scales the mark by `108/72` to
 reproduce the launcher icon's framing, because that asset carries adaptive-icon
 safe-zone padding.
 

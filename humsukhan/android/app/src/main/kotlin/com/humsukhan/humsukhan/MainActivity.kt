@@ -8,7 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
-import android.os.Build
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -66,12 +66,11 @@ class MainActivity : FlutterActivity() {
         if (receiverRegistered) return
         val filter = IntentFilter(EnvironmentalMonitoringState.ACTION_STATE)
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(environmentalReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                @Suppress("DEPRECATION")
-                registerReceiver(environmentalReceiver, filter)
-            }
+            // Not exported on every Android version: before Android 13 a plain
+            // registerReceiver accepts broadcasts from any app, which could
+            // then show the user fake sound alerts. ContextCompat guards older
+            // versions with a permission only this app holds.
+            ContextCompat.registerReceiver(this, environmentalReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
             receiverRegistered = true
         } catch (e: Exception) {
             receiverRegistered = false

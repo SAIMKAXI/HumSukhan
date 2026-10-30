@@ -72,7 +72,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     if (mounted) setState(() => _currentPage = index);
                   },
                   children: [
-                    _buildPage(context, imagePath: 'assets/logo.png', title: strings.onboardingWelcome, subtitle: strings.onboardingWelcomeDesc),
+                    _buildPage(context, imagePath: 'assets/logo.webp', title: strings.onboardingWelcome, subtitle: strings.onboardingWelcomeDesc),
                     _buildPage(context, icon: Icons.chat_bubble_outline, title: strings.onboardingEveryday, subtitle: strings.onboardingEverydayDesc),
                     _buildPage(context, icon: Icons.work_outline, title: strings.onboardingProfessional, subtitle: strings.onboardingProfessionalDesc),
                     _buildPage(context, icon: Icons.volume_up, title: strings.onboardingEnvironmental, subtitle: strings.onboardingEnvironmentalDesc),

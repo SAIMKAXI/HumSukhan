@@ -1,11 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+import { corsHeaders, errorResponse, HttpError, json, readJson, requireUser } from "../_shared/guard.ts";
 
 // Tried in order; a model Google has retired for this key answers 404 and
 // the next is used. GEMINI_MODEL (comma-separated) overrides the list.
@@ -14,6 +8,10 @@ const GEMINI_MODELS = (Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash,gemini-
   .map((m) => m.trim())
   .filter(Boolean);
 const MAX_TRANSCRIPT_CHARS = 60000;
+// The app sends the whole transcript and only the first MAX_TRANSCRIPT_CHARS
+// are used; 4 MB is hundreds of hours of speech.
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+const MAX_TITLE_CHARS = 200;
 const MAX_SUMMARY_BULLETS = 6;
 const MAX_ACTION_ITEMS = 8;
 const MAX_DEADLINES = 8;
@@ -36,9 +34,6 @@ const DISCUSSION_PREFIXES = [
   "considered", "explored", "covered", "talked through", "agreed", "decided",
   "the deadline is", "deadline:", "context:", "background:",
 ];
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: corsHeaders });
 
 const cleanString = (value: unknown): string => String(value ?? "")
   .replace(/\s+/g, " ")
@@ -154,18 +149,21 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
-    const auth = req.headers.get("Authorization");
-    if (!auth?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
+    const body = await readJson(req, MAX_BODY_BYTES);
+    const transcript = typeof body.transcript === "string" ? body.transcript.trim() : "";
+    if (!transcript) throw new HttpError(400, "Transcript is required");
 
-    const body = await req.json();
-    const transcript = typeof body?.transcript === "string" ? body.transcript.trim() : "";
-    if (!transcript) return json({ error: "Transcript is required" }, 400);
+    await requireUser(req, "insights");
 
     const apiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
-    if (!apiKey) return json({ error: "AI service is not configured" }, 503);
+    if (!apiKey) throw new HttpError(503, "AI service is not configured");
 
-    const sessionTitle = String(body?.sessionTitle ?? "Untitled").trim() || "Untitled";
-    const sessionType = String(body?.sessionType ?? "class").toLowerCase();
+    // The title goes inside the prompt in quotes; keep it one short line.
+    const sessionTitle = (typeof body.sessionTitle === "string" ? body.sessionTitle : "")
+      .replace(/[\s"]+/g, " ")
+      .trim()
+      .slice(0, MAX_TITLE_CHARS) || "Untitled";
+    const sessionType = String(body.sessionType ?? "class").toLowerCase();
     const typeLabel = sessionType === "meeting"
       ? "meeting"
       : sessionType === "lecture"
@@ -285,7 +283,6 @@ Deno.serve(async (req) => {
 
     return json(insight);
   } catch (error) {
-    console.error(error);
-    return json({ error: "Unable to generate insights" }, 500);
+    return errorResponse(error, "generate-insights-v2 error", "Unable to generate insights");
   }
 });

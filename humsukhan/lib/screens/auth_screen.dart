@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../services/auth_service.dart';
@@ -122,15 +123,15 @@ class _AuthScreenState extends State<AuthScreen> {
               TextField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
-                maxLength: _isSignUp ? 8 : null,
+                inputFormatters: [LengthLimitingTextInputFormatter(AuthService.maxPasswordLength)],
                 textInputAction: _isSignUp ? TextInputAction.next : TextInputAction.done,
                 autofillHints: _isSignUp ? const [AutofillHints.newPassword] : const [AutofillHints.password],
                 decoration: InputDecoration(
                   labelText: isUrdu ? 'پاس ورڈ' : 'Password',
                   helperText: _isSignUp
                       ? (isUrdu
-                          ? '8 حروف: بڑے/چھوٹے حروف، نمبر اور خاص علامت۔'
-                          : '8 characters with upper/lowercase, number and special character.')
+                          ? 'کم از کم 8 حروف: بڑے/چھوٹے حروف، نمبر اور خاص علامت۔'
+                          : 'At least 8 characters with upper/lowercase, number and special character.')
                       : null,
                   prefixIcon: const Icon(Icons.lock_outline_rounded),
                   suffixIcon: IconButton(
@@ -328,14 +329,14 @@ class _AuthScreenState extends State<AuthScreen> {
               Text(isUrdu ? 'نیا پاس ورڈ مقرر کریں' : 'Set a new password', style: theme.textTheme.displaySmall),
               const SizedBox(height: 10),
               Text(
-                isUrdu ? 'اپنے اکاؤنٹ کے لیے نیا 8 حروف کا مضبوط پاس ورڈ منتخب کریں۔' : 'Choose a new 8-character strong password for your account.',
+                isUrdu ? 'اپنے اکاؤنٹ کے لیے کم از کم 8 حروف کا نیا مضبوط پاس ورڈ منتخب کریں۔' : 'Choose a new strong password of at least 8 characters for your account.',
                 style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant, height: 1.5),
               ),
               const SizedBox(height: 28),
               TextField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
-                maxLength: 8,
+                inputFormatters: [LengthLimitingTextInputFormatter(AuthService.maxPasswordLength)],
                 autofillHints: const [AutofillHints.newPassword],
                 decoration: InputDecoration(
                   labelText: isUrdu ? 'نیا پاس ورڈ' : 'New password',
@@ -351,7 +352,7 @@ class _AuthScreenState extends State<AuthScreen> {
               TextField(
                 controller: _confirmPasswordController,
                 obscureText: _obscureConfirmPassword,
-                maxLength: 8,
+                inputFormatters: [LengthLimitingTextInputFormatter(AuthService.maxPasswordLength)],
                 textInputAction: TextInputAction.done,
                 decoration: InputDecoration(
                   labelText: isUrdu ? 'پاس ورڈ کی تصدیق' : 'Confirm password',

@@ -68,9 +68,11 @@ class CloudTtsService {
     throw failure!;
   }
 
+  // Both functions share one per-user quota, so a request over the limit
+  // (429) or too large (413) would be refused by the backup too.
   static bool _worthRetrying(CloudTtsException e) {
     final status = e.statusCode;
-    return status != 400 && status != 401 && status != 403 && e.message != _noSession;
+    return !const {400, 401, 403, 413, 429}.contains(status) && e.message != _noSession;
   }
 
   static const _noSession = 'Authenticated Supabase session unavailable';

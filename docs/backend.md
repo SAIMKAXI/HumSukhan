@@ -4,7 +4,7 @@ HumSukhan uses [Supabase](https://supabase.com) for authentication, a small Post
 
 ## Database
 
-Four tables, each protected by row-level security so that a signed-in user can read and write only their own rows.
+Four tables, each protected by row-level security so that a signed-in user can read and write only their own rows. Check constraints cap the size of every text and JSON column well above what the app writes, so one account cannot fill the database.
 
 | Table | Contents |
 |---|---|
@@ -16,6 +16,27 @@ Four tables, each protected by row-level security so that a signed-in user can r
 Professional transcripts, sessions and folders are not stored in Supabase. They stay on the phone, and an insight refers to its session only by the session's ID. Conversational transcripts are never stored anywhere.
 
 The schema is defined by the SQL files in `supabase/migrations/`, applied in order.
+
+### Usage limits
+
+The `private.request_counts` table counts requests per user per minute and per day. Nothing outside the database can read it.
+
+- **`use_request_quota(action)`** is called by the paid Edge Functions with the caller's own token. It answers:
+  - `ok`
+  - `limited`
+  - `signed_out`, for no user or an anonymous user. The anon key may not call it at all.
+- **`use_signup_quota(address)`** is callable only with the service role. It limits sign-ups:
+  - 5 an hour and 20 a day from one network address
+  - 60 an hour in total
+
+| Action | Per minute | Per day |
+|---|---|---|
+| `transcribe` | 60 | 5000 |
+| `speech` | 60 | 3000 |
+| `insights` | 10 | 200 |
+| `deepgram-token` | 20 | 300 |
+
+To change a limit, add a migration that replaces `use_request_quota`.
 
 ## Edge Functions
 
@@ -29,7 +50,23 @@ The schema is defined by the SQL files in `supabase/migrations/`, applied in ord
 | `speech-synthesis-v2` | Second voice service, used if `speech-synthesis` fails | Deepgram (English), Soniox (Urdu) |
 | `generate-insights-v2` | Turn a session transcript into insights | Google Gemini Flash |
 
-Every function requires a valid Supabase token. The app calls `create-account` with the anon key and the others with the signed-in user's session.
+The app calls `create-account` with the anon key, and the others with the signed-in user's session.
+
+The Functions gateway accepts the public anon key, so each paid function also checks the caller itself, in `supabase/functions/_shared/guard.ts`. Before calling a provider, it:
+
+- refuses anyone who is not a signed-in, non-anonymous user (401)
+- applies the usage limits above (429)
+- refuses bodies, audio and text over a size limit (413 or 400)
+
+It returns only its own error messages; provider responses and internal errors go to the function log.
+
+`create-account`:
+
+- applies the sign-up limit
+- accepts passwords of 8 to 72 characters with upper and lower case letters, a digit and a symbol
+- caps names at 100 characters
+
+`deno test --allow-env --allow-read --allow-net supabase/functions/tests/` runs the security tests, which CI also runs. Deploy with `supabase functions deploy`. Functions that share `_shared/` must be redeployed after it changes.
 
 ## Secrets
 
@@ -46,5 +83,7 @@ Set these in the Supabase Dashboard under **Edge Functions → Secrets**. Never 
 Where several keys of one provider are set, the functions try them in turn: a key that is rejected, out of credit or rate-limited hands over to the next.
 
 ## Authentication settings
+
+On the Pro plan or above, turn on **Authentication → Providers → Email → Prevent use of leaked passwords**, so passwords found in known breaches are refused.
 
 Password reset emails send the user back to the app through the deep link `com.humsukhan.humsukhan://login-callback/`. Add it under **Authentication → URL Configuration → Redirect URLs**; without it, Supabase sends the user to the project's Site URL instead.
