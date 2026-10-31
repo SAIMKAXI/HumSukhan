@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_typography.dart';
 
 class BrandLogo extends StatelessWidget {
   final double size;
@@ -168,7 +169,7 @@ class PrivacyStrip extends StatelessWidget {
         children: [
           Icon(Icons.verified_user_outlined, size: 18, color: colors.primary),
           const SizedBox(width: 12),
-          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant, height: 1.45))),
+          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant, height: AppTypography.latinLineHeight(context, 1.45)))),
         ],
       ),
     );

@@ -9,6 +9,7 @@ import '../widgets/quick_reply_manager.dart';
 import '../widgets/speakable_caption_bubble.dart';
 import '../l10n/app_strings.dart';
 import '../utils/urdu_text.dart';
+import '../theme/app_typography.dart';
 
 class EverydayScreen extends StatefulWidget {
   const EverydayScreen({super.key});
@@ -84,8 +85,8 @@ class _EverydayScreenState extends State<EverydayScreen> {
         actions: [
           if (conv.state == ConversationState.active)
             Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Center(child: StatusIndicator(label: _engine.statusLabel, color: theme.colorScheme.primary, isActive: conv.isListening, icon: conv.isListening ? Icons.mic : Icons.mic_none)),
+              padding: const EdgeInsetsDirectional.only(end: 12),
+              child: Center(child: StatusIndicator(label: s.message(_engine.statusLabel), color: theme.colorScheme.primary, isActive: conv.isListening, icon: conv.isListening ? Icons.mic : Icons.mic_none)),
             ),
         ],
       ),
@@ -140,9 +141,9 @@ class _EverydayScreenState extends State<EverydayScreen> {
                           textDirection: inputIsUrdu ? TextDirection.rtl : TextDirection.ltr,
                           textAlign: inputIsUrdu ? TextAlign.right : TextAlign.left,
                           textCapitalization: TextCapitalization.sentences,
-                          style: TextStyle(fontFamily: inputIsUrdu ? 'NotoNastaliqUrdu' : null, fontSize: 17, height: 1.45),
+                          style: inputIsUrdu ? AppTypography.urduStyle(const TextStyle(fontSize: 17)) : const TextStyle(fontSize: 17, height: 1.45),
                           decoration: InputDecoration(
-                            hintText: appIsUrdu ? 'اردو یا انگریزی میں جواب لکھیں' : 'Type in Urdu or English',
+                            hintText: s.typeReplyHint,
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTokens.radiusFull), borderSide: BorderSide.none),
                             filled: true,
                             fillColor: theme.cardColor,
@@ -159,7 +160,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     ),
                     const SizedBox(width: 6),
                     IconButton.filled(
-                      tooltip: speech.isSpeaking ? 'Stop speaking' : 'Speak response',
+                      tooltip: speech.isSpeaking ? s.stopSpeaking : s.speakResponse,
                       icon: Icon(speech.isSpeaking ? Icons.stop : Icons.volume_up),
                       // Stopping playback must remain possible even while the
                       // conversation engine reports its speaking state as busy.
@@ -171,7 +172,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
                     ),
                     const SizedBox(width: 2),
                     IconButton.filled(
-                      tooltip: 'Send response',
+                      tooltip: s.sendResponse,
                       icon: const Icon(Icons.send),
                       onPressed: _engine.isBusy || typedResponse.isEmpty ? null : () => _sendTypedText(_textController.text),
                     ),
@@ -187,6 +188,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
   }
 
   Widget _buildSpeakerControls(BuildContext context, ConversationProvider conv, SettingsProvider settings, ThemeData theme) {
+    final s = AppStrings.of(context);
     final busy = _engine.isBusy;
     final listening = conv.isListening;
     return Material(
@@ -194,11 +196,11 @@ class _EverydayScreenState extends State<EverydayScreen> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
         child: Column(children: [
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(listening ? Icons.record_voice_over : Icons.mic_none, color: theme.colorScheme.primary), const SizedBox(width: 8), Flexible(child: Text(_engine.statusLabel, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700), textAlign: TextAlign.center))]),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(listening ? Icons.record_voice_over : Icons.mic_none, color: theme.colorScheme.primary), const SizedBox(width: 8), Flexible(child: Text(s.message(_engine.statusLabel), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700), textAlign: TextAlign.center))]),
           const SizedBox(height: 10),
           Semantics(
             button: true,
-            label: listening ? 'Stop speaker microphone' : 'Start speaker microphone',
+            label: listening ? s.stopSpeakerMic : s.startSpeakerMic,
             child: InkResponse(
               radius: 52,
               onTap: busy ? null : _toggleSpeakerListening,
@@ -210,9 +212,9 @@ class _EverydayScreenState extends State<EverydayScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text('Bilingual speaker captions', style: theme.textTheme.labelLarge), const SizedBox(width: 8), PopupMenuButton<int>(tooltip: 'Pause before ending utterance', initialValue: _engine.pauseThreshold.inMilliseconds, onSelected: (value) => _engine.setPauseThreshold(Duration(milliseconds: value)), itemBuilder: (context) => const [PopupMenuItem(value: 1200, child: Text('Short pause · 1.2 s')), PopupMenuItem(value: 1700, child: Text('Natural pause · 1.7 s')), PopupMenuItem(value: 2500, child: Text('Patient pause · 2.5 s')), PopupMenuItem(value: 0, child: Text('Manual only · no auto-stop'))], icon: Icon(Icons.more_time, size: 20, color: theme.colorScheme.primary))]),
-          if (_engine.state == ConversationEngineState.waitingForTurnEnd) Padding(padding: const EdgeInsets.only(top: 4), child: Text('Pause detected — speak again to continue', style: theme.textTheme.bodySmall, textAlign: TextAlign.center)),
-          if (_engine.isManualPauseMode) Padding(padding: const EdgeInsets.only(top: 4), child: Text('Manual mode — tap the microphone to end the utterance', style: theme.textTheme.bodySmall, textAlign: TextAlign.center)),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text(s.bilingualCaptions, style: theme.textTheme.labelLarge), const SizedBox(width: 8), PopupMenuButton<int>(tooltip: s.pauseBeforeEnding, initialValue: _engine.pauseThreshold.inMilliseconds, onSelected: (value) => _engine.setPauseThreshold(Duration(milliseconds: value)), itemBuilder: (context) => [PopupMenuItem(value: 1200, child: Text(s.pauseShort)), PopupMenuItem(value: 1700, child: Text(s.pauseNatural)), PopupMenuItem(value: 2500, child: Text(s.pausePatient)), PopupMenuItem(value: 0, child: Text(s.pauseManual))], icon: Icon(Icons.more_time, size: 20, color: theme.colorScheme.primary))]),
+          if (_engine.state == ConversationEngineState.waitingForTurnEnd) Padding(padding: const EdgeInsets.only(top: 4), child: Text(s.pauseDetected, style: theme.textTheme.bodySmall, textAlign: TextAlign.center)),
+          if (_engine.isManualPauseMode) Padding(padding: const EdgeInsets.only(top: 4), child: Text(s.manualModeNote, style: theme.textTheme.bodySmall, textAlign: TextAlign.center)),
         ]),
       ),
     );
@@ -228,9 +230,10 @@ class _EverydayScreenState extends State<EverydayScreen> {
       // caption its own voice, and resumes it afterwards.
       await _engine.speakReply(text, language: language);
     } catch (e) {
+      debugPrint('Speaking the reply failed: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not speak this message: $e')),
+        SnackBar(content: Text(AppStrings.of(context).speakFailed)),
       );
     }
   }
@@ -246,7 +249,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
 
   Widget _buildIdleState(BuildContext context, AppStrings s) {
     final theme = Theme.of(context);
-    return Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.chat_bubble_outline, size: 80, color: theme.colorScheme.outlineVariant), const SizedBox(height: 24), Text(s.startConversation, style: theme.textTheme.headlineMedium, textAlign: TextAlign.center), const SizedBox(height: 12), Text('Start a conversation, then tap the microphone whenever the speaker talks.', style: theme.textTheme.bodyLarge, textAlign: TextAlign.center), const SizedBox(height: 32), PrimaryActionButton(label: s.startListening, icon: Icons.chat, onPressed: _startConversation)])));
+    return Center(child: SingleChildScrollView(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.chat_bubble_outline, size: 80, color: theme.colorScheme.outlineVariant), const SizedBox(height: 24), Text(s.startConversation, style: theme.textTheme.headlineMedium, textAlign: TextAlign.center), const SizedBox(height: 12), Text(s.startConversationHint, style: theme.textTheme.bodyLarge, textAlign: TextAlign.center), const SizedBox(height: 32), PrimaryActionButton(label: s.startListening, icon: Icons.chat, onPressed: _startConversation)])));
   }
 
   Widget _buildCaptionArea(BuildContext context, ConversationProvider conv, SettingsProvider settings, AppStrings s) {
@@ -256,7 +259,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
       Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: Row(children: [LanguageBadge(language: conv.currentLanguage), const SizedBox(width: 8), OfflineBadge(isOnline: context.watch<ConnectivityProvider>().isOnline)])),
       Expanded(
         child: captions.isEmpty && conv.currentPartial == null
-            ? Center(child: Text('Waiting for the speaker…', style: theme.textTheme.bodyLarge))
+            ? Center(child: Text(s.waitingForSpeaker, style: theme.textTheme.bodyLarge))
             : ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),

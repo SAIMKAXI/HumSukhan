@@ -11,6 +11,7 @@ import '../modules/wellbeing/services/mood_patterns.dart';
 import '../providers/wellbeing_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/modern_ui.dart';
+import '../theme/app_typography.dart';
 import 'wellbeing_help_screen.dart';
 
 String moodLabel(AppStrings s, Mood mood) => switch (mood) {
@@ -253,7 +254,7 @@ class _Notice extends StatelessWidget {
       children: [
         Icon(icon, size: 18, color: colors.onSurfaceVariant),
         const SizedBox(width: 10),
-        Expanded(child: Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant, height: 1.45))),
+        Expanded(child: Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant, height: AppTypography.latinLineHeight(context, 1.45)))),
       ],
     );
   }
@@ -277,7 +278,7 @@ class _IntroCard extends StatelessWidget {
           children: [
             Text(s.wellbeingIntroTitle, style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
-            Text(s.wellbeingIntroBody, style: theme.textTheme.bodyMedium?.copyWith(height: 1.5)),
+            Text(s.wellbeingIntroBody, style: theme.textTheme.bodyMedium?.copyWith(height: AppTypography.latinLineHeight(context, 1.5))),
             const SizedBox(height: 16),
             FilledButton.icon(
               icon: const Icon(Icons.notifications_active_outlined),
@@ -303,48 +304,51 @@ class MoodPicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final colors = Theme.of(context).colorScheme;
-    return Row(
-      // Low to high reads left to right in either language.
-      textDirection: TextDirection.ltr,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        for (final mood in Mood.values)
-          Expanded(
-            child: Semantics(
-              button: true,
-              selected: selected == mood,
-              label: moodLabel(s, mood),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(AppTokens.radiusLg),
-                onTap: () => onSelected(mood),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(AppTokens.radiusLg),
-                    color: selected == mood ? colors.primary.withValues(alpha: .14) : null,
-                    border: Border.all(color: selected == mood ? colors.primary : colors.outline.withValues(alpha: .4), width: selected == mood ? 2 : 1),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ExcludeSemantics(child: Text(mood.face, style: const TextStyle(fontSize: 30))),
-                      const SizedBox(height: 4),
-                      ExcludeSemantics(
-                        child: Text(
-                          moodLabel(s, mood),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          style: Theme.of(context).textTheme.labelSmall,
+    // Every face the same height, even when a label wraps to two lines.
+    return IntrinsicHeight(
+      child: Row(
+        // Low to high follows the reading direction: from the right in Urdu.
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final mood in Mood.values)
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: selected == mood,
+                label: moodLabel(s, mood),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+                  onTap: () => onSelected(mood),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+                      color: selected == mood ? colors.primary.withValues(alpha: .14) : null,
+                      border: Border.all(color: selected == mood ? colors.primary : colors.outline.withValues(alpha: .4), width: selected == mood ? 2 : 1),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ExcludeSemantics(child: Text(mood.face, style: const TextStyle(fontSize: 30))),
+                        const SizedBox(height: 4),
+                        ExcludeSemantics(
+                          child: Text(
+                            moodLabel(s, mood),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -550,11 +554,11 @@ class MoodChart extends StatelessWidget {
     final s = AppStrings.of(context);
     final dense = days.length > 10;
     final dayFormat = DateFormat.E(s.isUrdu ? 'ur' : 'en');
-    return SizedBox(
-      height: 132,
+    // At least this tall, and taller when large text needs the room.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 132),
       child: Row(
-        // Time runs left to right in either language.
-        textDirection: TextDirection.ltr,
+        // Time follows the reading direction: today is on the left in Urdu.
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           for (final day in days)
@@ -565,7 +569,7 @@ class MoodChart extends StatelessWidget {
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: dense ? 1 : 4),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       if (day.average != null && !dense)
                         ExcludeSemantics(child: Text(Mood.fromScore(day.average!.round()).face, style: const TextStyle(fontSize: 16))),
@@ -607,7 +611,7 @@ class _HistoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final theme = Theme.of(context);
-    final when = DateFormat.MMMd(s.isUrdu ? 'ur' : 'en').add_jm().format(entry.at);
+    final when = '${DateFormat.MMMd(s.isUrdu ? 'ur' : 'en').format(entry.at)} ${s.clockTime(entry.at.hour, entry.at.minute)}';
     final words = [for (final tag in entry.tags) tagLabel(s, tag)].join(' · ');
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -636,7 +640,6 @@ class _ReminderSettings extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final theme = Theme.of(context);
-    final localizations = MaterialLocalizations.of(context);
     final times = wellbeing.reminderTimes;
     final error = wellbeing.reminderError;
     return Column(
@@ -662,7 +665,7 @@ class _ReminderSettings extends StatelessWidget {
               leading: const Icon(Icons.schedule_rounded),
               title: Text(s.reminderTime),
               trailing: Text(
-                localizations.formatTimeOfDay(TimeOfDay(hour: times[i].hour, minute: times[i].minute)),
+                s.clockTime(times[i].hour, times[i].minute),
                 style: theme.textTheme.titleMedium,
               ),
               onTap: () => onPickTime(i, times[i]),

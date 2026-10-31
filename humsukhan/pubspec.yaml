@@ -61,6 +61,8 @@ flutter:
     - family: NotoNastaliqUrdu
       fonts:
         - asset: fonts/noto_sans/NotoNastaliqUrdu-Regular.ttf
+        - asset: fonts/noto_sans/NotoNastaliqUrdu-Bold.ttf
+          weight: 700
     - family: NotoSans
       fonts:
         - asset: fonts/noto_sans/NotoSans-Regular.ttf

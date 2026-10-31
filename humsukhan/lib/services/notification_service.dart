@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../modules/environmental_alerts/models/environmental_sound.dart';
 
 class NotificationService {
   static final NotificationService instance = NotificationService._();
@@ -114,12 +117,17 @@ class NotificationService {
   Future<void> showEnvironmentalAlert({required String type, required String severity, required double confidence}) async {
     await initialize(requestPermission: false);
     if (!_initialized) return;
+    // Alerts can be raised by the background monitor, outside any screen, so
+    // the app language is read from the saved settings.
+    final urdu = (await SharedPreferences.getInstance()).getString('appLanguage') == 'ur';
+    final percent = (confidence * 100).round();
+    final urgent = severity == 'critical';
     final importance = severity == 'critical' ? Importance.max : Importance.high;
     final priority = severity == 'critical' ? Priority.max : Priority.high;
     final androidDetails = AndroidNotificationDetails(
       'environmental_alerts',
-      'Environmental Alerts',
-      channelDescription: 'Detected environmental sounds and accessibility alerts.',
+      urdu ? 'ماحولیاتی الرٹس' : 'Environmental Alerts',
+      channelDescription: urdu ? 'پہچانی گئی ماحولیاتی آوازیں اور رسائی کے الرٹس۔' : 'Detected environmental sounds and accessibility alerts.',
       importance: importance,
       priority: priority,
       category: AndroidNotificationCategory.alarm,
@@ -133,8 +141,8 @@ class NotificationService {
     );
     await _plugin.show(
       id: DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
-      title: '$type detected',
-      body: '${(confidence * 100).round()}% confidence${severity == 'critical' ? ' — urgent' : ''}',
+      title: urdu ? '${EnvironmentalSound.nameFor(type, urdu: true)} کی آواز پہچانی گئی' : '$type detected',
+      body: urdu ? '$percent% اعتماد${urgent ? ' — فوری' : ''}' : '$percent% confidence${urgent ? ' — urgent' : ''}',
       notificationDetails: NotificationDetails(android: androidDetails, iOS: appleDetails, macOS: appleDetails),
     );
   }

@@ -72,12 +72,31 @@ guarantee contrast ratios.
 
 | Script | Family | Notes |
 |---|---|---|
-| Latin | `NotoSans` | Default |
-| Urdu / Arabic | `NotoNastaliqUrdu` | Nastaliq needs vertical room |
+| Latin | `NotoSans` | Fallback: Nastaliq |
+| Urdu / Arabic | `NotoNastaliqUrdu` (Regular 400, Bold 700) | Fallback: Noto Sans |
 
-Urdu applies `height: 1.65` to **every** text style (`_withUrduMetrics` in
-`main.dart`). Nastaliq descenders clip at normal line height — this is not
-optional polish.
+One pair of typefaces everywhere: each script always renders in its own face,
+whichever language the app is in, so nothing falls back to a system font.
+`AppTypography` (`lib/theme/app_typography.dart`) owns this, and
+`AppTheme.forApp` applies it to every text style the theme hands out (text
+themes, app bar, navigation bar, buttons, chips, snack bars).
+
+Urdu metrics, applied to every style in Urdu and to any Urdu run in English:
+
+- **Line height 2.0** with even leading. Nastaliq rises and falls far beyond
+  Latin, so lines collide or clip at Latin heights.
+- **Word spacing 0.25 × font size.** The font's own word space is so narrow
+  that neighbouring words read as one ("اورپیشہ").
+
+Rules:
+
+- A style that sets its own line height uses
+  `AppTypography.latinLineHeight(context, h)`, which yields to the Urdu line
+  height in Urdu.
+- Text whose script is known only at run time (captions, notes, the composer)
+  uses `AppTypography.forText` or `urduStyle`.
+- Clock times go through `AppStrings.clockTime`: Urdu names the part of the
+  day (صبح، دوپہر، شام، رات) because the Urdu locale data has only Latin AM/PM.
 
 Scale (`AppTokens`): `captionSmall 12 · caption 13 · body 15 · bodyLarge 17 ·
 title 20 · headline 28 · display 32`.
@@ -216,6 +235,19 @@ replies · default retention · reset settings · about.
 3. The composer follows *typed* content, not app language.
 4. Language classification is displayed, never silently corrected.
 5. Devanagari is stripped before display and never treated as Urdu.
+6. Layout uses start and end (`EdgeInsetsDirectional`, `AlignmentDirectional`,
+   `TextAlign.start`), so it mirrors in Urdu. Left and right appear only where
+   chosen from the script of a piece of text. `test/urdu/rtl_source_test.dart`
+   enforces this.
+7. Nothing shown in Urdu is English. Messages from providers, services and
+   Supabase go through `AppStrings.message`, which translates them or falls
+   back to a general Urdu error; the Android notification and tile strings
+   follow the app language too (`NativeStrings.kt`). English that is meant to
+   be English (the English half of a bilingual card, the language's own name)
+   carries `locale: Locale('en')`.
+8. `test/urdu/` opens every screen, dialog and sheet in Urdu on a 360×640
+   phone at text scale 1.0 and 1.3 and fails on any English or any overflow.
+   `urdu_screenshots_test.dart` renders them all for review on request.
 
 ---
 

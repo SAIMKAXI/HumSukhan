@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../l10n/app_strings.dart';
 import '../providers/providers.dart';
 import '../services/auth_service.dart';
 import '../widgets/reusable_widgets.dart';
 import '../widgets/modern_ui.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_typography.dart';
 
 class AuthScreen extends StatefulWidget {
   final bool recoveryMode;
@@ -80,7 +82,7 @@ class _AuthScreenState extends State<AuthScreen> {
               const SizedBox(height: 48),
               Text(title, style: theme.textTheme.displaySmall),
               const SizedBox(height: 10),
-              Text(desc, style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant, height: 1.5)),
+              Text(desc, style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant, height: AppTypography.latinLineHeight(context, 1.5))),
               const SizedBox(height: 28),
               Container(
                 padding: const EdgeInsets.all(4),
@@ -135,7 +137,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       : null,
                   prefixIcon: const Icon(Icons.lock_outline_rounded),
                   suffixIcon: IconButton(
-                    tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                    tooltip: _obscurePassword ? AppStrings.of(context).showPassword : AppStrings.of(context).hidePassword,
                     onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                     icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                   ),
@@ -153,7 +155,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 ),
               ],
-              if (auth.error != null) _errorBanner(context, auth.error!),
+              if (auth.error != null) _errorBanner(context, AppStrings.of(context).message(auth.error!)),
               const SizedBox(height: 12),
               PrimaryActionButton(
                 label: auth.isLoading
@@ -279,7 +281,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 isUrdu
                     ? 'ہم آپ کو پاس ورڈ تبدیل کرنے کے لیے ری سیٹ لنک بھیجیں گے۔'
                     : 'We’ll send you a secure link to choose a new password.',
-                style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant, height: 1.5),
+                style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant, height: AppTypography.latinLineHeight(context, 1.5)),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 28),
@@ -293,7 +295,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   prefixIcon: const Icon(Icons.mail_outline_rounded),
                 ),
               ),
-              if (auth.error != null) _errorBanner(context, auth.error!),
+              if (auth.error != null) _errorBanner(context, AppStrings.of(context).message(auth.error!)),
               const SizedBox(height: 20),
               PrimaryActionButton(
                 label: auth.isLoading ? (isUrdu ? 'بھیجا جا رہا ہے…' : 'Sending…') : (isUrdu ? 'ری سیٹ لنک بھیجیں' : 'Send reset link'),
@@ -330,7 +332,7 @@ class _AuthScreenState extends State<AuthScreen> {
               const SizedBox(height: 10),
               Text(
                 isUrdu ? 'اپنے اکاؤنٹ کے لیے کم از کم 8 حروف کا نیا مضبوط پاس ورڈ منتخب کریں۔' : 'Choose a new strong password of at least 8 characters for your account.',
-                style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant, height: 1.5),
+                style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant, height: AppTypography.latinLineHeight(context, 1.5)),
               ),
               const SizedBox(height: 28),
               TextField(
@@ -343,6 +345,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   helperText: isUrdu ? 'بڑے/چھوٹے حروف، نمبر اور خاص علامت۔' : 'Uppercase, lowercase, number and special character.',
                   prefixIcon: const Icon(Icons.lock_outline_rounded),
                   suffixIcon: IconButton(
+                    tooltip: _obscurePassword ? AppStrings.of(context).showPassword : AppStrings.of(context).hidePassword,
                     onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                     icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                   ),
@@ -358,12 +361,13 @@ class _AuthScreenState extends State<AuthScreen> {
                   labelText: isUrdu ? 'پاس ورڈ کی تصدیق' : 'Confirm password',
                   prefixIcon: const Icon(Icons.lock_reset_outlined),
                   suffixIcon: IconButton(
+                    tooltip: _obscureConfirmPassword ? AppStrings.of(context).showPassword : AppStrings.of(context).hidePassword,
                     onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
                     icon: Icon(_obscureConfirmPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                   ),
                 ),
               ),
-              if (auth.error != null) _errorBanner(context, auth.error!),
+              if (auth.error != null) _errorBanner(context, AppStrings.of(context).message(auth.error!)),
               const SizedBox(height: 20),
               PrimaryActionButton(
                 label: auth.isLoading ? (isUrdu ? 'اپ ڈیٹ ہو رہا ہے…' : 'Updating…') : (isUrdu ? 'پاس ورڈ اپ ڈیٹ کریں' : 'Update password'),

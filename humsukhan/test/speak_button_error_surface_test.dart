@@ -11,6 +11,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:humsukhan/l10n/app_strings.dart';
 
 import 'package:humsukhan/models/models.dart';
 import 'package:humsukhan/providers/providers.dart';
@@ -34,6 +35,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: const [AppStrings.delegate],
         home: ChangeNotifierProvider<SpeechProvider>.value(
           value: speech,
           child: Scaffold(
@@ -42,6 +44,7 @@ void main() {
         ),
       ),
     );
+    await tester.pump();
 
     expect(find.byTooltip('Speak this message'), findsOneWidget);
     await tester.tap(find.byTooltip('Speak this message'));

@@ -23,7 +23,7 @@ class HomeScreen extends StatelessWidget {
     final metadataValue = auth.user?.userMetadata?['name']?.toString().trim();
     final s = AppStrings.of(context);
     final profileName = profileValue?.isNotEmpty == true
-        ? profileValue!
+        ? s.displayName(profileValue!)
         : metadataValue?.isNotEmpty == true
             ? metadataValue!
             : s.appName;
@@ -38,7 +38,7 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(child: Text(s.appName)),
             StatusPill(
-              label: connectivity.statusLabel,
+              label: AppStrings.of(context).message(connectivity.statusLabel),
               icon: connectivity.isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
               color: connectivity.isOnline ? colors.primary : colors.error,
             ),

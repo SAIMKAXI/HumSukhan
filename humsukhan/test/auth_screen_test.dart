@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:humsukhan/l10n/app_strings.dart';
 import 'package:humsukhan/providers/auth_provider.dart';
 import 'package:humsukhan/screens/auth_screen.dart';
 
@@ -12,9 +13,10 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider<AuthProvider>.value(
         value: auth,
-        child: const MaterialApp(home: AuthScreen()),
+        child: const MaterialApp(localizationsDelegates: [AppStrings.delegate], home: AuthScreen()),
       ),
     );
+    await tester.pump();
 
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Forgot password?'), findsOneWidget);
@@ -27,9 +29,10 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider<AuthProvider>.value(
         value: auth,
-        child: const MaterialApp(home: AuthScreen()),
+        child: const MaterialApp(localizationsDelegates: [AppStrings.delegate], home: AuthScreen()),
       ),
     );
+    await tester.pump();
 
     await tester.tap(find.text('Forgot password?'));
     await tester.pump();
