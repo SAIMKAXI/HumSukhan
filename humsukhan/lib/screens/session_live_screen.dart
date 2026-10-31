@@ -160,8 +160,9 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
       await speech.speak(text, language: language);
     } catch (error) {
       if (!mounted) return;
+      debugPrint('Speaking the reply failed: $error');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not speak this message: $error')),
+        SnackBar(content: Text(AppStrings.of(context).speakFailed)),
       );
     }
   }
@@ -356,30 +357,28 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: Text(s.stopSession),
-        content: const Text(
-          'Session complete. Your transcript is saved on this device and can be reopened later.',
-        ),
+        content: Text(s.sessionCompleteDesc),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(
               dialogContext,
               _SessionCompletionAction.continueEditing,
             ),
-            child: const Text('Continue'),
+            child: Text(s.continueAction),
           ),
           TextButton(
             onPressed: () => Navigator.pop(
               dialogContext,
               _SessionCompletionAction.discard,
             ),
-            child: const Text('Discard'),
+            child: Text(s.discard),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(
               dialogContext,
               _SessionCompletionAction.save,
             ),
-            child: const Text('Save session'),
+            child: Text(s.saveSession),
           ),
         ],
       ),
@@ -425,7 +424,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     if (session == null) {
       return Scaffold(
         appBar: AppBar(),
-        body: const Center(child: Text('This session is no longer available.')),
+        body: Center(child: Text(s.sessionNoLongerAvailable)),
       );
     }
 
@@ -437,11 +436,11 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
         title: Text(session.title),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsetsDirectional.only(end: 16),
             child: Center(
               child: Text(
                 _duration,
-                semanticsLabel: 'Session duration $_duration',
+                semanticsLabel: s.sessionDuration(_duration),
                 style: TextStyle(
                   color: theme.colorScheme.primary,
                   fontWeight: FontWeight.w700,
@@ -471,7 +470,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '$_speechStatus · ${speechModeLabel(context)} · ${session.captionLanguage}',
+                        '${s.message(_speechStatus)} · ${s.message(speechModeLabel(context))} · ${s.languageName(session.captionLanguage)}',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -484,8 +483,8 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                 const SizedBox(height: 10),
                 Semantics(
                   button: true,
-                  label: _isListening ? 'Stop listening' : 'Start listening',
-                  hint: 'Tap to toggle the microphone. Holding is not required.',
+                  label: _isListening ? s.stopListening : s.startListeningAction,
+                  hint: s.micToggleHint,
                   child: SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
@@ -493,10 +492,10 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                       icon: Icon(_isListening ? Icons.stop : Icons.mic),
                       label: Text(
                         _isListening
-                            ? 'Listening — tap to stop'
+                            ? s.listeningTapToStop
                             : _isFinalizing
-                                ? 'Finalizing…'
-                                : 'Tap to listen',
+                                ? s.finalizing
+                                : s.tapToListen,
                       ),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
@@ -507,7 +506,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Listening is controlled with a tap. Your speech appears once as a finalized caption.',
+                  s.tapListeningNote,
                   style: theme.textTheme.bodySmall,
                   textAlign: TextAlign.center,
                 ),
@@ -530,7 +529,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _startupError!,
+                      s.message(_startupError!),
                       style: TextStyle(color: theme.colorScheme.onErrorContainer),
                     ),
                   ),
@@ -544,10 +543,10 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                       padding: const EdgeInsets.all(24),
                       child: Text(
                         _sessionStarting
-                            ? 'Starting session…'
+                            ? s.startingSession
                             : _isListening
-                                ? 'Listening…'
-                                : 'Tap the microphone to begin listening.',
+                                ? s.listening
+                                : s.tapMicToBegin,
                         style: theme.textTheme.bodyLarge,
                         textAlign: TextAlign.center,
                       ),
@@ -606,7 +605,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    tooltip: 'Speak reply',
+                    tooltip: s.speakReply,
                     icon: const Icon(Icons.volume_up),
                     onPressed: _captionController.text.trim().isEmpty
                         ? null
@@ -614,7 +613,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
                   ),
                   const SizedBox(width: 4),
                   IconButton.filled(
-                    tooltip: 'Add caption',
+                    tooltip: s.addCaption,
                     icon: const Icon(Icons.add),
                     onPressed: () => _addManualCaption(_captionController.text),
                   ),

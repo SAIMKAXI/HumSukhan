@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import 'mixed_script_caption_text.dart';
+import '../l10n/app_strings.dart';
 
 class SpeakableCaptionBubble extends StatelessWidget {
   final Caption caption;
@@ -21,9 +22,10 @@ class SpeakableCaptionBubble extends StatelessWidget {
     try {
       await speech.speak(caption.text, language: caption.language);
     } catch (e) {
+      debugPrint('Speaking the caption failed: $e');
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not speak this message: $e')),
+        SnackBar(content: Text(AppStrings.of(context).speakFailed)),
       );
     }
   }
@@ -54,7 +56,7 @@ class SpeakableCaptionBubble extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             child: Text(
-              '${caption.speaker} · ${caption.timestamp.hour.toString().padLeft(2, '0')}:${caption.timestamp.minute.toString().padLeft(2, '0')}',
+              '${AppStrings.of(context).speakerName(caption.speaker)} · ${caption.timestamp.hour.toString().padLeft(2, '0')}:${caption.timestamp.minute.toString().padLeft(2, '0')}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
@@ -90,7 +92,7 @@ class SpeakableCaptionBubble extends StatelessWidget {
               IconButton(
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                 padding: EdgeInsets.zero,
-                tooltip: isThisMessageSpeaking ? 'Stop speaking' : 'Speak this message',
+                tooltip: isThisMessageSpeaking ? AppStrings.of(context).stopSpeaking : AppStrings.of(context).speakThisMessage,
                 icon: Icon(
                   isThisMessageSpeaking
                       ? Icons.stop_circle_outlined

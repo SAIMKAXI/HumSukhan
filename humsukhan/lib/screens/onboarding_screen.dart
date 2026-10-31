@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../l10n/app_strings.dart';
 import '../widgets/reusable_widgets.dart';
+import '../theme/app_typography.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -166,7 +167,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         const SizedBox(height: 16),
         Text(
           subtitle,
-          style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant, height: 1.6),
+          style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant, height: AppTypography.latinLineHeight(context, 1.6)),
           textAlign: TextAlign.center,
         ),
       ],
@@ -212,7 +213,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unable to finish onboarding. Please try again.')),
+          SnackBar(content: Text(AppStrings.of(context).onboardingFailed)),
         );
         setState(() => _isCompleting = false);
       }

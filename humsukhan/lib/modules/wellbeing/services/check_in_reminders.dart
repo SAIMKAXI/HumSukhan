@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../../services/notification_service.dart';
+import '../../../utils/urdu_text.dart';
 
 /// A time of day for a reminder, local time.
 @immutable
@@ -122,16 +123,18 @@ class LocalNotificationReminders implements CheckInReminderScheduler {
     await _cancelAll();
     final plugin = await _notifications.plugin();
     if (plugin == null) throw StateError('Notifications are not available on this device.');
-    const android = AndroidNotificationDetails(
+    // The channel is named in the reminder's own language.
+    final urdu = containsUrduScript(title);
+    final android = AndroidNotificationDetails(
       channelId,
-      'Wellbeing check-ins',
-      channelDescription: 'A gentle daily reminder to check in with how you feel.',
+      urdu ? 'ذہنی سکون کے چیک اِن' : 'Wellbeing check-ins',
+      channelDescription: urdu ? 'ایک نرم روزانہ یاد دہانی کہ آپ کیسا محسوس کر رہے ہیں۔' : 'A gentle daily reminder to check in with how you feel.',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       category: AndroidNotificationCategory.reminder,
     );
     const apple = DarwinNotificationDetails(presentAlert: true, presentSound: false, presentBadge: false);
-    const details = NotificationDetails(android: android, iOS: apple, macOS: apple);
+    final details = NotificationDetails(android: android, iOS: apple, macOS: apple);
     for (var i = 0; i < slots.length && i < maxReminders; i++) {
       await plugin.zonedSchedule(
         id: firstId + i,

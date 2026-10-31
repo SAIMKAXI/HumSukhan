@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_typography.dart';
+
 
 class AppTokens {
   static const Color deepSage = Color(0xFF506858);
@@ -60,9 +62,20 @@ class AppTokens {
 }
 
 class AppTheme {
+  /// The theme the app runs with, its text set for the app language.
+  static ThemeData forApp({required bool urdu, required bool dark, bool highContrast = false}) {
+    final family = urdu ? AppTypography.urdu : AppTypography.latin;
+    final base = highContrast
+        ? highContrastTheme(fontFamily: family, dark: dark)
+        : dark
+            ? darkTheme(fontFamily: family)
+            : lightTheme(fontFamily: family);
+    return AppTypography.apply(base, urdu: urdu);
+  }
+
   static ThemeData lightTheme({String? fontFamily}) => _buildTheme(
         brightness: Brightness.light,
-        fontFamily: fontFamily ?? 'NotoSans',
+        fontFamily: fontFamily ?? AppTypography.latin,
         primary: AppTokens.deepSage,
         canvas: AppTokens.warmIvory,
         surface: AppTokens.pureWhite,
@@ -73,7 +86,7 @@ class AppTheme {
 
   static ThemeData darkTheme({String? fontFamily}) => _buildTheme(
         brightness: Brightness.dark,
-        fontFamily: fontFamily ?? 'NotoSans',
+        fontFamily: fontFamily ?? AppTypography.latin,
         primary: AppTokens.softSage,
         canvas: AppTokens.forestBlack,
         surface: AppTokens.darkForest,
@@ -195,6 +208,57 @@ class AppTheme {
       floatingActionButtonTheme: FloatingActionButtonThemeData(backgroundColor: primary, foregroundColor: dark ? AppTokens.forestBlack : AppTokens.textOnDark, elevation: 2, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTokens.radiusLg))),
       snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, backgroundColor: dark ? AppTokens.deepSage : AppTokens.deepForest, contentTextStyle: const TextStyle(color: AppTokens.textOnDark), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTokens.radiusMd))),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: primary, linearTrackColor: primary.withValues(alpha: .12)),
+    );
+  }
+
+  static ThemeData highContrastTheme({String? fontFamily, required bool dark}) {
+    final foreground = dark ? Colors.white : Colors.black;
+    final background = dark ? const Color(0xFF050A07) : Colors.white;
+    final surface = dark ? const Color(0xFF101812) : Colors.white;
+    final primary = dark ? const Color(0xFFB8FFD0) : Colors.black;
+    return ThemeData(
+      useMaterial3: true,
+      brightness: dark ? Brightness.dark : Brightness.light,
+      fontFamily: fontFamily ?? AppTypography.latin,
+      scaffoldBackgroundColor: background,
+      colorScheme: ColorScheme(
+        brightness: dark ? Brightness.dark : Brightness.light,
+        primary: primary,
+        onPrimary: dark ? Colors.black : Colors.white,
+        primaryContainer: dark ? const Color(0xFF1A2A20) : Colors.white,
+        onPrimaryContainer: foreground,
+        secondary: primary,
+        onSecondary: dark ? Colors.black : Colors.white,
+        secondaryContainer: surface,
+        onSecondaryContainer: foreground,
+        tertiary: primary,
+        onTertiary: dark ? Colors.black : Colors.white,
+        tertiaryContainer: surface,
+        onTertiaryContainer: foreground,
+        error: dark ? const Color(0xFFFF8A80) : const Color(0xFF8B0000),
+        onError: Colors.white,
+        surface: surface,
+        onSurface: foreground,
+        surfaceContainerHighest: surface,
+        onSurfaceVariant: dark ? const Color(0xFFE8F2EC) : Colors.black,
+        outline: foreground,
+        outlineVariant: foreground,
+        shadow: Colors.black,
+        scrim: Colors.black,
+        inverseSurface: foreground,
+        onInverseSurface: background,
+        inversePrimary: dark ? Colors.black : Colors.white,
+      ),
+      appBarTheme: AppBarTheme(backgroundColor: background, foregroundColor: foreground, elevation: 0),
+      cardTheme: CardThemeData(color: surface, elevation: 2, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: foreground, width: 1.5))),
+      dividerTheme: DividerThemeData(color: foreground, thickness: 1),
+      elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(backgroundColor: primary, foregroundColor: dark ? Colors.black : Colors.white)),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(foregroundColor: primary, side: BorderSide(color: primary, width: 1.5))),
+      textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: primary)),
+      inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: surface, enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: foreground, width: 1.5)), focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: primary, width: 2.5))),
+      chipTheme: ChipThemeData(backgroundColor: surface, side: BorderSide(color: foreground, width: 1.25), labelStyle: TextStyle(color: foreground)),
+      switchTheme: SwitchThemeData(thumbColor: WidgetStatePropertyAll(primary), trackColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? primary.withValues(alpha: .85) : surface)),
+      textTheme: ThemeData(brightness: dark ? Brightness.dark : Brightness.light, fontFamily: fontFamily ?? AppTypography.latin).textTheme.apply(bodyColor: foreground, displayColor: foreground),
     );
   }
 

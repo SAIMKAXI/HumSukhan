@@ -47,6 +47,7 @@ class OfflineBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -57,7 +58,7 @@ class OfflineBadge extends StatelessWidget {
         Icon(isOnline ? Icons.wifi : Icons.wifi_off, size: 14,
             color: isOnline ? AppTokens.deepSage : AppTokens.warning),
         const SizedBox(width: 4),
-        Text(isOnline ? 'Online' : 'Offline',
+        Text(isOnline ? s.online : s.offline,
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
                 color: isOnline ? AppTokens.deepSage : AppTokens.warning)),
       ]),

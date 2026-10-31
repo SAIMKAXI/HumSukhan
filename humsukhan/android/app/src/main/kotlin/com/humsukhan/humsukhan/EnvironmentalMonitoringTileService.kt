@@ -47,7 +47,7 @@ class EnvironmentalMonitoringTileService : TileService() {
     private fun syncTile() {
         val monitoringState = EnvironmentalMonitoringState.get(this)
         qsTile?.apply {
-            label = "Environmental Monitoring"
+            label = NativeStrings(this@EnvironmentalMonitoringTileService).tileLabel
             state = when (monitoringState) {
                 EnvironmentalMonitoringState.ACTIVE -> Tile.STATE_ACTIVE
                 EnvironmentalMonitoringState.STARTING,

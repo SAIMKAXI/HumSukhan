@@ -29,7 +29,7 @@ class SettingsScreen extends StatelessWidget {
         _SectionHeader(title: s.profile),
         ListTile(
           leading: _Avatar(profile: user.profile, radius: 24),
-          title: Text(user.profile?.name ?? s.setupProfile),
+          title: Text(user.profile == null ? s.setupProfile : s.displayName(user.profile!.name)),
           subtitle: Text(user.profile?.preferredLanguage ?? s.tapToEdit),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _showEditProfileDialog(context, s),
@@ -44,14 +44,14 @@ class SettingsScreen extends StatelessWidget {
           ),
         )),
         _SectionHeader(title: s.appLanguage),
-        ListTile(title: Text(s.appLanguage), subtitle: Text(settings.appLanguage == 'ur' ? s.languageUrdu : s.languageEnglish), trailing: const Icon(Icons.chevron_right), onTap: () => _showAppLanguageDialog(context, settings, s)),
+        ListTile(title: Text(s.appLanguage), subtitle: settings.appLanguage == 'ur' ? Text(s.languageUrdu) : Text(s.languageEnglish, locale: const Locale('en')), trailing: const Icon(Icons.chevron_right), onTap: () => _showAppLanguageDialog(context, settings, s)),
         _SectionHeader(title: s.accessibility),
         SwitchListTile(title: Text(s.darkMode), subtitle: Text(s.darkModeDesc), value: settings.isDarkMode, onChanged: (_) => settings.toggleDarkMode()),
         SwitchListTile(title: Text(s.highContrast), subtitle: Text(s.highContrastDesc), value: settings.isHighContrast, onChanged: (_) => settings.toggleHighContrast()),
         SwitchListTile(title: Text(s.largeText), subtitle: Text(s.largeTextDesc), value: settings.isLargeText, onChanged: (_) => settings.toggleLargeText()),
         ListTile(
           title: Text(s.captionTextSize),
-          subtitle: Text('${settings.captionTextSize.toInt()} sp'),
+          subtitle: Text(s.textSizeValue(settings.captionTextSize.toInt())),
           trailing: SizedBox(width: 190, child: Slider(value: settings.captionTextSize, min: 16, max: 48, divisions: 16, label: '${settings.captionTextSize.toInt()}', onChanged: settings.setCaptionTextSize)),
         ),
         _SectionHeader(title: s.alertPreferences),
@@ -61,8 +61,8 @@ class SettingsScreen extends StatelessWidget {
         SwitchListTile(
           title: Text(s.flashlightAlerts),
           subtitle: Text(defaultTargetPlatform == TargetPlatform.android
-              ? '${s.flashlightAlertsDesc} Camera permission is used only to control the torch; no photos or video are captured.'
-              : 'Flashlight alerts are currently available on Android only.'),
+              ? s.flashlightCameraNote(s.flashlightAlertsDesc)
+              : s.flashlightAndroidOnly),
           value: defaultTargetPlatform == TargetPlatform.android && settings.flashAlerts,
           onChanged: defaultTargetPlatform == TargetPlatform.android
               ? (enabled) => _setFlashlightAlerts(context, settings, enabled)
@@ -80,7 +80,7 @@ class SettingsScreen extends StatelessWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showQuickReplyManager(context),
         ),
-        _SectionHeader(title: '${s.privacySection} & ${s.defaultRetention}'),
+        _SectionHeader(title: s.privacyAndRetention),
         ListTile(title: Text(s.defaultRetentionPeriod), subtitle: Text('${settings.defaultRetentionDays} ${s.days}'), trailing: const Icon(Icons.chevron_right), onTap: () => _showRetentionDialog(context, settings, s)),
         _SectionHeader(title: s.privacySection),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: PrivacyNotice(text: s.privacyNoticeText)),
@@ -124,6 +124,7 @@ class SettingsScreen extends StatelessWidget {
     SettingsProvider settings,
     bool enabled,
   ) async {
+    final s = AppStrings.of(context);
     if (!enabled) {
       if (settings.flashAlerts) settings.toggleFlashAlerts();
       return;
@@ -135,8 +136,8 @@ class SettingsScreen extends StatelessWidget {
       if (!context.mounted) return;
       if (!permission.isGranted) {
         final message = permission.isPermanentlyDenied
-            ? 'Camera permission is blocked. Open Android Settings > Apps > HumSukhan > Permissions > Camera, then try again.'
-            : 'Camera permission is required for flashlight alerts. No photos or video are captured.';
+            ? s.cameraBlocked
+            : s.cameraRequired;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
         return;
       }
@@ -147,21 +148,22 @@ class SettingsScreen extends StatelessWidget {
       if (!context.mounted) return;
       if (!available) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('This device does not expose an available camera flashlight.')),
+          SnackBar(content: Text(s.noFlashlight)),
         );
         return;
       }
 
       if (!settings.flashAlerts) settings.toggleFlashAlerts();
     } on PlatformException catch (error) {
+      debugPrint('Flashlight alerts could not be enabled: ${error.message ?? error.code}');
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not enable flashlight alerts: ${error.message ?? error.code}')),
+        SnackBar(content: Text(s.flashlightFailed)),
       );
     } on MissingPluginException {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Flashlight controls are unavailable in this app build.')),
+        SnackBar(content: Text(s.flashlightUnavailable)),
       );
     }
   }
@@ -181,7 +183,7 @@ class SettingsScreen extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            RadioListTile<String>(title: Text(s.languageEnglish), value: 'en', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
+            RadioListTile<String>(title: Text(s.languageEnglish, locale: const Locale('en')), value: 'en', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
             RadioListTile<String>(title: Text(s.languageUrdu), value: 'ur', groupValue: settings.appLanguage, onChanged: (v) { if (v != null) settings.setAppLanguage(v); Navigator.pop(ctx); }),
           ],
         ),
@@ -271,7 +273,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         const SizedBox(height: 20),
         GestureDetector(
           onTap: _pickPhoto,
-          child: Stack(alignment: Alignment.bottomRight, children: [
+          child: Stack(alignment: AlignmentDirectional.bottomEnd, children: [
             _Avatar(profile: (profile ?? UserProfile(name: '')).copyWith(avatarData: _avatarData), radius: 46),
             CircleAvatar(radius: 16, backgroundColor: Theme.of(context).colorScheme.primary, child: const Icon(Icons.camera_alt, size: 16)),
           ]),
@@ -316,7 +318,7 @@ class _SpeechModelsSection extends StatelessWidget {
     final speech = context.watch<SpeechProvider>();
     final s = AppStrings.of(context);
     return Column(children: [
-      ListTile(leading: Icon(speech.isOfflineMode ? Icons.wifi_off : Icons.wifi, color: Theme.of(context).colorScheme.primary), title: Text(s.currentMode), subtitle: Text(speech.sttModeLabel), trailing: Text(speech.currentLanguage, style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600))),
+      ListTile(leading: Icon(speech.isOfflineMode ? Icons.wifi_off : Icons.wifi, color: Theme.of(context).colorScheme.primary), title: Text(s.currentMode), subtitle: Text(s.message(speech.sttModeLabel)), trailing: Text(s.languageName(speech.currentLanguage), style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600))),
       const Divider(height: 1),
       for (final (language, title, description, label) in [
         ('English', s.englishModelTitle, s.englishModelDesc, s.englishLabel),
@@ -342,7 +344,7 @@ Future<void> _download(BuildContext context, SpeechProvider speech, String langu
   final s = AppStrings.of(context);
   final messenger = ScaffoldMessenger.of(context);
   final ok = await speech.downloadOfflineModel(language);
-  messenger.showSnackBar(SnackBar(content: Text(ok ? s.modelReadyNotice : (speech.modelError(language) == null ? s.modelDownloadFailed : '${s.modelDownloadFailed}\n${speech.modelError(language)}'))));
+  messenger.showSnackBar(SnackBar(content: Text(ok ? s.modelReadyNotice : s.modelDownloadFailedWith(speech.modelError(language)))));
 }
 
 class _ModelTile extends StatelessWidget {
@@ -363,7 +365,7 @@ class _ModelTile extends StatelessWidget {
       leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest, child: Icon(isReady ? Icons.check_circle : Icons.download_outlined, color: Theme.of(context).colorScheme.primary, size: 20)),
       title: Text(title),
       subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('$description\n$status · $sizeMB MB'),
+        Text('$description\n$status · ${s.megabytes(sizeMB)}'),
         if (progress != null) Padding(padding: const EdgeInsets.only(top: 6), child: LinearProgressIndicator(value: progress)),
       ]),
       isThreeLine: true,
@@ -381,7 +383,8 @@ class _AboutSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isUrdu = Localizations.localeOf(context).languageCode == 'ur';
+    final s = AppStrings.of(context);
+    final isUrdu = s.isUrdu;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Card(
@@ -390,7 +393,7 @@ class _AboutSection extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [const BrandLogo(size: 56), const SizedBox(width: 14), Expanded(child: Text('HumSukhan', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)))]),
             const SizedBox(height: 16),
-            Text(isUrdu ? 'قابلِ رسائی مواصلات، لائیو کیپشنز، تقریر کی مدد اور پیشہ ورانہ سننا ایک ہی جگہ۔' : 'Accessible communication, live captions, speech assistance, and professional listening in one place.', style: theme.textTheme.bodyLarge),
+            Text(s.aboutTagline, style: theme.textTheme.bodyLarge),
             const SizedBox(height: 12),
             Text(isUrdu ? 'HumSukhan روزمرہ گفتگو، کلاس رومز، میٹنگز اور ماحول سے آگاہی کو زیادہ قابلِ رسائی بنانے کے لیے تیار کیا گیا ہے۔' : 'HumSukhan is designed to make everyday conversations, classrooms, meetings, and environmental awareness more accessible.', style: theme.textTheme.bodyMedium),
           ]),

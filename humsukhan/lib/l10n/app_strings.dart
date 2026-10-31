@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import 'app_messages.dart';
+
 /// Localized strings for HumSukhan (English & Urdu).
 class AppStrings {
   final Locale locale;
@@ -13,6 +15,38 @@ class AppStrings {
 
   bool get _isUrdu => locale.languageCode == 'ur';
   bool get isUrdu => _isUrdu;
+
+  /// [text] from a provider, service or Supabase, in the app language.
+  /// Urdu without a translation becomes a general error, so English never
+  /// appears in the Urdu interface (see app_messages.dart).
+  String message(String text) {
+    if (!_isUrdu) return text;
+    return urduMessage(text) ?? (RegExp(r'[A-Za-z]{3,}').hasMatch(text.replaceAll(RegExp(r'HumSukhan|\bAI\b'), '')) ? urduGeneralError : text);
+  }
+
+  /// A caption's speaker as stored ('Speaker 1', 'You') in the app language.
+  String speakerName(String stored) {
+    if (!_isUrdu) return stored;
+    if (stored == 'You') return 'آپ';
+    final numbered = RegExp(r'^Speaker (\d+)$').firstMatch(stored);
+    return numbered == null ? stored : 'بولنے والا ${numbered[1]}';
+  }
+
+  /// A profile name for display: the name 'User', given to accounts made
+  /// without one, in the app language.
+  String displayName(String name) => _isUrdu && name == 'User' ? 'صارف' : name;
+
+  /// A language as the app stores it ('English', 'Urdu', 'Auto'), for display.
+  String languageName(String stored) => _isUrdu ? urduLanguageName(stored) : stored;
+
+  /// A clock time, such as 6:42 PM. Urdu has no AM and PM letters of its
+  /// own, so it names the part of the day instead, as people say it: شام 6:42.
+  String clockTime(int hour, int minute) {
+    final time = '${hour % 12 == 0 ? 12 : hour % 12}:${minute.toString().padLeft(2, '0')}';
+    if (!_isUrdu) return '$time ${hour < 12 ? 'AM' : 'PM'}';
+    final period = hour < 4 ? 'رات' : hour < 12 ? 'صبح' : hour < 16 ? 'دوپہر' : hour < 19 ? 'شام' : 'رات';
+    return '$period $time';
+  }
 
   // ── General ──
   String get appName => 'HumSukhan';
@@ -43,6 +77,16 @@ class AppStrings {
   String get noRecentSessions => _isUrdu ? 'کوئی حالیہ اجلاس نہیں۔ جب آپ تیار ہوں تو پیشہ ورانہ اجلاس شروع کریں۔' : 'No recent sessions. Start a Professional session when you are ready.';
   String get privacyNote => _isUrdu ? 'سننے کا عمل صرف آپ شروع کرنے پر شروع ہوتا ہے۔ آڈیو عارضی طور پر پروسیس ہوتا ہے اور ریلیز ہو جاتا ہے۔' : 'Listening begins only when you start. Audio is processed temporarily and released.';
 
+  String get appStartingUp => _isUrdu ? 'HumSukhan شروع ہو رہا ہے' : 'HumSukhan startup';
+  String get loading => _isUrdu ? 'لوڈ ہو رہا ہے' : 'Loading';
+  String get online => _isUrdu ? 'آن لائن' : 'Online';
+  String get offline => _isUrdu ? 'آف لائن' : 'Offline';
+  String get speakThisMessage => _isUrdu ? 'یہ پیغام بولیں' : 'Speak this message';
+  String get onboardingFailed => _isUrdu ? 'تعارف مکمل نہیں ہو سکا۔ دوبارہ کوشش کریں۔' : 'Unable to finish onboarding. Please try again.';
+
+  String get showPassword => _isUrdu ? 'پاس ورڈ دکھائیں' : 'Show password';
+  String get hidePassword => _isUrdu ? 'پاس ورڈ چھپائیں' : 'Hide password';
+
   // ── Onboarding ──
   String get skip => _isUrdu ? 'چھوڑیں' : 'Skip';
   String get next => _isUrdu ? 'اگلا' : 'Next';
@@ -71,6 +115,25 @@ class AppStrings {
   String get delete => _isUrdu ? 'حذف کریں' : 'Delete';
   String get continueListening => _isUrdu ? 'سننا جاری رکھیں' : 'Continue Listening';
 
+  String get typeReplyHint => _isUrdu ? 'اردو یا انگریزی میں جواب لکھیں' : 'Type in Urdu or English';
+  String get stopSpeaking => _isUrdu ? 'بولنا بند کریں' : 'Stop speaking';
+  String get speakResponse => _isUrdu ? 'جواب بولیں' : 'Speak response';
+  String get sendResponse => _isUrdu ? 'جواب بھیجیں' : 'Send response';
+  String get stopSpeakerMic => _isUrdu ? 'بولنے والے کا مائیکروفون بند کریں' : 'Stop speaker microphone';
+  String get startSpeakerMic => _isUrdu ? 'بولنے والے کا مائیکروفون چلائیں' : 'Start speaker microphone';
+  String get bilingualCaptions => _isUrdu ? 'دو لسانی کیپشنز' : 'Bilingual speaker captions';
+  String get pauseBeforeEnding => _isUrdu ? 'بات ختم سمجھنے سے پہلے کا وقفہ' : 'Pause before ending utterance';
+  String get pauseShort => _isUrdu ? 'مختصر وقفہ · 1.2 سیکنڈ' : 'Short pause · 1.2 s';
+  String get pauseNatural => _isUrdu ? 'عام وقفہ · 1.7 سیکنڈ' : 'Natural pause · 1.7 s';
+  String get pausePatient => _isUrdu ? 'لمبا وقفہ · 2.5 سیکنڈ' : 'Patient pause · 2.5 s';
+  String get pauseManual => _isUrdu ? 'صرف خود سے · خودکار بند نہیں' : 'Manual only · no auto-stop';
+  String get pauseDetected => _isUrdu ? 'وقفہ محسوس ہوا — جاری رکھنے کے لیے دوبارہ بولیں' : 'Pause detected — speak again to continue';
+  String get manualModeNote => _isUrdu ? 'دستی موڈ — بات ختم کرنے کے لیے مائیکروفون دبائیں' : 'Manual mode — tap the microphone to end the utterance';
+  String get startConversationHint => _isUrdu
+      ? 'گفتگو شروع کریں، پھر جب بھی دوسرا شخص بولے تو مائیکروفون دبائیں۔'
+      : 'Start a conversation, then tap the microphone whenever the speaker talks.';
+  String get waitingForSpeaker => _isUrdu ? 'بولنے والے کا انتظار ہے…' : 'Waiting for the speaker…';
+
   // ── Professional ──
   String get professionalTitle => _isUrdu ? 'پیشہ ورانہ' : 'Professional';
   String get newSession => _isUrdu ? 'نیا اجلاس' : 'New Session';
@@ -91,9 +154,71 @@ class AppStrings {
   String get deleteSessionDesc => _isUrdu ? 'یہ محفوظ شدہ ٹرانسکرپٹ اور بصیرت کو مستقل طور پر ہٹا دے گا۔ یہ واپس نہیں کیا جا سکتا۔' : 'This will permanently remove the saved transcript and insights. This cannot be undone.';
   String get create => _isUrdu ? 'بنائیں' : 'Create';
 
+  String get foldersTab => _isUrdu ? 'فولڈرز' : 'Folders';
+  String get classesTab => _isUrdu ? 'کلاسیں' : 'Classes';
+  String get meetingsTab => _isUrdu ? 'میٹنگز' : 'Meetings';
+  String get lecturesTab => _isUrdu ? 'لیکچرز' : 'Lectures';
+  /// 'class', 'meeting' or 'lecture' as a label.
+  String sessionTypeName(String type) => switch (type) {
+        'meeting' => _isUrdu ? 'میٹنگ' : 'Meeting',
+        'lecture' => _isUrdu ? 'لیکچر' : 'Lecture',
+        _ => _isUrdu ? 'کلاس' : 'Class',
+      };
+  // لیکچر is masculine; میٹنگ and کلاس are feminine.
+  String newSessionOfType(String type) => _isUrdu ? '${type == 'lecture' ? 'نیا' : 'نئی'} ${sessionTypeName(type)}' : 'New ${sessionTypeName(type)}';
+  String noSessionsOfType(String tab) => _isUrdu ? 'ابھی تک کوئی $tab نہیں' : 'No $tab yet';
+  String noSessionsOfTypeDesc(String tab) => _isUrdu ? 'نیا اجلاس شروع کریں، اس کا ٹرانسکرپٹ یہاں ظاہر ہوگا۔' : 'Start a new $tab session and your transcript will appear here.';
+  String get speechLanguage => _isUrdu ? 'بولی کی زبان' : 'Speech language';
+  String get speechLanguageHelp => _isUrdu ? 'پیشہ ورانہ ٹرانسکرپٹ میں ملی جلی انگریزی اور اردو برقرار رہتی ہے۔' : 'Professional transcripts keep mixed English and Urdu.';
+  String get autoDetectLanguage => _isUrdu ? 'خودکار — زبان پہچانیں' : 'Auto — detect language';
+  String get folderLabel => _isUrdu ? 'فولڈر' : 'Folder';
+  String get sessionTitleRequired => _isUrdu ? 'جاری رکھنے کے لیے اجلاس کا عنوان لکھیں۔' : 'Add a session title to continue.';
+  String get folderNameEmpty => _isUrdu ? 'فولڈر کا نام خالی نہیں ہو سکتا' : 'Folder name cannot be empty';
+  String get folderNameTaken => _isUrdu ? 'اس نام کا فولڈر پہلے سے موجود ہے' : 'A folder with this name already exists';
+  String deleteFolderTitle(String name) => _isUrdu ? '$name حذف کریں؟' : 'Delete $name?';
+  String deleteFolderBody(int count) => _isUrdu
+      ? 'منتخب کریں کہ کیا حذف کرنا ہے۔ اس فولڈر میں اس وقت $count اجلاس ہیں۔'
+      : 'Choose what to delete. $count session${count == 1 ? ' is' : 's are'} currently in this folder.';
+  String get deleteFolderOnly => _isUrdu ? 'صرف فولڈر حذف کریں' : 'Delete folder only';
+  String get deleteFolderOnlyDesc => _isUrdu ? 'تمام اجلاس رکھیں اور انہیں عمومی میں منتقل کریں۔' : 'Keep all sessions and move them to General.';
+  String get folderDeletedKept => _isUrdu ? 'فولڈر حذف ہو گیا۔ اجلاس عمومی میں منتقل ہو گئے۔' : 'Folder deleted. Sessions moved to General.';
+  String get folderDeleteFailed => _isUrdu ? 'فولڈر حذف نہیں ہو سکا۔ دوبارہ کوشش کریں۔' : 'Could not delete the folder. Please try again.';
+  String get deleteFolderAndSessions => _isUrdu ? 'فولڈر اور تمام اجلاس حذف کریں' : 'Delete folder + all sessions';
+  String get deleteFolderAndSessionsDesc => _isUrdu ? 'یہ فولڈر، اس کے اجلاس، کیپشنز اور بصیرت مستقل طور پر حذف کریں۔' : 'Permanently delete this folder, its sessions, captions and insights.';
+  String get deleteFolderForeverTitle => _isUrdu ? 'فولڈر اور اجلاس مستقل طور پر حذف کریں؟' : 'Permanently delete folder and sessions?';
+  String deleteFolderForeverBody(int count) => _isUrdu
+      ? 'اس سے $count اجلاس، ان کے کیپشنز اور AI بصیرت مستقل طور پر حذف ہو جائیں گے۔ یہ واپس نہیں ہو سکتا۔'
+      : 'This permanently deletes $count session${count == 1 ? '' : 's'}, their captions and AI insights. This cannot be undone.';
+  String get folderDeletedForever => _isUrdu ? 'فولڈر اور اس کے اجلاس مستقل طور پر حذف ہو گئے۔' : 'Folder and its sessions were permanently deleted.';
+  String get deletePermanently => _isUrdu ? 'مستقل طور پر حذف کریں' : 'Delete permanently';
+
   // ── Session Live ──
   String get addCaptionManually => _isUrdu ? 'دستی طور پر کیپشن شامل کریں...' : 'Add a caption manually...';
   String get stopSession => _isUrdu ? 'اجلاس بند کریں' : 'Stop Session';
+
+  String get speakFailed => _isUrdu ? 'یہ پیغام بولا نہیں جا سکا۔' : 'Could not speak this message.';
+  String get sessionCompleteDesc => _isUrdu
+      ? 'اجلاس مکمل۔ آپ کا ٹرانسکرپٹ اسی فون پر محفوظ ہے اور بعد میں دوبارہ کھولا جا سکتا ہے۔'
+      : 'Session complete. Your transcript is saved on this device and can be reopened later.';
+  String get continueAction => _isUrdu ? 'جاری رکھیں' : 'Continue';
+  String get discard => _isUrdu ? 'رد کریں' : 'Discard';
+  String get saveSession => _isUrdu ? 'اجلاس محفوظ کریں' : 'Save session';
+  String get sessionNoLongerAvailable => _isUrdu ? 'یہ اجلاس اب دستیاب نہیں۔' : 'This session is no longer available.';
+  String sessionDuration(String duration) => _isUrdu ? 'اجلاس کا دورانیہ $duration' : 'Session duration $duration';
+  String get stopListening => _isUrdu ? 'سننا بند کریں' : 'Stop listening';
+  String get startListeningAction => _isUrdu ? 'سننا شروع کریں' : 'Start listening';
+  String get micToggleHint => _isUrdu ? 'مائیکروفون چلانے یا بند کرنے کے لیے دبائیں۔ دبائے رکھنے کی ضرورت نہیں۔' : 'Tap to toggle the microphone. Holding is not required.';
+  String get listeningTapToStop => _isUrdu ? 'سن رہا ہے — روکنے کے لیے دبائیں' : 'Listening — tap to stop';
+  String get finalizing => _isUrdu ? 'مکمل ہو رہا ہے…' : 'Finalizing…';
+  String get tapToListen => _isUrdu ? 'سننے کے لیے دبائیں' : 'Tap to listen';
+  String get tapListeningNote => _isUrdu
+      ? 'سننا ایک بار دبانے سے چلتا ہے۔ آپ کی بات ایک بار مکمل کیپشن کی صورت میں ظاہر ہوتی ہے۔'
+      : 'Listening is controlled with a tap. Your speech appears once as a finalized caption.';
+  String get startingSession => _isUrdu ? 'اجلاس شروع ہو رہا ہے…' : 'Starting session…';
+  String get listening => _isUrdu ? 'سن رہا ہے…' : 'Listening…';
+  String get tapMicToBegin => _isUrdu ? 'سننا شروع کرنے کے لیے مائیکروفون دبائیں۔' : 'Tap the microphone to begin listening.';
+  String get speakReply => _isUrdu ? 'جواب بولیں' : 'Speak reply';
+  String get addCaption => _isUrdu ? 'کیپشن شامل کریں' : 'Add caption';
 
   // ── Session Detail ──
   String get overviewTab => _isUrdu ? 'جائزہ' : 'Overview';
@@ -118,10 +243,27 @@ class AppStrings {
   String get noActionItems => _isUrdu ? 'کوئی عمل کے اقدامات نہیں' : 'No action items';
   String get noActionItemsDesc => _isUrdu ? 'AI تجزیے کے بعد عمل کے اقدامات یہاں ظاہر ہوں گے۔' : 'Action items will appear here after AI analysis.';
   String get noItemsAvailable => _isUrdu ? 'کوئی اشیاء دستیاب نہیں' : 'No items available';
-  String get exportTxt => _isUrdu ? 'TXT کے طور پر برآمد کریں' : 'Export as TXT';
+  String get exportTxt => _isUrdu ? 'ٹیکسٹ فائل کے طور پر برآمد کریں' : 'Export as TXT';
   String get copyClipboard => _isUrdu ? 'کلپ بورڈ پر کاپی کریں' : 'Copy to Clipboard';
   String get savedRecordsNote => _isUrdu ? 'محفوظ شدہ ریکارڈز کیپشنز اور میٹا ڈیٹا رکھتے ہیں۔ خام آڈیو نہیں رکھا جاتا۔' : 'Saved records contain captions and metadata. Raw audio is not stored.';
   String get exportPrivacyNote => _isUrdu ? 'برآمد شدہ فائلیں HumSukhan کے باہر رکھی جاتی ہیں اور خودکار طور پر حذف نہیں ہوں گی۔' : 'Exported files are stored outside HumSukhan and won\'t be automatically deleted.';
+
+  String get typeLabel => _isUrdu ? 'قسم' : 'Type';
+  String get dateLabel => _isUrdu ? 'تاریخ' : 'Date';
+  String get captionsTitle => _isUrdu ? 'کیپشنز' : 'Captions';
+  String get languageLabel => _isUrdu ? 'زبان' : 'Language';
+  String get retentionLabel => _isUrdu ? 'محفوظ رہنے کی مدت' : 'Retention';
+  String daysCount(int days) => _isUrdu ? '$days دن' : '$days days';
+  String get generatingSummary => _isUrdu ? 'AI خلاصہ تیار ہو رہا ہے…' : 'Generating the AI summary…';
+  String get aiSummaryUnavailable => _isUrdu ? 'AI خلاصہ دستیاب نہیں' : 'AI summary unavailable';
+  String get copiedToClipboard => _isUrdu ? 'کلپ بورڈ پر کاپی ہو گیا' : 'Copied to clipboard';
+  String get exportFailed => _isUrdu ? 'برآمد نہیں ہو سکا۔ دوبارہ کوشش کریں۔' : 'Export failed. Please try again.';
+  String get exportHeading => _isUrdu ? 'HumSukhan — اجلاس کی برآمد' : 'HumSukhan — Session Export';
+  String get exportShareText => _isUrdu ? 'HumSukhan اجلاس کی برآمد' : 'HumSukhan session export';
+  String get exportTitle => _isUrdu ? 'عنوان' : 'Title';
+  String get exportTranscript => _isUrdu ? '--- ٹرانسکرپٹ ---' : '--- TRANSCRIPT ---';
+  String get exportSummary => _isUrdu ? '--- AI خلاصہ ---' : '--- AI SUMMARY ---';
+  String get exportLegacySummary => _isUrdu ? '--- پرانا AI خلاصہ ---' : '--- LEGACY AI SUMMARY ---';
 
   // ── Environmental ──
   String get environmentalTitle => _isUrdu ? 'ماحولیاتی الرٹس' : 'Environmental Alerts';
@@ -220,6 +362,27 @@ class AppStrings {
   String get englishModelDesc => _isUrdu ? 'انٹرنیٹ کنکشن کے بغیر ریئل ٹائم انگریزی کیپشنز کے لیے اختیاری آف لائن ماڈل۔' : 'Optional offline model for real-time English captions without an internet connection.';
   String get urduModelTitle => _isUrdu ? 'اردو تقریر کی پہچان' : 'Urdu speech recognition';
   String get urduModelDesc => _isUrdu ? 'انٹرنیٹ کے بغیر اردو کیپشنز کے لیے اختیاری آف لائن ماڈل۔ ہر جملہ بولنے والے کے رکنے کے بعد ظاہر ہوتا ہے۔' : 'Optional offline model for Urdu-script captions without an internet connection. Each sentence appears after the speaker pauses.';
+
+  String textSizeValue(int size) => _isUrdu ? '$size پوائنٹ' : '$size sp';
+  String flashlightCameraNote(String description) => _isUrdu
+      ? '$description کیمرے کی اجازت صرف ٹارچ چلانے کے لیے ہے؛ کوئی تصویر یا ویڈیو نہیں لی جاتی۔'
+      : '$description Camera permission is used only to control the torch; no photos or video are captured.';
+  String get flashlightAndroidOnly => _isUrdu ? 'فلیش لائٹ الرٹس فی الحال صرف اینڈرائیڈ پر دستیاب ہیں۔' : 'Flashlight alerts are currently available on Android only.';
+  String get privacyAndRetention => _isUrdu ? 'رازداری اور محفوظ رہنے کی مدت' : 'Privacy & Default Retention';
+  String get cameraBlocked => _isUrdu
+      ? 'کیمرے کی اجازت بند ہے۔ اینڈرائیڈ کی ترتیبات > ایپس > HumSukhan > اجازتیں > کیمرا کھولیں، پھر دوبارہ کوشش کریں۔'
+      : 'Camera permission is blocked. Open Android Settings > Apps > HumSukhan > Permissions > Camera, then try again.';
+  String get cameraRequired => _isUrdu
+      ? 'فلیش لائٹ الرٹس کے لیے کیمرے کی اجازت ضروری ہے۔ کوئی تصویر یا ویڈیو نہیں لی جاتی۔'
+      : 'Camera permission is required for flashlight alerts. No photos or video are captured.';
+  String get noFlashlight => _isUrdu ? 'اس فون میں استعمال کے قابل کیمرا فلیش لائٹ نہیں۔' : 'This device does not expose an available camera flashlight.';
+  String get flashlightFailed => _isUrdu ? 'فلیش لائٹ الرٹس شروع نہیں ہو سکے۔ دوبارہ کوشش کریں۔' : 'Could not enable flashlight alerts. Please try again.';
+  String get flashlightUnavailable => _isUrdu ? 'فلیش لائٹ کا کنٹرول اس ایپ میں دستیاب نہیں۔' : 'Flashlight controls are unavailable in this app build.';
+  String modelDownloadFailedWith(String? detail) => _isUrdu || detail == null ? modelDownloadFailed : '$modelDownloadFailed\n$detail';
+  String megabytes(int size) => _isUrdu ? '$size ایم بی' : '$size MB';
+  String get aboutTagline => _isUrdu
+      ? 'قابلِ رسائی مواصلات، لائیو کیپشنز، تقریر کی مدد اور پیشہ ورانہ سننا ایک ہی جگہ۔'
+      : 'Accessible communication, live captions, speech assistance, and professional listening in one place.';
 
   // ── Listening ──
   String get captionsLabel => _isUrdu ? 'کیپشنز' : 'captions';

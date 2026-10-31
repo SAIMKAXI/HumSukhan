@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/everyday_language_policy.dart';
+import '../theme/app_typography.dart';
 
 /// Renders mixed Urdu/English captions as structured directional runs.
 ///
@@ -57,7 +58,12 @@ class MixedScriptCaptionText extends StatelessWidget {
           baseline: TextBaseline.alphabetic,
           child: Directionality(
             textDirection: run.direction,
-            child: Text(run.text, maxLines: maxLines, overflow: overflow, style: style),
+            child: Text(
+              run.text,
+              maxLines: maxLines,
+              overflow: overflow,
+              style: run.direction == TextDirection.rtl ? AppTypography.urduStyle(style ?? DefaultTextStyle.of(context).style) : style,
+            ),
           ),
         ),
       );

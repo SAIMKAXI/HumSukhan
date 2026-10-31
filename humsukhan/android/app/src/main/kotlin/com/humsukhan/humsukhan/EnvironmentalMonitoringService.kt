@@ -326,9 +326,10 @@ class EnvironmentalMonitoringService : Service() {
     }
 
     private fun buildNotification(state: String): Notification {
+        val strings = NativeStrings(this)
         val text = when (state) {
-            EnvironmentalMonitoringState.ACTIVE -> "Environmental monitoring: Offline / Local"
-            else -> "Environmental monitoring: starting"
+            EnvironmentalMonitoringState.ACTIVE -> strings.monitoringActive
+            else -> strings.monitoringStarting
         }
         val stopIntent = Intent(this, EnvironmentalMonitoringService::class.java).setAction(EnvironmentalMonitoringState.ACTION_STOP)
         val stopPendingIntent = PendingIntent.getService(this, 4108, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -336,13 +337,13 @@ class EnvironmentalMonitoringService : Service() {
         val openPendingIntent = PendingIntent.getActivity(this, 4109, openIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("HumSukhan Environmental Monitoring")
+            .setContentTitle(strings.monitoringTitle)
             .setContentText(text)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(openPendingIntent)
-            .addAction(android.R.drawable.ic_media_pause, "Stop", stopPendingIntent)
+            .addAction(android.R.drawable.ic_media_pause, strings.stop, stopPendingIntent)
             .build()
     }
 
@@ -352,8 +353,9 @@ class EnvironmentalMonitoringService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Environmental Monitoring", NotificationManager.IMPORTANCE_LOW)
-            channel.description = "Shows when HumSukhan is actively monitoring environmental sounds."
+            val strings = NativeStrings(this)
+            val channel = NotificationChannel(CHANNEL_ID, strings.channelName, NotificationManager.IMPORTANCE_LOW)
+            channel.description = strings.channelDescription
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }

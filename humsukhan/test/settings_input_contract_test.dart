@@ -12,7 +12,7 @@ void main() {
     final source = File('lib/screens/everyday_screen.dart').readAsStringSync();
     expect(source, contains('containsUrduScript'));
     expect(source, contains('TextDirection.rtl'));
-    expect(source, contains('NotoNastaliqUrdu'));
-    expect(source, contains('Type in Urdu or English'));
+    expect(source, contains('AppTypography.urduStyle'));
+    expect(source, contains('hintText: s.typeReplyHint'));
   });
 }

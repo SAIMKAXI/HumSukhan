@@ -17,7 +17,7 @@ void main() {
 
     expect(everyday, contains('onPressed: speech.isSpeaking'));
     expect(everyday, contains('? () => _speakOrStop(speech, typedResponse)'));
-    expect(everyday, contains("tooltip: speech.isSpeaking ? 'Stop speaking' : 'Speak response'"));
+    expect(everyday, contains('tooltip: speech.isSpeaking ? s.stopSpeaking : s.speakResponse'));
   });
 
   test('Android declares microphone foreground-service and optional torch hardware permissions', () {

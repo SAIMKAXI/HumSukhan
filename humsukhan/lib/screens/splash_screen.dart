@@ -58,7 +58,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       child: Scaffold(
         body: Semantics(
           container: true,
-          label: '${strings.appName} startup',
+          label: strings.appStartingUp,
           liveRegion: true,
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -100,7 +100,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                         const SizedBox(height: 32),
                         Semantics(
                           label: strings.appName,
-                          value: 'Loading',
+                          value: strings.loading,
                           child: SizedBox(
                             width: 88,
                             child: ClipRRect(

@@ -6,6 +6,7 @@ import '../modules/wellbeing/data/support_library.dart';
 import '../modules/wellbeing/services/mood_patterns.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_typography.dart';
 
 /// Opens the right help for [state]: the fixed help screen when it is
 /// urgent, otherwise the pre-written ideas.
@@ -32,9 +33,11 @@ class BilingualBlock extends StatelessWidget {
       final muted = secondary ? base?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant) : base;
       return Text(
         text.of(urdu),
+        // Marked as English where it is, so it is read aloud as English.
+        locale: urdu ? null : const Locale('en'),
         textDirection: urdu ? TextDirection.rtl : TextDirection.ltr,
         textAlign: urdu ? TextAlign.right : TextAlign.left,
-        style: urdu ? muted?.copyWith(fontFamily: 'NotoNastaliqUrdu', height: 1.8) : muted?.copyWith(fontFamily: 'NotoSans'),
+        style: muted == null ? null : (urdu ? AppTypography.urduStyle(muted) : muted.copyWith(fontFamily: AppTypography.latin)),
       );
     }
 
@@ -295,15 +298,16 @@ class ShowSomeoneScreen extends StatelessWidget {
                     children: [
                       Text(
                         message.en,
+                        locale: const Locale('en'),
                         textDirection: TextDirection.ltr,
-                        style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w700, height: 1.3, fontFamily: 'NotoSans'),
+                        style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w700, height: 1.3, fontFamily: AppTypography.latin),
                       ),
                       const SizedBox(height: 32),
                       Text(
                         message.ur,
                         textDirection: TextDirection.rtl,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(color: Colors.white, fontSize: 30, height: 2.0, fontFamily: 'NotoNastaliqUrdu'),
+                        textAlign: TextAlign.start,
+                        style: AppTypography.urduStyle(const TextStyle(color: Colors.white, fontSize: 30)),
                       ),
                     ],
                   ),

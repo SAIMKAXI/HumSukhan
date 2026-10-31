@@ -42,8 +42,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final strings = AppStrings.of(context);
 
     if (session == null) {
-      return const Scaffold(
-        body: Center(child: Text('Session is no longer available.')),
+      return Scaffold(
+        body: Center(child: Text(strings.sessionNoLongerAvailable)),
       );
     }
 
@@ -124,15 +124,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                   const SizedBox(height: 12),
-                  _row(context, 'Type', session.type.name.toUpperCase()),
+                  _row(context, strings.typeLabel, strings.sessionTypeName(session.type.name)),
                   _row(
                     context,
-                    'Date',
+                    strings.dateLabel,
                     '${session.createdAt.day}/${session.createdAt.month}/${session.createdAt.year}',
                   ),
-                  _row(context, 'Captions', '${session.captions.length}'),
-                  _row(context, 'Language', session.captionLanguage),
-                  _row(context, 'Retention', '${session.retentionDays} days'),
+                  _row(context, strings.captionsTitle, '${session.captions.length}'),
+                  _row(context, strings.languageLabel, strings.languageName(session.captionLanguage)),
+                  _row(context, strings.retentionLabel, strings.daysCount(session.retentionDays)),
                   Row(
                     children: [
                       const Icon(Icons.timer, size: 16),
@@ -203,7 +203,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${caption.speaker} · $hour:$minute',
+                '${AppStrings.of(context).speakerName(caption.speaker)} · $hour:$minute',
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
@@ -236,15 +236,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
     // Keep the loading, failure, and partial-result states distinct.
     if (!hasInsight && provider.isGeneratingInsight(widget.sessionId)) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
+          padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Generating the AI summary…'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(strings.generatingSummary),
             ],
           ),
         ),
@@ -256,8 +256,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       return ErrorState(
         title: failure == null
             ? strings.insightsUnavailable
-            : 'AI summary unavailable',
-        message: failure ?? strings.insightsUnavailableDesc,
+            : strings.aiSummaryUnavailable,
+        message: failure == null ? strings.insightsUnavailableDesc : strings.message(failure),
         buttonText: strings.retryAiSummary,
         onRetry: () {
           provider.generateInsights(widget.sessionId);
@@ -402,7 +402,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               title: Text(strings.exportTxt),
               onTap: () {
                 Navigator.pop(dialogContext);
-                _exportTxt(session, insight, context);
+                _exportTxt(session, insight, context, strings);
               },
             ),
             ListTile(
@@ -411,11 +411,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               onTap: () async {
                 Navigator.pop(dialogContext);
                 await Clipboard.setData(
-                  ClipboardData(text: _exportText(session, insight)),
+                  ClipboardData(text: _exportText(session, insight, strings)),
                 );
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Copied to clipboard')),
+                  SnackBar(content: Text(strings.copiedToClipboard)),
                 );
               },
             ),
@@ -428,41 +428,42 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   String _exportText(
     ProfessionalSession session,
     ProfessionalInsight? insight,
+    AppStrings strings,
   ) {
     final buffer = StringBuffer()
-      ..writeln('HumSukhan — Session Export')
+      ..writeln(strings.exportHeading)
       ..writeln()
-      ..writeln('Title: ${session.title}')
-      ..writeln('Type: ${session.type.name}')
-      ..writeln('Language: ${session.captionLanguage}')
+      ..writeln('${strings.exportTitle}: ${session.title}')
+      ..writeln('${strings.typeLabel}: ${strings.sessionTypeName(session.type.name)}')
+      ..writeln('${strings.languageLabel}: ${strings.languageName(session.captionLanguage)}')
       ..writeln()
-      ..writeln('--- TRANSCRIPT ---');
+      ..writeln(strings.exportTranscript);
 
     for (final caption in session.captions) {
-      buffer.writeln('${caption.speaker}: ${caption.text}');
+      buffer.writeln('${strings.speakerName(caption.speaker)}: ${caption.text}');
     }
 
     if (insight?.isAvailable == true && insight!.summaryBullets.isNotEmpty) {
-      buffer.writeln('\n--- AI SUMMARY ---');
+      buffer.writeln('\n${strings.exportSummary}');
       for (final bullet in insight.summaryBullets) {
         buffer.writeln('• $bullet');
       }
 
       if (insight.actionItems.isNotEmpty) {
-        buffer.writeln('\nAction Items:');
+        buffer.writeln('\n${strings.actionItems}:');
         for (final item in insight.actionItems) {
           buffer.writeln('• $item');
         }
       }
 
       if (insight.deadlines.isNotEmpty) {
-        buffer.writeln('\nDeadlines:');
+        buffer.writeln('\n${strings.deadlines}:');
         for (final deadline in insight.deadlines) {
           buffer.writeln('• $deadline');
         }
       }
     } else if (insight?.summary.trim().isNotEmpty == true) {
-      buffer.writeln('\n--- LEGACY AI SUMMARY ---');
+      buffer.writeln('\n${strings.exportLegacySummary}');
       buffer.writeln(insight!.summary.trim());
     }
 
@@ -473,19 +474,21 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     ProfessionalSession session,
     ProfessionalInsight? insight,
     BuildContext context,
+    AppStrings strings,
   ) async {
     try {
       final directory = await getApplicationDocumentsDirectory();
       final file = File('${directory.path}/humsukhan_${session.id}.txt');
-      await file.writeAsString(_exportText(session, insight));
+      await file.writeAsString(_exportText(session, insight, strings));
       await Share.shareXFiles(
         [XFile(file.path)],
-        text: 'HumSukhan session export',
+        text: strings.exportShareText,
       );
     } catch (error) {
       if (!context.mounted) return;
+      debugPrint('Session export failed: $error');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Export failed: $error')),
+        SnackBar(content: Text(strings.exportFailed)),
       );
     }
   }
