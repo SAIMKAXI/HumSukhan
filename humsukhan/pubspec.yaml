@@ -1,7 +1,7 @@
 name: humsukhan
 description: "HumSukhan - Accessibility-first AI communication and professional listening assistant"
 publish_to: 'none'
-version: 2.11.2+44
+version: 2.11.3+45
 
 # Release v2.11.1
 # Smaller download: the APK carries code for ARM phones only.
