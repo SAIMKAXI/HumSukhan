@@ -101,9 +101,28 @@ jobs:
         run: |
           test -n "$SUPABASE_ANON_KEY" || { echo 'ERROR: SUPABASE_ANON_KEY secret is missing.'; exit 1; }
 
+      - name: Prepare release signing key
+        # The permanent key (docs/releasing.md), from four repository secrets.
+        # Without it the APK is signed with this runner's temporary debug key
+        # and cannot update the previous release.
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::warning::No release signing key is configured (docs/releasing.md). This APK is signed with a temporary debug key: it cannot update the previous release, so testers must uninstall first."
+            exit 0
+          fi
+          KEYSTORE="$RUNNER_TEMP/humsukhan-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
+          test -s "$KEYSTORE" || { echo '::error::ANDROID_KEYSTORE_BASE64 is not a base64-encoded keystore.'; exit 1; }
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+
       - name: Build release APK
         env:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           # ARM phones only: x86_64 is used by emulators and Chromebooks, not
           # by phones, and would add about 19 MB to the download.
@@ -125,7 +144,15 @@ jobs:
             exit 1
           fi
           "$APKSIGNER" verify --verbose "$APK"
-          "$APKSIGNER" verify --print-certs "$APK"
+          CERTS="$("$APKSIGNER" verify --print-certs "$APK")"
+          echo "$CERTS"
+          if grep -q 'CN=Android Debug' <<<"$CERTS"; then
+            if [[ -n "${ANDROID_KEYSTORE_PATH:-}" ]]; then
+              echo '::error::A release key is configured, but the APK was signed with the debug key. Check the ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD secrets.'
+              exit 1
+            fi
+            echo '::warning::This APK is signed with a temporary debug key.'
+          fi
 
       - name: Verify APK contains ARM code only
         shell: bash
@@ -144,6 +171,11 @@ jobs:
             done
           done
           ls -l "$APK"
+
+      - name: Check what the APK carries
+        # Permissions, backup and debug flags, exposed components, bundled
+        # files and embedded secrets (tool/check_apk.py).
+        run: python3 tool/check_apk.py build/app/outputs/flutter-apk/app-release.apk
 
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/HumSukhan-${{ steps.release.outputs.version }}.apk
@@ -164,3 +196,7 @@ jobs:
           generate_release_notes: true
           files: humsukhan/build/app/outputs/flutter-apk/HumSukhan-${{ steps.release.outputs.version }}.apk
           fail_on_unmatched_files: true
+
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/humsukhan-release.jks"

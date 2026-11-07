@@ -364,17 +364,8 @@ class AppStrings {
   String get urduModelDesc => _isUrdu ? 'انٹرنیٹ کے بغیر اردو کیپشنز کے لیے اختیاری آف لائن ماڈل۔ ہر جملہ بولنے والے کے رکنے کے بعد ظاہر ہوتا ہے۔' : 'Optional offline model for Urdu-script captions without an internet connection. Each sentence appears after the speaker pauses.';
 
   String textSizeValue(int size) => _isUrdu ? '$size پوائنٹ' : '$size sp';
-  String flashlightCameraNote(String description) => _isUrdu
-      ? '$description کیمرے کی اجازت صرف ٹارچ چلانے کے لیے ہے؛ کوئی تصویر یا ویڈیو نہیں لی جاتی۔'
-      : '$description Camera permission is used only to control the torch; no photos or video are captured.';
   String get flashlightAndroidOnly => _isUrdu ? 'فلیش لائٹ الرٹس فی الحال صرف اینڈرائیڈ پر دستیاب ہیں۔' : 'Flashlight alerts are currently available on Android only.';
   String get privacyAndRetention => _isUrdu ? 'رازداری اور محفوظ رہنے کی مدت' : 'Privacy & Default Retention';
-  String get cameraBlocked => _isUrdu
-      ? 'کیمرے کی اجازت بند ہے۔ اینڈرائیڈ کی ترتیبات > ایپس > HumSukhan > اجازتیں > کیمرا کھولیں، پھر دوبارہ کوشش کریں۔'
-      : 'Camera permission is blocked. Open Android Settings > Apps > HumSukhan > Permissions > Camera, then try again.';
-  String get cameraRequired => _isUrdu
-      ? 'فلیش لائٹ الرٹس کے لیے کیمرے کی اجازت ضروری ہے۔ کوئی تصویر یا ویڈیو نہیں لی جاتی۔'
-      : 'Camera permission is required for flashlight alerts. No photos or video are captured.';
   String get noFlashlight => _isUrdu ? 'اس فون میں استعمال کے قابل کیمرا فلیش لائٹ نہیں۔' : 'This device does not expose an available camera flashlight.';
   String get flashlightFailed => _isUrdu ? 'فلیش لائٹ الرٹس شروع نہیں ہو سکے۔ دوبارہ کوشش کریں۔' : 'Could not enable flashlight alerts. Please try again.';
   String get flashlightUnavailable => _isUrdu ? 'فلیش لائٹ کا کنٹرول اس ایپ میں دستیاب نہیں۔' : 'Flashlight controls are unavailable in this app build.';

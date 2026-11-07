@@ -11,7 +11,9 @@ import 'screens/auth_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'widgets/main_scaffold.dart';
 import 'l10n/app_strings.dart';
+import 'services/export_files.dart';
 import 'services/supabase_service.dart';
+import 'utils/release_logging.dart';
 import 'modules/environmental_alerts/background/environmental_background_pipeline.dart';
 import 'modules/environmental_alerts/services/environmental_monitor.dart';
 
@@ -21,11 +23,15 @@ import 'modules/environmental_alerts/services/environmental_monitor.dart';
 @pragma('vm:entry-point')
 Future<void> environmentalMonitoringBackgroundMain() async {
   WidgetsFlutterBinding.ensureInitialized();
+  silenceLogsInRelease();
   await runEnvironmentalBackgroundPipeline();
 }
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  silenceLogsInRelease();
+  // A transcript exported last time must not outlive its retention period.
+  unawaited(ExportFiles.cleanUp());
   runApp(const HumSukhanApp());
 }
 

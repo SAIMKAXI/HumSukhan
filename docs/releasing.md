@@ -18,7 +18,7 @@ Android installs an update only if it is signed with the same key as the install
    - `ANDROID_KEYSTORE_PASSWORD`: the keystore password.
    - `ANDROID_KEY_ALIAS`: `humsukhan`.
    - `ANDROID_KEY_PASSWORD`: the key password (the same as the keystore password for a PKCS12 keystore).
-3. The release workflow must pass these to the build as the environment variables `ANDROID_KEYSTORE_PATH` (the decoded file), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, which `android/app/build.gradle.kts` reads. Without them the build falls back to a debug key, which cannot update the previous release.
+3. That is all: the release workflow decodes the keystore into the runner's temporary folder, passes the four values to the build as `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` (which `android/app/build.gradle.kts` reads), and deletes the file when the job ends. Without the secrets the build falls back to the runner's temporary debug key, which cannot update the previous release; the workflow then publishes with a warning. With the keystore set but a password or alias wrong, it refuses to publish.
 
 For a local release build, put the same four values in `humsukhan/android/key.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`); the file is git-ignored.
 
@@ -31,5 +31,21 @@ For a local release build, put the same four values in `humsukhan/android/key.pr
 5. Install the APK over the previous release on an Android device before announcing it. If it installs over the old version, the signing key is right.
 
 The workflow runs analysis and the full test suite first. It checks that the tag matches the app version, and that the APK exists, before publishing.
+
+## What the APK carries
+
+`tool/check_apk.py` checks every release APK, and the QA workflow builds and checks the same APK on every pull request. It fails when the APK:
+
+- asks for a permission outside its list (microphone, internet, network state, vibration, the microphone foreground service, notifications, and restarting reminders after a reboot);
+- is debuggable, allows unencrypted traffic, or allows Android backup or transfer to a new phone;
+- lets other apps start a component that is not the main screen and is not guarded by a permission;
+- contains a file outside the expected set: keys, env files, source code, unexpected assets, or build metadata such as library version files;
+- contains anything shaped like an API key or private key, or a Supabase key other than the public anon key.
+
+When a change needs a new permission, exposed component or asset, add it to the lists in `tool/check_apk.py` so it is reviewed. Run the check on a local build with `python3 tool/check_apk.py build/app/outputs/flutter-apk/app-release.apk`.
+
+The Supabase URL and anon key are built into every APK on purpose: they are public, and the database's row-level security and the Edge Functions' sign-in checks protect the data. Provider keys (Deepgram, Soniox, Gemini) live only in Supabase Edge Function secrets and never in the app.
+
+Release builds log nothing to the Android system log (`lib/utils/release_logging.dart`). Dart code is not obfuscated: the class names it would hide are not secret, and the background sound-alert service finds its Dart entry point by name.
 
 The APK contains code for ARM phones only (`arm64-v8a` and `armeabi-v7a`); the build uses `--target-platform android-arm,android-arm64`, and `android/app/build.gradle.kts` packages the plugins' native libraries for the same platforms. Leaving out x86_64, which only emulators and Chromebooks use, keeps the download about 19 MB smaller. The workflow refuses to publish an APK with any other platform in it.

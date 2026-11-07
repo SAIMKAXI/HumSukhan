@@ -22,10 +22,10 @@ class MoodLoad {
 
 /// Keeps one account's check-ins in a file on this phone.
 ///
-/// Check-ins are never sent to the server. The `wellbeing/` folder is also
-/// excluded from Android's cloud backup and device-to-device transfer (see
-/// `res/xml/backup_rules.xml` and `res/xml/data_extraction_rules.xml`), so
-/// they stay on this phone only.
+/// Check-ins are never sent to the server, and the app is left out of
+/// Android's cloud backup and device-to-device transfer (`allowBackup` in
+/// AndroidManifest.xml and `res/xml/data_extraction_rules.xml`), so they stay
+/// on this phone only.
 class MoodStore {
   MoodStore({required String account, Future<Directory> Function()? baseDirectory})
       : _account = _safeName(account),

@@ -72,8 +72,10 @@ guarantee contrast ratios.
 
 | Script | Family | Notes |
 |---|---|---|
-| Latin | `NotoSans` | Fallback: Nastaliq |
+| Latin | `NotoSans` (variable weight, Latin only) | Fallback: Nastaliq |
 | Urdu / Arabic | `NotoNastaliqUrdu` (Regular 400, Bold 700) | Fallback: Noto Sans |
+
+`NotoSans-Regular.ttf` is Noto Sans with its width fixed at normal and only the Latin script kept (Basic Latin through Latin Extended, Vietnamese, punctuation, currency and common symbols), 0.4 MB instead of 2 MB. Its weight axis is kept, so bold renders as before. Text in other scripts falls back to the phone's fonts. To rebuild it from the upstream font with fontTools: `fonttools varLib.instancer NotoSans[wdth,wght].ttf wdth=100`, then `pyftsubset` with `--unicodes=U+0020-007E,U+00A0-036F,U+1E00-1EFF,U+2000-20CF,U+2100-22FF,U+25A0-25FF,U+FB00-FB06,U+FEFF,U+FFFD --layout-features='*' --name-IDs='*'`.
 
 One pair of typefaces everywhere: each script always renders in its own face,
 whichever language the app is in, so nothing falls back to a system font.

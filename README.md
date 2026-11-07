@@ -64,7 +64,9 @@ HumSukhan (هم سخن, *one who speaks with you*) helps people who are Deaf or 
 | Account, profile, settings, quick replies | Supabase, readable only by their owner |
 | AI insights | Supabase, deleted when their session expires |
 | Environmental audio | Processed on the phone; never stored or uploaded |
-| Wellbeing check-ins and notes | On the phone only; not uploaded, and excluded from Android cloud backup and device transfer |
+| Wellbeing check-ins and notes | On the phone only; never uploaded |
+
+Nothing on the phone is included in Android cloud backup or transfer to a new phone, so data kept only on the phone stays there and is deleted on schedule.
 
 Audio is sent to Deepgram only while cloud speech recognition is in use. A session's transcript is sent to Gemini only to generate its insights. Neither is stored by HumSukhan.
 
