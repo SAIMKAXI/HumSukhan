@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
+import '../utils/state_machine.dart';
 
 class ConversationProvider extends ChangeNotifier {
   ConversationProvider() {
@@ -19,22 +20,22 @@ class ConversationProvider extends ChangeNotifier {
     }
   }
 
-  ConversationState _state = ConversationState.idle;
+  final _conversation = StateMachine(ConversationState.idle, conversationTransitions);
   final List<Caption> _captions = [];
   Caption? _currentPartial;
   Caption? _activeSpeakerDraft;
   Timer? _partialCommitTimer;
-  bool _isListening = false;
   String _currentLanguage = 'English';
   String _listeningStatus = 'Not listening';
   DateTime? _conversationStartedAt;
 
 
-  ConversationState get state => _state;
+  ConversationState get state => _conversation.state;
   List<Caption> get captions => List.unmodifiable(_captions);
   Caption? get currentPartial => _currentPartial;
-  bool get isListening => _isListening;
-  bool get isSpeakerTurnActive => _activeSpeakerDraft != null || _isListening;
+  /// The speaker's turn is being captioned: a draft is open.
+  bool get isListening => _activeSpeakerDraft != null;
+  bool get isSpeakerTurnActive => isListening;
   String get currentLanguage => _currentLanguage;
   String get listeningStatus => _listeningStatus;
   DateTime? get conversationStartedAt => _conversationStartedAt;
@@ -50,8 +51,7 @@ class ConversationProvider extends ChangeNotifier {
     _captions.clear();
     _currentPartial = null;
     _activeSpeakerDraft = null;
-    _state = ConversationState.active;
-    _isListening = false;
+    _conversation.moveTo(ConversationState.active);
     _conversationStartedAt = DateTime.now();
     _listeningStatus = 'Tap the microphone to speak';
     notifyListeners();
@@ -60,11 +60,10 @@ class ConversationProvider extends ChangeNotifier {
   void stopConversation() {
     commitSpeakerTurn(notify: false);
     _commitCurrentPartial();
-    _state = ConversationState.stopping;
-    _isListening = false;
+    _conversation.moveTo(ConversationState.stopping);
     _listeningStatus = 'Stopping...';
     notifyListeners();
-    _state = ConversationState.saveDecision;
+    _conversation.moveTo(ConversationState.saveDecision);
     _listeningStatus = 'Stopped';
     notifyListeners();
   }
@@ -77,8 +76,7 @@ class ConversationProvider extends ChangeNotifier {
   void _resetState({bool notify = true}) {
     _partialCommitTimer?.cancel();
     _partialCommitTimer = null;
-    _state = ConversationState.idle;
-    _isListening = false;
+    _conversation.moveTo(ConversationState.idle);
     _listeningStatus = 'Not listening';
     _conversationStartedAt = null;
     _captions.clear();
@@ -88,17 +86,15 @@ class ConversationProvider extends ChangeNotifier {
   }
 
   void cancelStop() {
-    _state = ConversationState.active;
-    _isListening = false;
+    _conversation.moveTo(ConversationState.active);
     _listeningStatus = 'Tap the microphone to speak';
     notifyListeners();
   }
 
   void beginSpeakerTurn({String language = 'English'}) {
-    if (_state != ConversationState.active || _activeSpeakerDraft != null) return;
+    if (state != ConversationState.active || _activeSpeakerDraft != null) return;
     _partialCommitTimer?.cancel();
     _currentLanguage = language;
-    _isListening = true;
     _listeningStatus = 'Listening…';
     final now = DateTime.now();
     _activeSpeakerDraft = Caption(
@@ -114,7 +110,7 @@ class ConversationProvider extends ChangeNotifier {
 
   void updateSpeakerTurn(String text, {String language = 'English'}) {
     final value = text.trim();
-    if (value.isEmpty || _activeSpeakerDraft == null || _state != ConversationState.active) return;
+    if (value.isEmpty || _activeSpeakerDraft == null || state != ConversationState.active) return;
     _currentLanguage = language;
     _activeSpeakerDraft = Caption(
       id: _activeSpeakerDraft!.id,
@@ -139,7 +135,6 @@ class ConversationProvider extends ChangeNotifier {
     _partialCommitTimer = null;
     _activeSpeakerDraft = null;
     _currentPartial = null;
-    _isListening = false;
     if (draft != null && draft.text.trim().isNotEmpty) {
       final committed = Caption(
         id: draft.id,
@@ -159,7 +154,7 @@ class ConversationProvider extends ChangeNotifier {
 
   void addPartialCaption(String text, {String speaker = 'Speaker 1', String language = 'English'}) {
     final value = text.trim();
-    if (value.isEmpty || _state != ConversationState.active) return;
+    if (value.isEmpty || state != ConversationState.active) return;
     final existing = _currentPartial;
     if (existing == null || existing.speaker != speaker) {
       _partialCommitTimer?.cancel();
@@ -187,7 +182,7 @@ class ConversationProvider extends ChangeNotifier {
 
   void finalizeCaption(String text, {String speaker = 'Speaker 1', String language = 'English'}) {
     final value = text.trim();
-    if (value.isEmpty || _state != ConversationState.active) return;
+    if (value.isEmpty || state != ConversationState.active) return;
     _partialCommitTimer?.cancel();
     _partialCommitTimer = null;
 
@@ -231,7 +226,7 @@ class ConversationProvider extends ChangeNotifier {
 
   void addOwnCaption(String text) {
     final value = text.trim();
-    if (value.isEmpty || _state != ConversationState.active) return;
+    if (value.isEmpty || state != ConversationState.active) return;
     commitSpeakerTurn(notify: false);
     _commitCurrentPartial();
     final caption = Caption(text: value, speaker: 'You', language: _currentLanguage, isOwn: true);

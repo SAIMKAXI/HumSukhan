@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'providers/providers.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
+import 'navigation/app_stage.dart';
 import 'screens/splash_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -253,14 +254,18 @@ class _AccountGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final settings = context.watch<SettingsProvider>();
-    if (auth.isPasswordRecovery) return const AuthScreen(recoveryMode: true);
-    if (!settings.isLoaded) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (!auth.isAuthenticated) return const AuthScreen();
-    if (!settings.isOnboardingComplete) return const OnboardingScreen();
-    return const MainScaffold();
+    final stage = appStageFor(
+      recoveringPassword: auth.isPasswordRecovery,
+      settingsLoaded: settings.isLoaded,
+      signedIn: auth.isAuthenticated,
+      onboardingComplete: settings.isOnboardingComplete,
+    );
+    return switch (stage) {
+      AppStage.settingNewPassword => const AuthScreen(recoveryMode: true),
+      AppStage.loadingSettings => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      AppStage.signedOut => const AuthScreen(),
+      AppStage.onboarding => const OnboardingScreen(),
+      AppStage.ready => const MainScaffold(),
+    };
   }
 }

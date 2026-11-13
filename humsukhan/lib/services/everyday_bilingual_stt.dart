@@ -10,6 +10,7 @@ import 'package:record/record.dart';
 import 'everyday_language_policy.dart';
 import 'roman_urdu_detector.dart';
 import 'supabase_service.dart';
+import '../utils/state_machine.dart';
 
 class EverydayBilingualResult {
   final String text;
@@ -61,6 +62,48 @@ class _TranscriptSegment {
   bool get hasLatin => EverydayLanguagePolicy.containsLatin(text);
 }
 
+/// The live cloud stream of [EverydayBilingualSttService].
+enum StreamPhase {
+  idle,
+
+  /// Opening the microphone and connecting the recognizers. Audio is kept
+  /// and sent once they are open.
+  connecting,
+  streaming,
+
+  /// Stopped: the open recognizers are handing back the words they held.
+  finalizing,
+}
+
+/// A stop abandons a connection in progress or finalizes an open stream; a
+/// new start may begin while the last stream is still finalizing.
+const streamTransitions = <StreamPhase, Set<StreamPhase>>{
+  StreamPhase.idle: {StreamPhase.connecting},
+  StreamPhase.connecting: {StreamPhase.streaming, StreamPhase.idle},
+  StreamPhase.streaming: {StreamPhase.finalizing},
+  StreamPhase.finalizing: {StreamPhase.idle, StreamPhase.connecting},
+};
+
+/// What [CaptionWatchdog] knows about the microphone since its last reset.
+enum WatchdogState {
+  /// Only digital silence so far: maybe the microphone is held elsewhere.
+  waitingForSound,
+
+  /// Real sound has come in; now speech must turn into captions.
+  hearing,
+
+  /// It gave up and reported why; nothing more happens until a reset.
+  stalled,
+}
+
+/// Silence can turn to sound, and either can stall; only a reset (a new
+/// start) leaves stalled.
+const watchdogTransitions = <WatchdogState, Set<WatchdogState>>{
+  WatchdogState.waitingForSound: {WatchdogState.hearing, WatchdogState.stalled},
+  WatchdogState.hearing: {WatchdogState.stalled},
+  WatchdogState.stalled: {WatchdogState.waitingForSound},
+};
+
 /// Notices a recognizer that is open but captioning nothing.
 ///
 /// A socket can stay open while nothing useful comes back: the microphone
@@ -82,14 +125,14 @@ class CaptionWatchdog {
 
   int _silentMs = 0;
   int _speechWithoutCaptionMs = 0;
-  bool _heardAnything = false;
-  bool _stalled = false;
+  StateMachine<WatchdogState> _state = StateMachine(WatchdogState.waitingForSound, watchdogTransitions);
+
+  WatchdogState get state => _state.state;
 
   void reset() {
     _silentMs = 0;
     _speechWithoutCaptionMs = 0;
-    _heardAnything = false;
-    _stalled = false;
+    _state = StateMachine(WatchdogState.waitingForSound, watchdogTransitions);
   }
 
   /// Words came back.
@@ -98,7 +141,7 @@ class CaptionWatchdog {
   /// One chunk of the 16 kHz PCM16 sent to the recognizer.
   void audio(Uint8List pcm) {
     final samples = pcm.length ~/ 2;
-    if (_stalled || samples == 0) return;
+    if (state == WatchdogState.stalled || samples == 0) return;
     final ms = samples ~/ 16;
     final view = ByteData.sublistView(pcm);
     var loud = false;
@@ -108,8 +151,8 @@ class CaptionWatchdog {
       if (v != 0) loud = true;
       sum += (v / 32768) * (v / 32768);
     }
-    if (loud) _heardAnything = true;
-    if (!_heardAnything) {
+    if (loud) _state.tryMoveTo(WatchdogState.hearing);
+    if (state == WatchdogState.waitingForSound) {
       _silentMs += ms;
       if (_silentMs >= silentMicrophoneLimit.inMilliseconds) {
         _stall('The microphone is sending silence, so nothing can be captioned. '
@@ -126,7 +169,7 @@ class CaptionWatchdog {
   }
 
   void _stall(String reason) {
-    _stalled = true;
+    _state.moveTo(WatchdogState.stalled);
     onStall(reason);
   }
 }
@@ -157,8 +200,14 @@ class EverydayBilingualSttService {
   Timer? _emitTimer;
   Timer? _finalTimer;
 
-  bool _recording = false;
-  bool _ready = false;
+  StateMachine<StreamPhase> _phase = StateMachine(StreamPhase.idle, streamTransitions);
+  StreamPhase get phase => _phase.state;
+
+  /// Audio is flowing to open recognizers.
+  bool get _recording => _phase.state == StreamPhase.streaming;
+
+  /// The recognizers are open: streaming, or finishing after a stop.
+  bool get _ready => _phase.isIn(const {StreamPhase.streaming, StreamPhase.finalizing});
   String _mode = 'Auto';
   String? _lastStartError;
 
@@ -310,6 +359,17 @@ class EverydayBilingualSttService {
   Future<bool> start({String mode = 'Auto'}) async {
     if (_recording) return true;
     final generation = ++_sessionGeneration;
+    _phase.moveTo(StreamPhase.connecting);
+    final started = await _start(mode, generation);
+    // A start that failed gives the phase back, unless a stop or a newer
+    // start has taken it over meanwhile.
+    if (!started && generation == _sessionGeneration && _phase.state == StreamPhase.connecting) {
+      _phase.moveTo(StreamPhase.idle);
+    }
+    return started;
+  }
+
+  Future<bool> _start(String mode, int generation) async {
     _mode = _normalizeMode(mode);
     _lastStartError = null;
     _reconnectingSources.clear();
@@ -369,12 +429,11 @@ class EverydayBilingualSttService {
     _urduConfidence = 0.0;
     _lastEmitted = '';
     _completedUntil = 0;
-    _ready = true;
+    _phase.moveTo(StreamPhase.streaming);
 
     if (english != null) _listenToSocket('English', english, generation);
     if (urdu != null) _listenToSocket('Urdu', urdu, generation);
 
-    _recording = true;
     _watchdog.reset();
     final early = List<Uint8List>.of(_earlyAudio);
     _earlyAudio.clear();
@@ -466,7 +525,7 @@ class EverydayBilingualSttService {
   @visibleForTesting
   void debugBegin(String mode) {
     _mode = _normalizeMode(mode);
-    _recording = true;
+    _phase = StateMachine(StreamPhase.streaming, streamTransitions);
     _englishWords = const [];
     _urduWords = const [];
     _englishInterim = '';
@@ -890,7 +949,9 @@ class EverydayBilingualSttService {
     _reconnectAttempts.clear();
 
     final hadPendingWords = _englishInterim.isNotEmpty || _urduInterim.isNotEmpty;
-    _recording = false;
+    // Open recognizers still hand back the words they hold; a start still
+    // connecting is simply abandoned.
+    _phase.moveTo(_phase.state == StreamPhase.streaming ? StreamPhase.finalizing : StreamPhase.idle);
     await _closeMicrophone();
 
     final sockets = [_englishSocket, _urduSocket].whereType<WebSocket>().toList();
@@ -920,7 +981,8 @@ class EverydayBilingualSttService {
     }
     _englishSocket = null;
     _urduSocket = null;
-    _ready = false;
+    // A start that came during the stop keeps its own phase.
+    if (_phase.state == StreamPhase.finalizing) _phase.moveTo(StreamPhase.idle);
 
     _englishWords = const [];
     _urduWords = const [];

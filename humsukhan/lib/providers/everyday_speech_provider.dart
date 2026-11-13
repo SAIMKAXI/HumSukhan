@@ -15,6 +15,29 @@ import '../services/stt/model_manager.dart';
 import '../services/stt/stt_plan.dart';
 import '../services/supabase_service.dart';
 import 'speech_provider.dart' show ResilientTtsProvider;
+import '../utils/state_machine.dart';
+
+/// Listening, apart from speaking. See [listeningTransitions].
+enum ListeningPhase {
+  idle,
+
+  /// Getting the microphone and the first recognizer of the plan going.
+  starting,
+  listening,
+
+  /// The recognizer that was running failed; the next one in the plan is
+  /// being started.
+  failingOver,
+}
+
+/// Stopping is allowed from every phase and wins over a start or failover
+/// in progress: they check the phase after every wait.
+const listeningTransitions = <ListeningPhase, Set<ListeningPhase>>{
+  ListeningPhase.idle: {ListeningPhase.starting},
+  ListeningPhase.starting: {ListeningPhase.listening, ListeningPhase.idle},
+  ListeningPhase.listening: {ListeningPhase.failingOver, ListeningPhase.idle},
+  ListeningPhase.failingOver: {ListeningPhase.listening, ListeningPhase.idle},
+};
 
 /// Speech for both Everyday and Professional Mode.
 ///
@@ -67,9 +90,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   /// Only the live cloud stream can tell.
   Stream<void> get onSpeechStarted => _voiceStarted.stream;
   bool _initialized = false;
-  bool _listening = false;
-  bool _startingListening = false;
-  bool _usingFallback = false;
+  final _listen = StateMachine(ListeningPhase.idle, listeningTransitions);
+  bool get _listening => _listen.state == ListeningPhase.listening;
   bool _speaking = false;
   String _language = 'Auto';
   String _lastSpoken = '';
@@ -81,6 +103,10 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
 
   bool get isInitialized => _initialized;
   bool get isListening => _listening;
+
+  /// Where listening is: idle, starting, listening, or moving to the next
+  /// recognizer after the one running failed.
+  ListeningPhase get listeningPhase => _listen.state;
   bool get isSpeaking => _speaking;
   String get currentLanguage => _language;
   String get lastSpokenText => _lastSpoken;
@@ -169,11 +195,13 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   }
 
   Future<void> startListening({String language = 'English'}) async {
-    if (_listening || _startingListening) return;
-    _startingListening = true;
+    if (_listen.state != ListeningPhase.idle) return;
+    _listen.moveTo(ListeningPhase.starting);
     try {
       await initialize(preferredLanguage: language);
-      if (_listening) return;
+      // stopListening() while this was waiting wins: every wait below
+      // checks again.
+      if (_listen.state != ListeningPhase.starting) return;
 
       // Environmental monitoring uses a dedicated native microphone capture
       // path, including when it was started from Quick Settings. Release that
@@ -183,7 +211,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       _lastStartError = null;
       _latestFinal = '';
       _detected = null;
-      _usingFallback = false;
 
       // None of these depends on another. Run one after another, their
       // delays added up before the microphone could open.
@@ -192,6 +219,7 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         _cloudReachable(),
         _fallbackStt.initialize().then((_) => true),
       ]);
+      if (_listen.state != ListeningPhase.starting) return;
       if (!ready[0]) {
         throw StateError('Environmental monitoring could not release the microphone for speech recognition.');
       }
@@ -203,7 +231,10 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         offlineHas: _fallbackStt.offlineReady,
       );
       await _runPlan(from: 0);
-      if (!_listening) {
+      // Still starting: no recognizer could be started. (Idle means
+      // listening was stopped meanwhile, which is not a failure.)
+      if (_listen.state == ListeningPhase.starting) {
+        _listen.moveTo(ListeningPhase.idle);
         _scheduleMonitoringResume();
         _lastStartError ??= online
             ? 'Live speech recognition could not be started.'
@@ -212,7 +243,8 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
         notifyListeners();
       }
     } finally {
-      _startingListening = false;
+      // A start that threw gives up; one that got listening stays so.
+      if (_listen.state == ListeningPhase.starting) _listen.moveTo(ListeningPhase.idle);
     }
   }
 
@@ -222,16 +254,27 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   /// The recognizer that is running, or null.
   SpeechSource? get activeSource => _listening && _planStep >= 0 && _planStep < _plan.length ? _plan[_planStep].source : null;
 
-  /// Starts the first recognizer from step [from] of the plan that will run.
+  /// Whether a recognizer is being looked for: starting, or failing over.
+  bool get _seekingRecognizer => _listen.isIn(const {ListeningPhase.starting, ListeningPhase.failingOver});
+
+  /// Starts the first recognizer from step [from] of the plan that will run,
+  /// and moves to [ListeningPhase.listening] when one does. When none does,
+  /// the phase is left for the caller, which knows why it was looking.
   Future<void> _runPlan({required int from}) async {
     for (var i = from; i < _plan.length && !_disposed; i++) {
       final step = _plan[i];
       final started = step.source == SpeechSource.cloudStream
           ? await _startCloudStream(step.language)
           : await _startFallbackStep(step);
+      if (!_seekingRecognizer) {
+        // Stopped while this recognizer was starting: it must not keep the
+        // microphone open.
+        if (started) await _releaseRecognizers();
+        return;
+      }
       if (started) {
         _planStep = i;
-        _listening = true;
+        _listen.moveTo(ListeningPhase.listening);
         notifyListeners();
         return;
       }
@@ -239,7 +282,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       debugPrint('Speech ${step.source.name} (${step.language}) did not start: $_lastStartError');
     }
     _planStep = -1;
-    _listening = false;
     _currentMode = STTMode.none;
   }
 
@@ -264,16 +306,21 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   /// leave the microphone open with nothing turning it into text; only if
   /// none starts is the conversation told that listening has stopped.
   Future<void> _onBilingualConnectionLost(String message) async {
-    if (_disposed || !_listening || _usingFallback || _startingListening) return;
+    if (_disposed || !_listening || activeSource != SpeechSource.cloudStream) return;
     final failed = _planStep;
+    _listen.moveTo(ListeningPhase.failingOver);
+    notifyListeners();
     await _bilingualSubscription?.cancel();
     _bilingualSubscription = null;
     await _bilingual.stop();
-    _listening = false;
     _lastStartError = message;
-    await _runPlan(from: failed + 1);
-    if (!_listening && !_results.isClosed) {
-      _results.addError(SpeechInterruption(message));
+    if (_listen.state == ListeningPhase.failingOver) await _runPlan(from: failed + 1);
+    // Still failing over: nothing took over. (Idle means listening was
+    // stopped meanwhile, which needs no explanation.)
+    if (_listen.state == ListeningPhase.failingOver) {
+      _listen.moveTo(ListeningPhase.idle);
+      notifyListeners();
+      if (!_results.isClosed) _results.addError(SpeechInterruption(message));
     }
   }
 
@@ -309,7 +356,6 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
       _ => SttRoute.offline,
     };
     if (await _fallbackStt.start(route, language: step.language, bilingual: _language == 'Auto')) {
-      _usingFallback = true;
       _currentMode = _fallbackStt.currentMode;
       return true;
     }
@@ -376,14 +422,14 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   void holdMicrophoneForConversation(bool open) {
     if (_disposed || _conversationOpen == open) return;
     _conversationOpen = open;
-    if (!open && !_listening && !_startingListening) _scheduleMonitoringResume();
+    if (!open && _listen.state == ListeningPhase.idle) _scheduleMonitoringResume();
   }
 
   void _scheduleMonitoringResume() {
     _monitoringResume?.cancel();
     final delay = _conversationOpen ? conversationResumeDelay : resumeDelay;
     _monitoringResume = Timer(delay, () {
-      if (_disposed || _listening || _startingListening || _speaking) return;
+      if (_disposed || _listen.state != ListeningPhase.idle || _speaking) return;
       // Android refuses to start a microphone service from the background;
       // SpeechLifecycleGuard resumes monitoring when the app is back.
       if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) return;
@@ -395,16 +441,20 @@ class EverydaySpeechProvider extends ChangeNotifier implements SpeechEngine {
   Future<void> stopListening() async {
     _scheduleMonitoringResume();
     ++_speechGeneration;
+    // First, so a start or failover in progress sees the stop and gives up.
+    _listen.moveTo(ListeningPhase.idle);
+    _planStep = -1;
+    await _releaseRecognizers();
+    notifyListeners();
+  }
+
+  Future<void> _releaseRecognizers() async {
     await _bilingual.stop();
     await _fallbackStt.stopListening();
-    _listening = false;
-    _usingFallback = false;
-    _planStep = -1;
     await _bilingualSubscription?.cancel();
     await _fallbackSubscription?.cancel();
     _bilingualSubscription = null;
     _fallbackSubscription = null;
-    notifyListeners();
   }
 
   Future<void> switchLanguage(String language) async {
