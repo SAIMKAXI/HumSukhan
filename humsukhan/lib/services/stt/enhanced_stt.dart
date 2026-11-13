@@ -8,11 +8,32 @@ import 'model_manager.dart';
 import '../everyday_language_policy.dart';
 import '../speech_capability.dart';
 import '../supabase_service.dart';
+import '../../utils/state_machine.dart';
 
 export 'vosk_stt.dart' show STTMode;
 
 /// A way of turning the microphone into captions, other than the live cloud
 /// stream, which EverydaySpeechProvider runs itself.
+/// One recognizer run of [EnhancedSpeechProvider]. See [recognizerTransitions].
+enum RecognizerPhase {
+  idle,
+  starting,
+  listening,
+
+  /// Stopped, but the cloud recognizer is still transcribing what was said
+  /// before the stop; its results still count.
+  draining,
+}
+
+/// Stopping is allowed from every phase; only a listening cloud recognizer
+/// drains first.
+const recognizerTransitions = <RecognizerPhase, Set<RecognizerPhase>>{
+  RecognizerPhase.idle: {RecognizerPhase.starting},
+  RecognizerPhase.starting: {RecognizerPhase.listening, RecognizerPhase.idle},
+  RecognizerPhase.listening: {RecognizerPhase.draining, RecognizerPhase.idle},
+  RecognizerPhase.draining: {RecognizerPhase.idle},
+};
+
 enum SttRoute {
   /// The phone's own recognizer, for a language it has installed.
   device,
@@ -38,7 +59,11 @@ class EnhancedSpeechProvider {
   final SpeechCapability _capability = SpeechCapability.instance;
 
   bool _initialized = false;
-  bool _listening = false;
+  final _phase = StateMachine(RecognizerPhase.idle, recognizerTransitions);
+
+  /// Starting, listening, or draining: results still count, and the device
+  /// recognizer is kept going.
+  bool get _listening => _phase.isIn(const {RecognizerPhase.starting, RecognizerPhase.listening, RecognizerPhase.draining});
   bool _platformAvailable = false;
   bool _platformRestartInFlight = false;
   STTMode _currentMode = STTMode.none;
@@ -52,6 +77,7 @@ class EnhancedSpeechProvider {
 
   Stream<SpeechResultEvent> get onResult => _controller.stream;
   bool get isListening => _listening;
+  RecognizerPhase get phase => _phase.state;
   STTMode get currentMode => _currentMode;
   String get currentLanguage => _currentLanguage;
   bool get isSherpaAvailable => _modelManager.readyLanguages.isNotEmpty;
@@ -129,27 +155,34 @@ class EnhancedSpeechProvider {
   /// if not, [lastStartError] says why.
   Future<bool> start(SttRoute route, {required String language, bool bilingual = false}) async {
     await initialize();
-    if (_listening) await stopListening();
+    if (_phase.state != RecognizerPhase.idle) await stopListening();
     _lastStartError = null;
     _currentLanguage = language;
     _platformLastText = '';
     _lastEmittedPlatformText = '';
-    _listening = true;
+    _phase.moveTo(RecognizerPhase.starting);
 
     try {
-      switch (route) {
-        case SttRoute.device:
-          if (await _startPlatformListening(language)) return true;
-        case SttRoute.cloudChunk:
-          if (await _startCloudChunk(bilingual ? 'Auto' : language)) return true;
-        case SttRoute.offline:
-          if (await _startSherpa(language)) return true;
+      final started = switch (route) {
+        SttRoute.device => await _startPlatformListening(language),
+        SttRoute.cloudChunk => await _startCloudChunk(bilingual ? 'Auto' : language),
+        SttRoute.offline => await _startSherpa(language),
+      };
+      if (_phase.state != RecognizerPhase.starting) {
+        // stopListening() came while this was starting: the route that just
+        // started must not keep the microphone.
+        await stopListening();
+        return false;
+      }
+      if (started) {
+        _phase.moveTo(RecognizerPhase.listening);
+        return true;
       }
     } catch (e) {
       _lastStartError = 'Speech recognition could not start: $e';
       debugPrint(_lastStartError);
     }
-    _listening = false;
+    _phase.moveTo(RecognizerPhase.idle);
     _currentMode = STTMode.none;
     _lastStartError ??= 'Live speech recognition could not start.';
     return false;
@@ -328,14 +361,15 @@ class EnhancedSpeechProvider {
     await _sherpaSubscription?.cancel();
     _sherpaSubscription = null;
 
-    _listening = false;
+    // A cloud recognizer that was listening still transcribes what was being
+    // said before going quiet; everything else stops at once.
+    final drain = _currentMode == STTMode.cloudBatch && _phase.state == RecognizerPhase.listening;
+    _phase.moveTo(drain ? RecognizerPhase.draining : RecognizerPhase.idle);
     _platformLastText = '';
     _lastEmittedPlatformText = '';
     if (_currentMode == STTMode.cloudBatch) {
-      // Transcribe what was still being said before going quiet.
-      _listening = true;
       await _cloudChunk.stop();
-      _listening = false;
+      _phase.moveTo(RecognizerPhase.idle);
       await _cloudChunkSubscription?.cancel();
       _cloudChunkSubscription = null;
     } else if (_currentMode == STTMode.platform) {

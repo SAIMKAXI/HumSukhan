@@ -2,18 +2,38 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
+import '../utils/state_machine.dart';
+
+/// The account on this phone.
+enum AuthStatus {
+  signedOut,
+  signedIn,
+
+  /// Signed in by a password-reset link, and must set a new password before
+  /// using the app.
+  recoveringPassword,
+}
+
+/// A reset link can arrive signed in or out; setting the new password, or
+/// any ordinary sign-in, finishes recovery.
+const authTransitions = <AuthStatus, Set<AuthStatus>>{
+  AuthStatus.signedOut: {AuthStatus.signedIn, AuthStatus.recoveringPassword},
+  AuthStatus.signedIn: {AuthStatus.signedOut, AuthStatus.recoveringPassword},
+  AuthStatus.recoveringPassword: {AuthStatus.signedIn, AuthStatus.signedOut},
+};
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _auth = AuthService.instance;
+  final _status = StateMachine(AuthStatus.signedOut, authTransitions);
   User? _user;
   bool _isLoading = false;
-  bool _isPasswordRecovery = false;
   String? _error;
   StreamSubscription<AuthState>? _authSubscription;
 
   User? get user => _user;
   bool get isLoading => _isLoading;
-  bool get isPasswordRecovery => _isPasswordRecovery;
+  AuthStatus get status => _status.state;
+  bool get isPasswordRecovery => _status.state == AuthStatus.recoveringPassword;
   String? get error => _error;
   bool get isAuthenticated => _user != null;
   String get userId => _user?.id ?? '';
@@ -28,25 +48,22 @@ class AuthProvider extends ChangeNotifier {
   /// so auth state may be unavailable during construction.
   void refresh() {
     _authSubscription?.cancel();
-    _user = _auth.currentUser;
+    _setUser(_auth.currentUser);
     _authSubscription = _auth.onAuthStateChange.listen((state) {
       switch (state.event) {
         case AuthChangeEvent.signedIn:
         case AuthChangeEvent.tokenRefreshed:
-          _user = state.session?.user;
-          _isPasswordRecovery = false;
+          _setUser(state.session?.user, recovering: false);
           break;
         case AuthChangeEvent.passwordRecovery:
-          _user = state.session?.user ?? _auth.currentUser;
-          _isPasswordRecovery = _user != null;
+          _setUser(state.session?.user ?? _auth.currentUser, recovering: true);
           break;
         case AuthChangeEvent.signedOut:
-          _user = null;
-          _isPasswordRecovery = false;
+          _setUser(null);
           _error = null;
           break;
         default:
-          if (state.session != null) _user = state.session!.user;
+          if (state.session != null) _setUser(state.session!.user);
           break;
       }
       notifyListeners();
@@ -86,8 +103,7 @@ class AuthProvider extends ChangeNotifier {
     final result = await _auth.updatePassword(password);
     _isLoading = false;
     if (result.success) {
-      _user = result.user ?? _user;
-      _isPasswordRecovery = false;
+      _setUser(result.user ?? _user, recovering: false);
       _error = null;
     } else {
       _error = result.errorMessage ?? 'Unable to update your password.';
@@ -97,9 +113,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    _user = null;
+    _setUser(null);
     _error = null;
-    _isPasswordRecovery = false;
     _isLoading = false;
     notifyListeners();
     try {
@@ -124,14 +139,27 @@ class AuthProvider extends ChangeNotifier {
   void _finishLoading(AuthResult result) {
     _isLoading = false;
     if (result.success && result.hasActiveSession) {
-      _user = result.user;
-      _isPasswordRecovery = false;
+      _setUser(result.user, recovering: false);
       _error = null;
     } else {
-      _user = null;
+      _setUser(null);
       _error = result.errorMessage ?? 'Authentication failed. Please try again.';
     }
     notifyListeners();
+  }
+
+  /// Records who is signed in. With no user the account is signed out;
+  /// [recovering] says whether a signed-in account is recovering its
+  /// password, and when it is left out recovery carries on as it was.
+  void _setUser(User? user, {bool? recovering}) {
+    _user = user;
+    if (user == null) {
+      _status.moveTo(AuthStatus.signedOut);
+    } else if (recovering ?? isPasswordRecovery) {
+      _status.moveTo(AuthStatus.recoveringPassword);
+    } else {
+      _status.moveTo(AuthStatus.signedIn);
+    }
   }
 
   @override

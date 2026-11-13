@@ -23,8 +23,10 @@ class SherpaSTTProvider {
 
   bool _initialized = false;
   bool _listening = false;
-  bool _available = false;
   String _currentLanguage = 'English';
+
+  /// The recognizer loaded for [_currentLanguage]: streaming, batch, or
+  /// [STTMode.none] when there is none (no model, or one not loaded yet).
   STTMode _currentMode = STTMode.none;
   sherpa_onnx.OnlineRecognizer? _onlineRecognizer;
   sherpa_onnx.OnlineStream? _onlineStream;
@@ -43,7 +45,8 @@ class SherpaSTTProvider {
 
   Stream<SherpaSTTResult> get onResult => _controller.stream;
   bool get isListening => _listening;
-  bool get isAvailable => _available;
+  /// A model is loaded and ready to listen.
+  bool get isAvailable => _currentMode == STTMode.sherpaStreaming || _currentMode == STTMode.sherpaBatch;
   bool get isInitialized => _initialized;
   String get currentLanguage => _currentLanguage;
   STTMode get currentMode => _currentMode;
@@ -51,7 +54,7 @@ class SherpaSTTProvider {
   bool get isBatch => _currentMode == STTMode.sherpaBatch;
 
   Future<bool> initialize({String language = 'English'}) async {
-    if (_initialized) return _available;
+    if (_initialized) return isAvailable;
     try {
       sherpa_onnx.initBindings();
       final status = await Permission.microphone.request();
@@ -61,17 +64,15 @@ class SherpaSTTProvider {
       }
       await _modelManager.initialize();
       _currentLanguage = language;
-      _available = _modelManager.isModelReady(language);
-      if (_available) {
+      if (_modelManager.isModelReady(language)) {
         await _configureForLanguage(language);
       } else {
         _currentMode = STTMode.none;
       }
       _initialized = true;
-      return _available;
+      return isAvailable;
     } catch (e) {
       debugPrint('Sherpa-ONNX initialization failed: $e');
-      _available = false;
       _currentMode = STTMode.none;
       _initialized = true;
       return false;
@@ -103,13 +104,11 @@ class SherpaSTTProvider {
     _releaseRecognizers();
     final model = _modelManager.getBestModel(language);
     if (model == null) {
-      _available = false;
       _currentMode = STTMode.none;
       return;
     }
     final modelPath = await _modelManager.getModelPath(language);
     if (modelPath == null) {
-      _available = false;
       _currentMode = STTMode.none;
       return;
     }
@@ -123,36 +122,34 @@ class SherpaSTTProvider {
       _currentMode = STTMode.sherpaBatch;
       _batchWorker = await OfflineBatchWorker.start(whisperFiles(model, modelPath));
     }
-    _available = true;
   }
 
   Future<bool> switchLanguage(String language) async {
     final wasListening = _listening;
     if (wasListening) await stopListening();
-    _available = _modelManager.isModelReady(language);
-    if (_available) {
+    if (_modelManager.isModelReady(language)) {
       try {
         await _configureForLanguage(language);
       } catch (e) {
         debugPrint('STT language switch failed: $e');
-        _available = false;
         _currentMode = STTMode.none;
       }
     } else {
       _currentLanguage = language;
       _currentMode = STTMode.none;
     }
-    if (wasListening && _available) await startListening(language: language);
-    return _available;
+    if (wasListening && isAvailable) await startListening(language: language);
+    return isAvailable;
   }
 
   Future<void> startListening({String language = 'English'}) async {
     if (_listening) return;
-    if (language != _currentLanguage || !_available) {
+    // A model downloaded or deleted since the last start is loaded here.
+    if (language != _currentLanguage || !isAvailable) {
       final ok = await switchLanguage(language);
       if (!ok) return;
     }
-    if (!_available) return;
+    if (!isAvailable) return;
 
     try {
       if (!await _audioRecorder.hasPermission()) return;
@@ -353,7 +350,6 @@ class SherpaSTTProvider {
   Future<void> reloadModels() async {
     if (_listening) await stopListening();
     _releaseRecognizers();
-    _available = _modelManager.isModelReady(_currentLanguage);
     _currentMode = STTMode.none;
   }
 

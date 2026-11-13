@@ -20,7 +20,8 @@ class AlertService {
   BuildContext? _overlayContext;
   OverlayEntry? _flashOverlay;
   Timer? _flashTimer;
-  bool _isFlashing = false;
+  /// The screen is flashing exactly while its overlay is shown.
+  bool get _isFlashing => _flashOverlay != null;
 
   void registerContext(BuildContext context) {
     _overlayContext = context;
@@ -66,14 +67,12 @@ class AlertService {
       'warning' => Colors.orange.withValues(alpha: 0.4),
       _ => Colors.blue.withValues(alpha: 0.3),
     };
-    _isFlashing = true;
     _flashOverlay = OverlayEntry(builder: (_) => AnimatedOpacity(opacity: 1.0, duration: const Duration(milliseconds: 100), child: Container(color: flashColor)));
     Overlay.of(context).insert(_flashOverlay!);
     _flashTimer?.cancel();
     _flashTimer = Timer(const Duration(milliseconds: 300), () {
       _flashOverlay?.remove();
       _flashOverlay = null;
-      _isFlashing = false;
     });
   }
 
@@ -110,7 +109,6 @@ class AlertService {
     _flashTimer?.cancel();
     _flashOverlay?.remove();
     _flashOverlay = null;
-    _isFlashing = false;
     // cancel() is async: a failure arrives later, past any try/catch here.
     unawaited(Vibration.cancel().then<void>((_) {}, onError: (Object e) => debugPrint('Vibration cancel failed: $e')));
   }

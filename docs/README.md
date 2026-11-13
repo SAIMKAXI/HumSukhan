@@ -3,6 +3,7 @@
 | Document | Contents |
 |---|---|
 | [architecture.md](architecture.md) | How the app is built: state, speech to text and text to speech, the three modes, accounts |
+| [state-machines.md](state-machines.md) | Every process with a fixed set of states: listening, recognizers, conversation, live sessions, auth, and the tables that govern them |
 | [environmental-alerts.md](environmental-alerts.md) | Sound detection, the Android monitoring service and the Quick Settings tile |
 | [backend.md](backend.md) | Supabase tables, Edge Functions, secrets and auth settings |
 | [design.md](design.md) | Brand, design system, components and screens |

@@ -40,7 +40,6 @@ const urduMessages = <String, String>{
   'Microphone could not be started': 'مائیکروفون شروع نہیں ہو سکا',
   'Speech recognition did not start. The selected language may be unavailable on this device, or microphone access may be blocked.':
       'آواز کی پہچان شروع نہیں ہوئی۔ ممکن ہے منتخب زبان اس فون پر دستیاب نہ ہو، یا مائیکروفون کی اجازت بند ہو۔',
-  'Could not start listening': 'سننا شروع نہیں ہو سکا',
   'Finalizing this caption…': 'یہ کیپشن مکمل ہو رہا ہے…',
   'Microphone off — session still active': 'مائیکروفون بند — اجلاس جاری ہے',
 

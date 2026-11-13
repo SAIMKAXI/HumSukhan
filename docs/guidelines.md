@@ -133,6 +133,11 @@ diagnosis, and never generate text for the help screen.
 - **Async completions check liveness** before touching state or notifying
   listeners.
 - **Announce an alert once, where it is detected.**
+- **A process with modes is an explicit state machine.** When two flags start
+  describing one process ("starting" and "listening", "loaded" and "damaged"),
+  replace them with an enum and a transition table and move through
+  `StateMachine.moveTo` (`docs/state-machines.md`). A flag that only repeats
+  another field is derived from it, not stored.
 
 ### 5.4 Code and platform
 - **One implementation per role.** Tests import what the app wires. Delete dead
