@@ -57,8 +57,10 @@ jobs:
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - name: Tests
         run: flutter test
-      - name: Android debug build
-        # Fail rather than produce an APK that silently disables its backend.
+      - name: Android release build
+        # The build the release workflow publishes, so its contents are
+        # checked on every change. Fail rather than produce an APK that
+        # silently disables its backend.
         env:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
         run: |
@@ -66,4 +68,10 @@ jobs:
             echo "::error::Configure SUPABASE_ANON_KEY as a GitHub Actions secret or repository variable."
             exit 1
           fi
-          flutter build apk --debug --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+          flutter build apk --release \
+            --target-platform android-arm,android-arm64 \
+            --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+      - name: Check what the APK carries
+        # Permissions, backup and debug flags, exposed components, bundled
+        # files and embedded secrets (tool/check_apk.py).
+        run: python3 tool/check_apk.py build/app/outputs/flutter-apk/app-release.apk

@@ -1,14 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/export_files.dart';
 import '../theme/app_theme.dart';
 import '../utils/action_item_normalizer.dart';
 import '../widgets/reusable_widgets.dart';
@@ -477,8 +475,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     AppStrings strings,
   ) async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/humsukhan_${session.id}.txt');
+      final file = await ExportFiles.create('humsukhan_${session.id}.txt');
       await file.writeAsString(_exportText(session, insight, strings));
       await Share.shareXFiles(
         [XFile(file.path)],

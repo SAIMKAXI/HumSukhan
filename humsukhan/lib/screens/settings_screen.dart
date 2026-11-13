@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatf
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../models/models.dart';
@@ -61,7 +60,7 @@ class SettingsScreen extends StatelessWidget {
         SwitchListTile(
           title: Text(s.flashlightAlerts),
           subtitle: Text(defaultTargetPlatform == TargetPlatform.android
-              ? s.flashlightCameraNote(s.flashlightAlertsDesc)
+              ? s.flashlightAlertsDesc
               : s.flashlightAndroidOnly),
           value: defaultTargetPlatform == TargetPlatform.android && settings.flashAlerts,
           onChanged: defaultTargetPlatform == TargetPlatform.android
@@ -132,16 +131,8 @@ class SettingsScreen extends StatelessWidget {
     if (defaultTargetPlatform != TargetPlatform.android) return;
 
     try {
-      final permission = await Permission.camera.request();
-      if (!context.mounted) return;
-      if (!permission.isGranted) {
-        final message = permission.isPermanentlyDenied
-            ? s.cameraBlocked
-            : s.cameraRequired;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-        return;
-      }
-
+      // The torch needs no camera permission (MainActivity.kt), so turning
+      // flashlight alerts on asks for nothing.
       final available = await const MethodChannel('com.humsukhan.flashlight')
               .invokeMethod<bool>('isAvailable') ??
           false;

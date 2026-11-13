@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'notification_service.dart';
 
 /// Central accessibility alert feedback: system notification, haptic, screen flash and flashlight.
@@ -79,11 +78,8 @@ class AlertService {
   Future<void> _triggerFlashlight(String severity) async {
     if (!Platform.isAndroid) return;
     try {
-      if (!(await Permission.camera.status).isGranted) {
-        debugPrint('Flashlight alert skipped: camera permission is not granted');
-        return;
-      }
-
+      // No camera permission is needed: the torch is switched without
+      // opening the camera (MainActivity.kt).
       const channel = MethodChannel('com.humsukhan.flashlight');
       final available = await channel.invokeMethod<bool>('isAvailable') ?? false;
       if (!available) {

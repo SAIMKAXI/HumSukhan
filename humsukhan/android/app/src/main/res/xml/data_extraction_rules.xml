@@ -1,13 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 12 and newer. Wellbeing check-ins stay on this phone only
-     (lib/modules/wellbeing/services/mood_store.dart): they are left out of
-     cloud backup and of transfer to a new device. Everything else is backed
-     up as before. -->
+<!-- Nothing leaves this phone through Android backup or device transfer.
+     The app keeps the sign-in session, Professional transcripts, wellbeing
+     check-ins and downloaded speech models here. Transcripts are meant to be
+     deleted when their retention period ends, and a copy in a backup would
+     outlive it. Account settings, profile and quick replies are kept in
+     Supabase for signed-in users, and models can be downloaded again.
+
+     android:allowBackup="false" turns off cloud backup; these rules also
+     turn off device-to-device transfer, which Android 12 and newer otherwise
+     still allow. -->
 <data-extraction-rules>
     <cloud-backup>
-        <exclude domain="file" path="wellbeing/" />
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="file" path="wellbeing/" />
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
     </device-transfer>
 </data-extraction-rules>

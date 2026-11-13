@@ -112,10 +112,10 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FLASH_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    // The torch is switched with CameraManager.setTorchMode, which
+                    // needs no camera permission: the app never opens the camera.
                     "turnOn" -> {
-                        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                            result.error("CAMERA_PERMISSION", "Camera permission is required to control the flashlight", null)
-                        } else if (turnOnTorch()) {
+                        if (turnOnTorch()) {
                             result.success(true)
                         } else {
                             result.error("TORCH_UNAVAILABLE", "The flashlight could not be turned on", null)
@@ -126,12 +126,8 @@ class MainActivity : FlutterActivity() {
                         else result.error("TORCH_UNAVAILABLE", "The flashlight could not be turned off", null)
                     }
                     "isAvailable" -> {
-                        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                            result.success(false)
-                        } else {
-                            if (cameraId == null) cameraId = findTorchCameraId(cameraManager)
-                            result.success(cameraId != null)
-                        }
+                        if (cameraId == null) cameraId = findTorchCameraId(cameraManager)
+                        result.success(cameraId != null)
                     }
                     else -> result.notImplemented()
                 }
@@ -213,7 +209,6 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun turnOnTorch(): Boolean {
-        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return false
         return try {
             val manager = cameraManager ?: (getSystemService(Context.CAMERA_SERVICE) as? CameraManager) ?: return false
             cameraManager = manager

@@ -73,12 +73,15 @@ android {
 
     buildTypes {
         release {
-            // Without the release key (a developer's machine), fall back to
-            // the debug key so `flutter run --release` still works. The
-            // release workflow refuses to publish such a build.
+            // Without the release key, fall back to the debug key so
+            // `flutter run --release` still works. The release workflow warns
+            // when it publishes such a build: it cannot update the previous one.
             signingConfig = signingConfigs.getByName(if (hasReleaseKey) "release" else "debug")
             isMinifyEnabled = true
             isShrinkResources = true
+            // The APK carries only what runs on the phone: not the repository's
+            // commit and paths, which Android Studio records by default.
+            vcsInfo.include = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -90,6 +93,23 @@ android {
         jniLibs {
             useLegacyPackaging = true
         }
+        resources {
+            // Build-tool metadata nothing reads on the phone: the exact
+            // version of every library (which makes known flaws easy to look
+            // up), and a debugger agent's data.
+            excludes += setOf(
+                "META-INF/*.version",
+                "DebugProbesKt.bin",
+                "kotlin-tooling-metadata.json",
+            )
+        }
+    }
+
+    // The list of libraries, encrypted for Google Play, which this app is not
+    // published on.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 }
 

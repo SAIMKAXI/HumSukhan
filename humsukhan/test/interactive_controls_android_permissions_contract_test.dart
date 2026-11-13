@@ -20,22 +20,25 @@ void main() {
     expect(everyday, contains('tooltip: speech.isSpeaking ? s.stopSpeaking : s.speakResponse'));
   });
 
-  test('Android declares microphone foreground-service and optional torch hardware permissions', () {
+  test('Android declares microphone foreground-service permissions and optional torch hardware, without camera access', () {
     final manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
 
     expect(manifest, contains('android.permission.RECORD_AUDIO'));
     expect(manifest, contains('android.permission.FOREGROUND_SERVICE'));
     expect(manifest, contains('android.permission.FOREGROUND_SERVICE_MICROPHONE'));
     expect(manifest, contains('android.permission.POST_NOTIFICATIONS'));
-    expect(manifest, contains('android.permission.CAMERA'));
+    // The torch is switched without opening the camera, so the app never
+    // asks for camera access.
+    expect(manifest, isNot(contains('android.permission.CAMERA')));
+    expect(manifest, isNot(contains('android.permission.FLASHLIGHT')));
     expect(manifest, contains('android.hardware.camera.flash" android:required="false"'));
   });
 
-  test('native torch channel checks camera permission and reports actual operation status', () {
+  test('native torch channel needs no camera permission and reports actual operation status', () {
     final activity = File('android/app/src/main/kotlin/com/humsukhan/humsukhan/MainActivity.kt').readAsStringSync();
 
-    expect(activity, contains('checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED'));
-    expect(activity, contains('result.error("CAMERA_PERMISSION"'));
+    expect(activity, isNot(contains('Manifest.permission.CAMERA')));
+    expect(activity, contains('manager.setTorchMode(id, true)'));
     expect(activity, contains('if (turnOnTorch())'));
     expect(activity, contains('result.error("TORCH_UNAVAILABLE", "The flashlight could not be turned on", null)'));
     expect(activity, contains('if (turnOffTorch()) result.success(true)'));
@@ -44,15 +47,15 @@ void main() {
     expect(activity, isNot(contains('"turnOn" -> { turnOnTorch(); result.success(true) }')));
   });
 
-  test('flashlight preference requests permission and only enables on supported Android devices', () {
+  test('flashlight preference asks for no permission and only enables on supported Android devices', () {
     final settings = File('lib/screens/settings_screen.dart').readAsStringSync();
     final alerts = File('lib/services/alert_service.dart').readAsStringSync();
 
-    expect(settings, contains('Permission.camera.request()'));
+    expect(settings, isNot(contains('Permission.camera')));
     expect(settings, contains("invokeMethod<bool>('isAvailable')"));
     expect(settings, contains('defaultTargetPlatform == TargetPlatform.android'));
     expect(alerts, contains('if (!Platform.isAndroid) return;'));
-    expect(alerts, contains('Permission.camera.status'));
+    expect(alerts, isNot(contains('Permission.camera')));
     expect(alerts, contains("invokeMethod<bool>('turnOn')"));
   });
 }

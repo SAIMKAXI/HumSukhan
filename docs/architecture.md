@@ -121,7 +121,7 @@ Sound detection runs on the phone with the CED-Tiny audio-tagging model. On Andr
 
 Optional mood check-ins, reached from the Home screen (`/wellbeing`). `WellbeingProvider` holds them for the signed-in account. Nothing in this feature talks to the server.
 
-- **Storage** (`MoodStore`). One JSON file per account in the app's private `files/wellbeing/` folder. Writes go to a temporary file that then replaces the old one, one at a time. A damaged file is set aside and reported, not overwritten. `res/xml/backup_rules.xml` and `res/xml/data_extraction_rules.xml` leave that folder out of cloud backup and device transfer; everything else is backed up as before. Check-ins older than 400 days are dropped.
+- **Storage** (`MoodStore`). One JSON file per account in the app's private `files/wellbeing/` folder. Writes go to a temporary file that then replaces the old one, one at a time. A damaged file is set aside and reported, not overwritten. The app is left out of Android cloud backup and device transfer altogether (`android:allowBackup="false"` and `res/xml/data_extraction_rules.xml`), so check-ins never leave the phone. Check-ins older than 400 days are dropped.
 - **Pattern** (`MoodPatterns`). Rules, all in one file, compare recent check-ins with the user's own usual level:
 
   | State | When |
