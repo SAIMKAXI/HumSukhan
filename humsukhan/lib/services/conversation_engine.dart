@@ -9,17 +9,64 @@ import '../providers/everyday_speech_provider.dart';
 import 'speech_engine.dart';
 import 'stt/enhanced_stt.dart';
 import 'turn_taking.dart';
+import '../utils/state_machine.dart';
 
+/// One turn-taking cycle of Conversational Mode. See
+/// [conversationEngineTransitions] and docs/state-machines.md.
 enum ConversationEngineState {
   idle,
   startingMic,
+
+  /// The microphone is on and no one is talking.
   listening,
+
+  /// Words are coming in.
   speechActive,
+
+  /// The speaker paused after a final result; the turn ends unless they
+  /// carry on within the pause [TurnTaking] allows.
   waitingForTurnEnd,
+
+  /// The user stopped the microphone; the last words are being committed.
   processingFinal,
+
+  /// A reply is being spoken aloud, with the microphone off.
   speaking,
   error,
 }
+
+const _live = {ConversationEngineState.listening, ConversationEngineState.speechActive, ConversationEngineState.waitingForTurnEnd};
+
+/// Starting or ending a conversation resets the engine to idle from any
+/// state, and a failed command leaves it in error from any state; the other
+/// moves follow one turn: start the microphone, hear words, pause, and
+/// either carry on or end the turn, with replies spoken in between.
+const conversationEngineTransitions = <ConversationEngineState, Set<ConversationEngineState>>{
+  // A stop is allowed whenever the microphone may be on.
+  ConversationEngineState.idle: {
+    ConversationEngineState.startingMic,
+    ConversationEngineState.processingFinal,
+    ConversationEngineState.speaking,
+    ConversationEngineState.error,
+  },
+  ConversationEngineState.startingMic: {
+    ConversationEngineState.listening,
+    ConversationEngineState.processingFinal,
+    ConversationEngineState.idle,
+    ConversationEngineState.error,
+  },
+  ConversationEngineState.listening: {..._live, ConversationEngineState.processingFinal, ConversationEngineState.speaking, ConversationEngineState.idle, ConversationEngineState.error},
+  ConversationEngineState.speechActive: {..._live, ConversationEngineState.processingFinal, ConversationEngineState.speaking, ConversationEngineState.idle, ConversationEngineState.error},
+  ConversationEngineState.waitingForTurnEnd: {..._live, ConversationEngineState.processingFinal, ConversationEngineState.speaking, ConversationEngineState.idle, ConversationEngineState.error},
+  ConversationEngineState.processingFinal: {ConversationEngineState.idle, ConversationEngineState.error},
+  ConversationEngineState.speaking: {ConversationEngineState.listening, ConversationEngineState.processingFinal, ConversationEngineState.idle, ConversationEngineState.error},
+  ConversationEngineState.error: {
+    ConversationEngineState.startingMic,
+    ConversationEngineState.processingFinal,
+    ConversationEngineState.speaking,
+    ConversationEngineState.idle,
+  },
+};
 
 class ConversationPauseOptions {
   static const Duration fast = Duration(milliseconds: 1200);
@@ -41,8 +88,12 @@ class ConversationEngine extends ChangeNotifier {
     unawaited(_loadPausePreference());
   }
 
-  ConversationEngineState _state = ConversationEngineState.idle;
-  ConversationEngineState get state => _state;
+  final _engine = StateMachine(ConversationEngineState.idle, conversationEngineTransitions);
+  ConversationEngineState get state => _engine.state;
+  ConversationEngineState get _state => _engine.state;
+
+  /// A stop the user asked for is being carried out.
+  bool get _stopping => _state == ConversationEngineState.processingFinal;
 
   Duration _pauseThreshold = ConversationPauseOptions.natural;
   Duration get pauseThreshold => _pauseThreshold;
@@ -67,7 +118,6 @@ class ConversationEngine extends ChangeNotifier {
   int _pauseExtensions = 0;
   static const int _maxPauseExtensions = 2;
   Future<void> _commandTail = Future<void>.value();
-  bool _turnStopping = false;
   int _turnGeneration = 0;
   String _latestTranscript = '';
 
@@ -85,10 +135,7 @@ class ConversationEngine extends ChangeNotifier {
       _state == ConversationEngineState.processingFinal ||
       _state == ConversationEngineState.speaking;
 
-  bool get _live =>
-      _state == ConversationEngineState.listening ||
-      _state == ConversationEngineState.speechActive ||
-      _state == ConversationEngineState.waitingForTurnEnd;
+  bool get _isLive => _live.contains(_state);
 
   String get statusLabel {
     switch (_state) {
@@ -147,11 +194,10 @@ class ConversationEngine extends ChangeNotifier {
     _enqueue(() async {
       _cancelSilenceTimer();
       _turnGeneration++;
-      _turnStopping = false;
       _resetUtterance();
       _latestLanguage = 'English';
       _errorMessage = null;
-      _state = ConversationEngineState.idle;
+      _engine.moveTo(ConversationEngineState.idle);
       conversation.startConversation();
       speech.holdMicrophoneForConversation(true);
       notifyListeners();
@@ -162,10 +208,7 @@ class ConversationEngine extends ChangeNotifier {
   }
 
   void toggleListening() {
-    if (speech.isListening ||
-        _state == ConversationEngineState.speechActive ||
-        _state == ConversationEngineState.waitingForTurnEnd ||
-        _state == ConversationEngineState.listening) {
+    if (speech.isListening || _isLive) {
       stopListening();
     } else {
       startListening();
@@ -175,15 +218,14 @@ class ConversationEngine extends ChangeNotifier {
   void startListening() => _enqueue(_startListening);
 
   Future<void> _startListening() async {
-    if (conversation.state != ConversationState.active || speech.isListening || _turnStopping) return;
+    if (conversation.state != ConversationState.active || speech.isListening || _stopping) return;
 
     _cancelSilenceTimer();
     final generation = ++_turnGeneration;
-    _turnStopping = false;
     _resetUtterance();
     _latestLanguage = 'English';
     _errorMessage = null;
-    _state = ConversationEngineState.startingMic;
+    _engine.moveTo(ConversationEngineState.startingMic);
     notifyListeners();
 
     conversation.beginSpeakerTurn(language: 'Auto');
@@ -191,34 +233,29 @@ class ConversationEngine extends ChangeNotifier {
 
     if (generation != _turnGeneration) return;
     if (!speech.isListening) {
-      _state = ConversationEngineState.error;
+      _engine.moveTo(ConversationEngineState.error);
       _errorMessage = speech.lastStartError ?? 'Live speech recognition could not be started.';
       conversation.commitSpeakerTurn();
       notifyListeners();
       return;
     }
 
-    _state = ConversationEngineState.listening;
+    _engine.moveTo(ConversationEngineState.listening);
     notifyListeners();
   }
 
   void stopListening() {
-    if (_disposed || _turnStopping) return;
+    if (_disposed || _stopping) return;
 
-    final shouldStop = speech.isListening ||
-        _state == ConversationEngineState.startingMic ||
-        _state == ConversationEngineState.listening ||
-        _state == ConversationEngineState.speechActive ||
-        _state == ConversationEngineState.waitingForTurnEnd;
+    final shouldStop = speech.isListening || _state == ConversationEngineState.startingMic || _isLive;
     if (!shouldStop) return;
 
-    _turnStopping = true;
     _cancelSilenceTimer();
     // Invalidate any in-flight startListening() operation immediately. The
     // public stop request must win even while microphone startup is waiting
     // on environmental-audio release or recognizer connection setup.
     _turnGeneration++;
-    _state = ConversationEngineState.processingFinal;
+    _engine.moveTo(ConversationEngineState.processingFinal);
     notifyListeners();
     _enqueue(_stopListening);
   }
@@ -228,10 +265,7 @@ class ConversationEngine extends ChangeNotifier {
   /// rather than go on showing it as listening.
   void _handleSpeechInterrupted(Object error) {
     if (_disposed) return;
-    final live = _state == ConversationEngineState.listening ||
-        _state == ConversationEngineState.speechActive ||
-        _state == ConversationEngineState.waitingForTurnEnd;
-    if (!live) return;
+    if (!_isLive) return;
     _cancelSilenceTimer();
     _turnGeneration++;
     final transcript = _latestTranscript.trim();
@@ -240,7 +274,7 @@ class ConversationEngine extends ChangeNotifier {
     }
     conversation.commitSpeakerTurn();
     _resetUtterance();
-    _state = ConversationEngineState.error;
+    _engine.moveTo(ConversationEngineState.error);
     _errorMessage = error is SpeechInterruption ? error.message : 'Live speech recognition stopped.';
     notifyListeners();
   }
@@ -258,21 +292,20 @@ class ConversationEngine extends ChangeNotifier {
       }
       conversation.commitSpeakerTurn();
       _resetUtterance();
-      _state = ConversationEngineState.idle;
+      _engine.moveTo(ConversationEngineState.idle);
       _errorMessage = null;
     } catch (e) {
       if (generation != _turnGeneration) return;
-      _state = ConversationEngineState.error;
+      _engine.moveTo(ConversationEngineState.error);
       _errorMessage = 'Speech turn could not be finalized.';
       debugPrint('ConversationEngine stop error: $e');
     } finally {
-      _turnStopping = false;
       notifyListeners();
     }
   }
 
   Future<void> _finalizeTurn() async {
-    if (_turnStopping) return;
+    if (_stopping) return;
     _cancelSilenceTimer();
     final transcript = _latestTranscript.trim();
     if (transcript.isEmpty) return;
@@ -285,9 +318,9 @@ class ConversationEngine extends ChangeNotifier {
         speech.isListening && conversation.state == ConversationState.active;
     if (stillListening) {
       conversation.beginSpeakerTurn(language: 'Auto');
-      _state = ConversationEngineState.listening;
+      _engine.moveTo(ConversationEngineState.listening);
     } else {
-      _state = ConversationEngineState.idle;
+      _engine.moveTo(ConversationEngineState.idle);
     }
     _errorMessage = null;
     notifyListeners();
@@ -302,7 +335,7 @@ class ConversationEngine extends ChangeNotifier {
   }
 
   void _handleSpeechResult(SpeechResultEvent event) {
-    if (_disposed || !_live) return;
+    if (_disposed || !_isLive) return;
 
     final text = event.text.trim();
     if (text.isEmpty) return;
@@ -317,14 +350,14 @@ class ConversationEngine extends ChangeNotifier {
     // the caption is complete.
     conversation.updateSpeakerTurn(_latestTranscript, language: _latestLanguage);
     if (_state == ConversationEngineState.listening) {
-      _state = ConversationEngineState.speechActive;
+      _engine.moveTo(ConversationEngineState.speechActive);
     }
     if (event.isFinal) {
       if (_pauseThreshold == Duration.zero) {
         _cancelSilenceTimer();
-        _state = ConversationEngineState.speechActive;
+        _engine.moveTo(ConversationEngineState.speechActive);
       } else {
-        _state = ConversationEngineState.waitingForTurnEnd;
+        _engine.moveTo(ConversationEngineState.waitingForTurnEnd);
         _pausedAt = DateTime.now();
         _pauseExtensions = 0;
         _armTurnEnd();
@@ -373,13 +406,13 @@ class ConversationEngine extends ChangeNotifier {
   void reply(String text) => _enqueue(() async {
         final value = text.trim();
         if (value.isEmpty || conversation.state != ConversationState.active) return;
-        final live = _live && speech.isListening;
+        final live = _isLive && speech.isListening;
         _cancelSilenceTimer();
         conversation.addOwnCaption(value);
         _resetUtterance();
         if (live) {
           conversation.beginSpeakerTurn(language: 'Auto');
-          _state = ConversationEngineState.listening;
+          _engine.moveTo(ConversationEngineState.listening);
         }
         notifyListeners();
       });
@@ -390,7 +423,7 @@ class ConversationEngine extends ChangeNotifier {
   Future<void> speakReply(String text, {String language = 'Auto'}) {
     final done = Completer<void>();
     _enqueue(() async {
-      final live = _live && speech.isListening;
+      final live = _isLive && speech.isListening;
       _cancelSilenceTimer();
       if (live) {
         final transcript = _latestTranscript.trim();
@@ -399,7 +432,7 @@ class ConversationEngine extends ChangeNotifier {
         _resetUtterance();
       }
       final generation = _turnGeneration;
-      _state = ConversationEngineState.speaking;
+      _engine.moveTo(ConversationEngineState.speaking);
       notifyListeners();
       Object? failure;
       StackTrace? failureStack;
@@ -414,13 +447,13 @@ class ConversationEngine extends ChangeNotifier {
         if (!speech.isListening) await speech.startListening(language: 'Auto');
         if (speech.isListening) {
           conversation.beginSpeakerTurn(language: 'Auto');
-          _state = ConversationEngineState.listening;
+          _engine.moveTo(ConversationEngineState.listening);
         } else {
-          _state = ConversationEngineState.error;
+          _engine.moveTo(ConversationEngineState.error);
           _errorMessage = speech.lastStartError ?? 'Live speech recognition could not be started.';
         }
       } else if (_state == ConversationEngineState.speaking) {
-        _state = ConversationEngineState.idle;
+        _engine.moveTo(ConversationEngineState.idle);
       }
       notifyListeners();
       if (failure != null) {
@@ -446,7 +479,7 @@ class ConversationEngine extends ChangeNotifier {
       conversation.stopConversation();
       _resetUtterance();
       _latestLanguage = 'English';
-      _state = ConversationEngineState.idle;
+      _engine.moveTo(ConversationEngineState.idle);
       _errorMessage = null;
       notifyListeners();
     });
@@ -478,7 +511,7 @@ class ConversationEngine extends ChangeNotifier {
     }).catchError((Object error, StackTrace stack) {
       if (_disposed) return;
       _errorMessage = 'Speech control failed.';
-      _state = ConversationEngineState.error;
+      _engine.moveTo(ConversationEngineState.error);
       debugPrint('ConversationEngine command error: $error\n$stack');
       notifyListeners();
     });

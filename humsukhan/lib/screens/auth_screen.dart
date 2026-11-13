@@ -2,12 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_strings.dart';
+import '../utils/state_machine.dart';
 import '../providers/providers.dart';
 import '../services/auth_service.dart';
 import '../widgets/reusable_widgets.dart';
 import '../widgets/modern_ui.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_typography.dart';
+
+/// What the sign-in form is for. The form moves between these itself;
+/// setting a new password is not one of them: the account gate shows that
+/// form ([AuthScreen.recoveryMode]) while the account is recovering its
+/// password.
+enum AuthFormMode { signIn, signUp, forgotPassword }
+
+/// Sign in and sign up are tabs; "Forgot password?" is offered from sign in
+/// and leads back to it.
+const authFormTransitions = <AuthFormMode, Set<AuthFormMode>>{
+  AuthFormMode.signIn: {AuthFormMode.signUp, AuthFormMode.forgotPassword},
+  AuthFormMode.signUp: {AuthFormMode.signIn},
+  AuthFormMode.forgotPassword: {AuthFormMode.signIn},
+};
 
 class AuthScreen extends StatefulWidget {
   final bool recoveryMode;
@@ -23,15 +38,16 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _nameController = TextEditingController();
-  bool _isSignUp = false;
-  bool _isForgotPassword = false;
+  final _form = StateMachine(AuthFormMode.signIn, authFormTransitions);
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
-  @override
-  void initState() {
-    super.initState();
-    _isForgotPassword = false;
+  bool get _isSignUp => _form.state == AuthFormMode.signUp;
+  bool get _isForgotPassword => _form.state == AuthFormMode.forgotPassword;
+
+  void _show(AuthFormMode mode) {
+    context.read<AuthProvider>().clearError();
+    setState(() => _form.moveTo(mode));
   }
 
   @override
@@ -147,10 +163,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 Align(
                   alignment: AlignmentDirectional.centerEnd,
                   child: TextButton(
-                    onPressed: auth.isLoading ? null : () {
-                      auth.clearError();
-                      setState(() => _isForgotPassword = true);
-                    },
+                    onPressed: auth.isLoading ? null : () => _show(AuthFormMode.forgotPassword),
                     child: Text(isUrdu ? 'پاس ورڈ بھول گئے؟' : 'Forgot password?'),
                   ),
                 ),
@@ -198,10 +211,7 @@ class _AuthScreenState extends State<AuthScreen> {
     return InkWell(
       onTap: selected
           ? null
-          : () {
-              context.read<AuthProvider>().clearError();
-              setState(() => _isSignUp = isSignUp);
-            },
+          : () => _show(isSignUp ? AuthFormMode.signUp : AuthFormMode.signIn),
       borderRadius: BorderRadius.circular(AppTokens.radiusFull),
       child: Container(
         height: 44,
@@ -254,10 +264,7 @@ class _AuthScreenState extends State<AuthScreen> {
         leading: IconButton(
           tooltip: isUrdu ? 'واپس' : 'Back',
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: auth.isLoading ? null : () {
-            auth.clearError();
-            setState(() => _isForgotPassword = false);
-          },
+          onPressed: auth.isLoading ? null : () => _show(AuthFormMode.signIn),
         ),
         title: Text(isUrdu ? 'پاس ورڈ دوبارہ حاصل کریں' : 'Reset password'),
       ),
@@ -434,8 +441,7 @@ class _AuthScreenState extends State<AuthScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(isUrdu ? 'ری سیٹ لنک ای میل کر دیا گیا ہے۔' : 'Password reset link sent. Check your email.')),
     );
-    auth.clearError();
-    setState(() => _isForgotPassword = false);
+    _show(AuthFormMode.signIn);
   }
 
   Future<void> _handlePasswordUpdate() async {

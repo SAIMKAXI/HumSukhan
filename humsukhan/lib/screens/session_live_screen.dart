@@ -10,8 +10,62 @@ import '../services/speech_engine.dart';
 import '../services/stt/enhanced_stt.dart';
 import '../services/turn_taking.dart';
 import '../theme/app_theme.dart';
+import '../utils/state_machine.dart';
 import '../widgets/reusable_widgets.dart';
 import '../widgets/speakable_caption_bubble.dart';
+
+/// The microphone of a live Professional session.
+enum LiveMic {
+  /// Opening the session and getting speech recognition ready.
+  preparing,
+
+  /// The session no longer exists. Nothing can be done here.
+  unavailable,
+
+  /// Speech recognition could not be set up; starting may still work.
+  setupFailed,
+
+  /// Ready, and not yet started.
+  ready,
+  starting,
+  listening,
+
+  /// Stopped by the user: the last words are being turned into a caption.
+  finalizing,
+
+  /// Off after listening, by the user or because recognition stopped.
+  stopped,
+
+  /// The last start did not get the microphone listening.
+  startFailed;
+
+  /// The status line for this state. Translated with [AppStrings.message].
+  String get status => switch (this) {
+        preparing => 'Preparing microphone…',
+        unavailable => 'Session unavailable',
+        setupFailed => 'Microphone unavailable',
+        ready => 'Ready — tap microphone to listen',
+        starting => 'Starting microphone…',
+        listening => 'Listening… tap microphone to stop',
+        finalizing => 'Finalizing this caption…',
+        stopped => 'Microphone off — session still active',
+        startFailed => 'Microphone could not be started',
+      };
+}
+
+/// Every state the microphone is off in can start it. Recognition that
+/// stops by itself while starting or listening leaves it [LiveMic.stopped].
+const liveMicTransitions = <LiveMic, Set<LiveMic>>{
+  LiveMic.preparing: {LiveMic.unavailable, LiveMic.setupFailed, LiveMic.ready},
+  LiveMic.unavailable: {},
+  LiveMic.setupFailed: {LiveMic.starting},
+  LiveMic.ready: {LiveMic.starting},
+  LiveMic.starting: {LiveMic.listening, LiveMic.startFailed, LiveMic.stopped},
+  LiveMic.listening: {LiveMic.finalizing, LiveMic.stopped},
+  LiveMic.finalizing: {LiveMic.stopped},
+  LiveMic.stopped: {LiveMic.starting},
+  LiveMic.startFailed: {LiveMic.starting},
+};
 
 class SessionLiveScreen extends StatefulWidget {
   final String sessionId;
@@ -42,12 +96,17 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   /// How long an unfinished piece waits for the rest of its sentence before
   /// it is kept as it is.
   static const Duration _sentenceHold = Duration(seconds: 3);
-  String _speechStatus = 'Preparing microphone…';
+  final _mic = StateMachine(LiveMic.preparing, liveMicTransitions);
   String? _startupError;
-  bool _sessionStarting = true;
-  bool _isListening = false;
-  bool _acceptSpeechResults = false;
-  bool _isFinalizing = false;
+
+  bool get _sessionStarting => _mic.state == LiveMic.preparing;
+  bool get _isListening => _mic.state == LiveMic.listening;
+  bool get _isFinalizing => _mic.state == LiveMic.finalizing;
+  String get _speechStatus => _mic.state.status;
+
+  /// Results count from the moment the microphone is asked to start until
+  /// the last words are flushed after it stops.
+  bool get _acceptSpeechResults => _mic.isIn(const {LiveMic.starting, LiveMic.listening, LiveMic.finalizing});
 
   @override
   void initState() {
@@ -64,9 +123,8 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
     final session = pro.sessions.where((s) => s.id == widget.sessionId).firstOrNull;
     if (session == null) {
       setState(() {
-        _sessionStarting = false;
+        _mic.moveTo(LiveMic.unavailable);
         _startupError = 'This session could not be opened because it no longer exists.';
-        _speechStatus = 'Session unavailable';
       });
       return;
     }
@@ -82,24 +140,20 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
 
       if (!mounted) return;
       setState(() {
-        _sessionStarting = false;
-        _isListening = false;
-        _speechStatus = 'Ready — tap microphone to listen';
+        _mic.moveTo(LiveMic.ready);
         _startupError = null;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _sessionStarting = false;
-        _isListening = false;
-        _speechStatus = 'Microphone unavailable';
+        _mic.moveTo(LiveMic.setupFailed);
         _startupError = 'Speech setup failed: $error';
       });
     }
   }
 
   Future<void> _toggleListening() async {
-    if (!mounted || _sessionStarting || _isFinalizing) return;
+    if (!mounted || _mic.isIn(const {LiveMic.preparing, LiveMic.unavailable, LiveMic.starting, LiveMic.finalizing})) return;
 
     final pro = context.read<ProfessionalProvider>();
     final session = pro.sessions.where((s) => s.id == widget.sessionId).firstOrNull;
@@ -111,15 +165,13 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
       return;
     }
 
-    _acceptSpeechResults = true;
     _hiddenDraft = null;
     _sentenceTimer?.cancel();
     _sentences.flush();
     _sentenceStartedAt = null;
     setState(() {
       _startupError = null;
-      _isListening = false;
-      _speechStatus = 'Starting microphone…';
+      _mic.moveTo(LiveMic.starting);
     });
 
     try {
@@ -130,25 +182,20 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
             ? 'Urdu'
             : session.captionLanguage,
       );
-      if (!mounted) return;
+      // Recognition may have been interrupted while it started.
+      if (!mounted || _mic.state != LiveMic.starting) return;
       final listening = speech.isListening;
       setState(() {
-        _isListening = listening;
-        _speechStatus = listening
-            ? 'Listening… tap microphone to stop'
-            : 'Microphone could not be started';
+        _mic.moveTo(listening ? LiveMic.listening : LiveMic.startFailed);
         if (!listening) {
           _startupError = speech.lastStartError ??
               'Speech recognition did not start. The selected language may be unavailable on this device, or microphone access may be blocked.';
-          _acceptSpeechResults = false;
         }
       });
     } catch (error) {
-      if (!mounted) return;
-      _acceptSpeechResults = false;
+      if (!mounted || _mic.state != LiveMic.starting) return;
       setState(() {
-        _isListening = false;
-        _speechStatus = 'Could not start listening';
+        _mic.moveTo(LiveMic.startFailed);
         _startupError = 'Speech recognition failed: $error';
       });
     }
@@ -169,11 +216,9 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
 
   Future<void> _stopListeningSegment(SpeechProvider speech) async {
     if (_isFinalizing) return;
-    setState(() {
-      _isFinalizing = true;
-      _isListening = false;
-      _speechStatus = 'Finalizing this caption…';
-    });
+    // Only a running microphone has a caption to finish; a recognizer left
+    // running while this screen shows it off is just stopped.
+    setState(() => _mic.tryMoveTo(LiveMic.finalizing));
 
     try {
       // Keep accepting the final recognition event while the STT provider flushes
@@ -188,14 +233,8 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
         });
       }
     } finally {
-      _acceptSpeechResults = false;
-      if (mounted) {
-        setState(() {
-          _isFinalizing = false;
-          _isListening = false;
-          _speechStatus = 'Microphone off — session still active';
-        });
-      }
+      _mic.tryMoveTo(LiveMic.stopped);
+      if (mounted) setState(() {});
     }
   }
 
@@ -205,11 +244,9 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
   Future<void> _handleSpeechInterrupted(Object error) async {
     if (!mounted || !_acceptSpeechResults) return;
     await _flushHiddenDraft();
-    _acceptSpeechResults = false;
+    _mic.tryMoveTo(LiveMic.stopped);
     if (!mounted) return;
     setState(() {
-      _isListening = false;
-      _speechStatus = 'Microphone off — session still active';
       _startupError = error is SpeechInterruption ? error.message : 'Speech recognition stopped: $error';
     });
   }
@@ -270,13 +307,7 @@ class _SessionLiveScreenState extends State<SessionLiveScreen> {
             widget.sessionId,
             caption,
           );
-      if (mounted) {
-        setState(() {
-          _speechStatus = _isListening
-              ? 'Listening… tap microphone to stop'
-              : _speechStatus;
-        });
-      }
+      if (mounted) setState(() {});
       _scrollToBottom();
     } catch (error) {
       if (mounted) {

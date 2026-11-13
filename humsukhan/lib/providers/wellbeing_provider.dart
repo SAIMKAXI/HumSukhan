@@ -10,9 +10,26 @@ import '../modules/wellbeing/services/check_in_reminders.dart';
 import '../modules/wellbeing/services/mood_patterns.dart';
 import '../modules/wellbeing/services/mood_store.dart';
 import '../services/supabase_service.dart';
+import '../utils/state_machine.dart';
 
 /// Why turning reminders on did not work.
 enum ReminderFailure { permissionDenied, schedulingFailed }
+
+/// Reading this account's check-ins from the phone.
+enum CheckInsLoad {
+  loading,
+  loaded,
+
+  /// Loaded, but some saved check-ins could not be read and were set aside.
+  damaged,
+}
+
+/// Loading ends loaded or damaged; deleting every check-in clears the damage.
+const checkInsLoadTransitions = <CheckInsLoad, Set<CheckInsLoad>>{
+  CheckInsLoad.loading: {CheckInsLoad.loaded, CheckInsLoad.damaged},
+  CheckInsLoad.damaged: {CheckInsLoad.loaded},
+  CheckInsLoad.loaded: {},
+};
 
 /// Wellbeing check-ins for the signed-in account.
 ///
@@ -47,8 +64,7 @@ class WellbeingProvider extends ChangeNotifier {
   final DateTime Function() _clock;
   final Uuid _uuid = const Uuid();
 
-  bool _loaded = false;
-  bool _loadDamaged = false;
+  final _load = StateMachine(CheckInsLoad.loading, checkInsLoadTransitions);
   bool _disposed = false;
   List<MoodEntry> _entries = const [];
   bool _remindersOn = false;
@@ -59,10 +75,11 @@ class WellbeingProvider extends ChangeNotifier {
   String? _reminderError;
   Future<void>? _loading;
 
-  bool get isLoaded => _loaded;
+  CheckInsLoad get loadState => _load.state;
+  bool get isLoaded => _load.state != CheckInsLoad.loading;
 
   /// Some saved check-ins could not be read and were set aside.
-  bool get loadDamaged => _loadDamaged;
+  bool get loadDamaged => _load.state == CheckInsLoad.damaged;
 
   /// Newest first.
   List<MoodEntry> get entries => _entries.reversed.toList(growable: false);
@@ -80,9 +97,9 @@ class WellbeingProvider extends ChangeNotifier {
 
   String get _prefix => 'wellbeing:$_account';
 
-  Future<void> load() => _loading ??= _load();
+  Future<void> load() => _loading ??= _read();
 
-  Future<void> _load() async {
+  Future<void> _read() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       _introSeen = prefs.getBool('$_prefix:introSeen') ?? false;
@@ -102,15 +119,15 @@ class WellbeingProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Wellbeing preferences could not be read: $e');
     }
+    var damaged = true;
     try {
       final loaded = await _store.load();
       _entries = loaded.entries;
-      _loadDamaged = loaded.damaged;
+      damaged = loaded.damaged;
     } catch (e) {
       debugPrint('Wellbeing check-ins could not be loaded: $e');
-      _loadDamaged = true;
     }
-    _loaded = true;
+    _load.moveTo(damaged ? CheckInsLoad.damaged : CheckInsLoad.loaded);
     _notify();
     // Bring the schedule up to date: another account may have left
     // reminders on this phone, and the two-week window moves on each open.
@@ -121,7 +138,7 @@ class WellbeingProvider extends ChangeNotifier {
   Future<void> setUrdu(bool urdu) async {
     if (_urdu == urdu) return;
     _urdu = urdu;
-    if (_loaded && _remindersOn) await _syncReminders();
+    if (isLoaded && _remindersOn) await _syncReminders();
   }
 
   Future<void> markIntroSeen() async {
@@ -167,7 +184,7 @@ class WellbeingProvider extends ChangeNotifier {
   Future<void> deleteAllCheckIns() async {
     await _store.deleteAll();
     _entries = const [];
-    _loadDamaged = false;
+    _load.tryMoveTo(CheckInsLoad.loaded);
     _notify();
   }
 

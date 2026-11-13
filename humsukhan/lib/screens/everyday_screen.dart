@@ -92,7 +92,7 @@ class _EverydayScreenState extends State<EverydayScreen> {
       ),
       body: Column(
         children: [
-          if (conv.state == ConversationState.active || conv.state == ConversationState.starting) _buildSpeakerControls(context, conv, settings, theme),
+          if (conv.state == ConversationState.active) _buildSpeakerControls(context, conv, settings, theme),
           if (conv.state == ConversationState.idle) PrivacyNotice(text: s.privacyNote),
           Expanded(
             child: conv.state == ConversationState.idle
